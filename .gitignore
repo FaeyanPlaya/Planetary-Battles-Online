@@ -1,0 +1,27 @@
+build*/
+bin/
+
+# Local game assets are supplied separately and must never be committed.
+*.pkg
+*.PKG
+/robots.dat
+/ROBOTS.DAT
+/sounds.txt
+/SOUNDS.TXT
+# Original-game language catalogs are supplied locally, like the resource packages.
+[Ll][Aa][Nn][Gg].[Dd][Aa][Tt]
+
+# Developer tools and local settings.
+.tools/
+.local/
+.codex/
+.claude/
+CMakeUserPresets.json
+__pycache__/
+
+# Editor state and game/debugger output.
+.vs/
+.idea/
+*.log
+*.dmp
+*.stackdump
