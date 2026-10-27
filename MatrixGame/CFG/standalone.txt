@@ -1,0 +1,46 @@
+// Select the random generator once, before battle initialization.
+// Supported values: ParkMiller (default), LegacyCRT.
+RandomGenerator=ParkMiller
+
+// Rendering resolution in pixels, or Auto: the screen's own, at most 1920x1080. Restart the game after editing this file.
+ResolutionWidth=Auto
+ResolutionHeight=Auto
+// Windowed, Borderless or Exclusive. Borderless scales to the primary display.
+WindowMode=Borderless
+// Alt+Enter switches between Windowed and this mode: Borderless or Exclusive.
+// Starting in Borderless or Exclusive selects that mode for subsequent toggles.
+FullscreenMode=Borderless
+
+// The in-game Settings window (battle menu, C) rewrites the values below and keeps comments.
+// Master volume for sound effects and speech, 0-100.
+SoundVolume=100
+// Battle music volume, 0-100, independent of SoundVolume. Music plays when DATA/music.pkg is present.
+MusicVolume=100
+// On or Off. Shadow changes apply immediately.
+StencilShadows=On
+ProjectedShadows=On
+// Off, Low or High. Restart the game after changing the sky or robot shadows.
+Skybox=High
+RobotShadows=On
+// Camera scroll speed as a percentage of the configured speed, 25-300.
+CameraSpeed=100
+// Ablaze and shorted damage pulses. Corrected keeps the attacker's kill credit and friendly-fire
+// scaling for every pulse; Original restores the original game. Applies immediately.
+DelayedDamage=Corrected
+// Battle map chosen in New battle, for example Matrix\Map\desert1_3e.cmap.
+// Empty selects the configured fallback in the startup selector.
+Map=
+// Bonus for the next battle: None, AirSupport or ReinforcedArmor. Friendly fire is unchanged.
+BattleBonus=None
+// AI group counts after regrouping. Corrected keeps them equal to the members; Original restores
+// the original game, whose stale counts affect team redistribution. Read at startup; there is no
+// Settings window row.
+GroupCounts=Corrected
+// AI bomb escape place test. Corrected matches each movement cell to the place square containing
+// it; Original restores the original game's bound. Read at startup; there is no Settings window
+// row.
+PlaceContainment=Corrected
+// Hits along lines with no X travel, for sight, aiming, shots and picking. Corrected finds them;
+// Original restores the original game, which missed objects along such lines. Read at startup;
+// there is no Settings window row.
+ZeroXTrace=Corrected

@@ -1,0 +1,2 @@
+// MinGW embeds the same manifest that the MSVC linker merges into the EXE.
+1 24 "MatrixGame.manifest"
