@@ -10,6 +10,8 @@
 
 #include <utils.hpp>
 
+#include <vector>
+
 class CMatrixMapGroup;
 typedef CMatrixMapGroup *PCMatrixMapGroup;
 
@@ -43,7 +45,7 @@ typedef enum {
     EObjectType_FORCE_DWORD = 0x7FFFFFFF
 } EObjectType;
 
-#define MAX_OBJECTS_PER_SCREEN 2560
+#define MAX_OBJECTS_PER_SCREEN 2560  // the nearest drawn; the far view draws more (ObjectsPerScreen)
 
 #define UNDER_ATTACK_IDLE_TIME 120000
 
@@ -223,7 +225,7 @@ class CMatrixMapStatic : public CMain {
 
     int m_Z;
 
-    static PCMatrixMapStatic objects[MAX_OBJECTS_PER_SCREEN];
+    static std::vector<PCMatrixMapStatic> objects;
     static int objects_left;
     static int objects_rite;
 
@@ -308,8 +310,9 @@ public:
         m_FirstLogicTemp = NULL;
         m_LastLogicTemp = NULL;
         m_NextSimId = 0;
-        objects_left = MAX_OBJECTS_PER_SCREEN >> 1;
-        objects_rite = MAX_OBJECTS_PER_SCREEN >> 1;
+        objects.clear();
+        objects_left = 0;
+        objects_rite = 0;
 
         m_FirstVisNew = NULL;
         m_LastVisNew = NULL;
@@ -411,6 +414,7 @@ public:
 
     void Sort(const D3DXMATRIX &sort);
     static void SortBegin(void);
+    static void SortFinish(void);  // orders the objects Sort took by depth, keeps the nearest
     static void OnEndOfDraw(void);  // this must be called before any sorting stuf
 
     static void SortEndRecalcTerainColor(void);

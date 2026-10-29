@@ -6,6 +6,7 @@
 #include "MatrixSide.hpp"
 #include "MatrixMap.hpp"
 #include "MatrixRobot.hpp"
+#include "Mods.hpp"
 #include "MatrixObjectBuilding.hpp"
 #include "MatrixFormGame.hpp"
 #include "MatrixMapStatic.hpp"
@@ -686,6 +687,15 @@ void CMatrixSideUnit::OnLButtonDown(const CPoint &) {
             IssueGroupOrder(Commands::Type::Move, tpos, NULL);
         }
         else if (FLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE)) {
+            // A turret fires at an enemy unit only: a click elsewhere leaves the order open.
+            if (m_CurrSel == TURRET_SELECTED) {
+                if (IS_TRACE_STOP_OBJECT(pObject) && (IsLiveUnit(pObject) || pObject->IsFlyer()) &&
+                    pObject->GetSide() != m_Id) {
+                    RESETFLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE | ORDERING_MODE);
+                    IssueTurretOrder(Commands::Type::TurretAttack, pObject);
+                }
+                return;
+            }
             // Fire: at a live object, otherwise at the ground point
             RESETFLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE | ORDERING_MODE);
             const bool at_object = IS_TRACE_STOP_OBJECT(pObject) && (pObject->IsLive() || pObject->IsSpecial());
@@ -809,6 +819,13 @@ void CMatrixSideUnit::OnRButtonDown(const CPoint &) {
     if (pObject == TRACE_STOP_NONE)
         return;
 
+    // The selected turret fires at the enemy unit clicked.
+    if (!IS_PREORDERING && m_CurrSel == TURRET_SELECTED) {
+        if (IS_TRACE_STOP_OBJECT(pObject) && (IsLiveUnit(pObject) || pObject->IsFlyer()) && pObject->GetSide() != m_Id)
+            IssueTurretOrder(Commands::Type::TurretAttack, pObject);
+        return;
+    }
+
     if (!IS_PREORDERING &&
         (m_CurrSel == GROUP_SELECTED || m_CurrSel == ROBOT_SELECTED || m_CurrSel == FLYER_SELECTED)) {
         if (IS_TRACE_STOP_OBJECT(pObject) && pObject->IsLiveBuilding() && pObject->GetSide() != m_Id) {
@@ -891,6 +908,17 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
             ((CMatrixBuilding *)m_ActiveObject)->UnSelect();
     }
 
+    if (m_CurrSel == TURRET_SELECTED || IsTurretMode()) {
+        if (g_IFaceList) {
+            g_IFaceList->DeletePersonal();
+            g_IFaceList->ResetOrderingMode();
+        }
+        if (m_ActiveObject && m_ActiveObject->IsCannon()) {
+            m_ActiveObject->AsCannon()->UnSelect();
+            m_ActiveObject->AsCannon()->DeleteProgressBarClone(PBC_CLONE2);
+        }
+    }
+
     /*m_CurrentAction = NOTHING_SPECIAL;*/
     m_ActiveObject = pObject;
 
@@ -957,6 +985,13 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
             CSound::Play(S_BUILDING_SEL, SL_SELECTION);
         }
     }
+    else if (type == TURRET && pObject) {
+        m_nCurrRobotPos = -1;
+        m_CurrSel = TURRET_SELECTED;
+        pObject->AsCannon()->Select();
+        g_IFaceList->CreateTurretPersonal(pObject->AsCannon());
+        CSound::Play(S_BUILDING_SEL, SL_SELECTION);
+    }
     else if (type == GROUP) {
         m_CurrSel = GROUP_SELECTED;
 
@@ -979,6 +1014,8 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
         ShowOrderState();
     }
     else if (type == ARCADE) {
+        if (pObject && pObject->IsCannon() && g_IFaceList)
+            g_IFaceList->CreateTurretPersonal(pObject->AsCannon());  // the turret entered (TurretControl)
     }
     else {
         m_nCurrRobotPos = -1;
@@ -1244,6 +1281,10 @@ bool CMatrixSideUnit::IsFlyerMode() {
     return (m_Arcaded && m_Arcaded->GetObjectType() == OBJECT_TYPE_FLYER);
 }
 
+bool CMatrixSideUnit::IsTurretMode() const {
+    return m_Arcaded && m_Arcaded->IsCannon();
+}
+
 void CMatrixSideUnit::SetArcadedObject(CMatrixMapStatic *o) {
     DTRACE();
     // The battle's part runs for every side (drive commands enter and leave robots on every peer); the
@@ -1278,11 +1319,13 @@ void CMatrixSideUnit::SetArcadedObject(CMatrixMapStatic *o) {
         RESETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
     }
 
-    // The robot left keeps no bonus (the original game kept the weapons' reach after leaving to nothing).
+    // The robot left loses the speed bonus. The original game kept the weapons' reach unless the driver went on to
+    // another robot; with the DriveReachReset switch (Planetary Battles Online mod) the reach goes too.
     if (IsRobotMode()) {
         if (bonus) {
             m_Arcaded->AsRobot()->SetMaxSpeed(m_Arcaded->AsRobot()->GetMaxSpeed() / SPEED_BOOST);
-            m_Arcaded->AsRobot()->SetWeaponToDefaultCoeff();
+            if (Mods::switches().drive_reach_reset || (o && o != m_Arcaded && o->GetObjectType() == OBJECT_TYPE_ROBOTAI))
+                m_Arcaded->AsRobot()->SetWeaponToDefaultCoeff();
         }
         if (local) {
             m_Arcaded->AsRobot()->UnSelect();
@@ -1296,7 +1339,26 @@ void CMatrixSideUnit::SetArcadedObject(CMatrixMapStatic *o) {
         }
     }
 
+    // A turret left (TurretControl): the reach bonus goes with the person.
+    if (IsTurretMode()) {
+        m_Arcaded->AsCannon()->SetDriveBonus(false);
+        if (o == NULL || o == m_Arcaded) {
+            o = NULL;
+            if (local)
+                Select(NOTHING, NULL);
+        }
+    }
+
     m_Arcaded = o;
+    if (IsTurretMode()) {
+        CMatrixCannon *cannon = o->AsCannon();
+        if (bonus)
+            cannon->SetDriveBonus(true);
+        if (local)
+            Select(ARCADE, o);
+        m_DriveAim = D3DXVECTOR3(cannon->m_Pos.x, cannon->m_Pos.y, 0);
+        m_DriveAimRate = D3DXVECTOR2(0, 0);
+    }
     if (IsRobotMode()) {
         CMatrixRobotAI *robot = (CMatrixRobotAI *)o;
         if (local) {
@@ -1351,7 +1413,7 @@ void CMatrixSideUnit::MouseTurn(int dx) {
 }
 
 void CMatrixSideUnit::RequestDrive(Commands::DriveAction action, CMatrixMapStatic *robot) {
-    if (!robot || !robot->IsLiveRobot() || robot->GetSide() != m_Id)
+    if (!robot || !(robot->IsLiveRobot() || robot->IsLiveCannon()) || robot->GetSide() != m_Id)
         return;
     if (action == Commands::DriveAction::Leave) {
         if (m_DriveLeaving == robot->GetSimId())
@@ -1367,7 +1429,7 @@ void CMatrixSideUnit::RequestDrive(Commands::DriveAction action, CMatrixMapStati
 }
 
 void CMatrixSideUnit::SampleDrive() {
-    if (!IsRobotMode() || m_DriveLeaving || !g_IFaceList || g_MatrixMap->IsPaused() || g_MatrixMap->IsSpectating())
+    if (!(IsRobotMode() || IsTurretMode()) || m_DriveLeaving || !g_IFaceList || g_MatrixMap->IsPaused() || g_MatrixMap->IsSpectating())
         return;
     using namespace Commands;
     const bool over_battle = g_IFaceList->m_InFocus != INTERFACE;
@@ -1387,11 +1449,25 @@ void CMatrixSideUnit::SampleDrive() {
     // Fire starts over the battle only, and goes on while the button is held.
     if (Input::isKeyPressed(KA_FIRE) && (over_battle || (m_DriveSentKeys > 0 && (m_DriveSentKeys & DRIVE_FIRE))))
         keys |= DRIVE_FIRE;
-    IssueDrive(keys, over_battle ? g_MatrixMap->m_TraceStopPos : m_DriveSentAim);
+    // Over the sky or over water past the map's edge the cursor's trace finds nothing and keeps its last point, so the
+    // robot went on aiming there; the DriveAimFar switch (the interface fixes mod) aims along the cursor's ray.
+    D3DXVECTOR3 aim = g_MatrixMap->m_TraceStopPos;
+    if (Mods::switches().drive_aim_far && g_MatrixMap->m_TraceStopObj == TRACE_STOP_NONE)
+        aim = DriveFarAim(g_MatrixMap->m_Camera.GetFrustumCenter(), g_MatrixMap->m_MouseDir);
+    IssueDrive(keys, over_battle ? aim : m_DriveSentAim);
+}
+
+D3DXVECTOR3 CMatrixSideUnit::DriveFarAim(const D3DXVECTOR3 &eye, const D3DXVECTOR3 &dir) {
+    constexpr float reach = 10000.0f;  // as far as the cursor's trace looks
+    if (dir.z < 0) {
+        const float k = (WATER_LEVEL - eye.z) / dir.z;
+        if (k > 0 && k < reach) return eye + dir * k;
+    }
+    return eye + dir * reach;
 }
 
 void CMatrixSideUnit::IssueDrive(int keys, const D3DXVECTOR3 &aim) {
-    if (!IsRobotMode())
+    if (!(IsRobotMode() || IsTurretMode()))
         return;
     const int now = g_MatrixMap->GetTime();
     // A shared battle runs commands a turn at a time: a new aim more often is lost traffic. Alone, the
@@ -1425,6 +1501,10 @@ void CMatrixSideUnit::ExecuteDrive(const Commands::Command &command, CMatrixMapS
     using Commands::DriveAction;
     if (command.params.size() != 3 && command.params.size() != 5)
         return;
+    if (target && target->IsCannon()) {
+        ExecuteTurretDrive(command, target->AsCannon());
+        return;
+    }
     CMatrixRobotAI *robot = target && target->IsLiveRobot() && target->GetSide() == m_Id ? target->AsRobot() : nullptr;
     if (!robot)
         return;
@@ -1466,6 +1546,43 @@ void CMatrixSideUnit::ExecuteDrive(const Commands::Command &command, CMatrixMapS
             return;
         case DriveAction::Input:
             if (m_Arcaded != robot)
+                return;
+            m_DriveKeys = command.params[1];
+            m_DriveAim = D3DXVECTOR3(command.x, command.y, std::bit_cast<float>(command.params[2]));
+            m_DriveAimRate = command.params.size() == 5 ? D3DXVECTOR2(std::bit_cast<float>(command.params[3]),
+                                                                      std::bit_cast<float>(command.params[4]))
+                                                        : D3DXVECTOR2(0, 0);
+            m_DriveAimTime = g_MatrixMap->GetTime();
+            return;
+    }
+}
+
+void CMatrixSideUnit::ExecuteTurretDrive(const Commands::Command &command, CMatrixCannon *cannon) {
+    using Commands::DriveAction;
+    if (cannon->GetSide() != m_Id || !Mods::switches().turret_control)
+        return;
+    switch (DriveAction(command.params[0])) {
+        case DriveAction::Enter:
+            // A built turret, as a robot standing on the ground; another person's side never has it.
+            if (!BattleRules::manual_control() || !cannon->IsBuilt() || m_Arcaded == cannon) {
+                if (IsLocalSide())
+                    CSound::Play(S_CANTBE, SL_INTERFACE);
+                return;
+            }
+            if (m_Arcaded)
+                LeaveRobot();
+            SetArcadedObject(cannon);
+            if (IsLocalSide() && g_IFaceList)
+                g_IFaceList->RobotEntered();
+            return;
+        case DriveAction::Leave:
+            if (m_Arcaded == cannon)
+                LeaveRobot();
+            return;
+        case DriveAction::Explode:
+            return;
+        case DriveAction::Input:
+            if (m_Arcaded != cannon)
                 return;
             m_DriveKeys = command.params[1];
             m_DriveAim = D3DXVECTOR3(command.x, command.y, std::bit_cast<float>(command.params[2]));
@@ -9091,6 +9208,17 @@ void CMatrixSideUnit::IssueGroupOrder(Commands::Type type, const D3DXVECTOR3 &po
     Commands::issue(command);
 }
 
+void CMatrixSideUnit::IssueTurretOrder(Commands::Type type, CMatrixMapStatic *target) {
+    if (m_CurrSel != TURRET_SELECTED || !m_ActiveObject || !m_ActiveObject->IsCannon())
+        return;
+    Commands::Command command;
+    command.side = m_Id;
+    command.type = type;
+    command.target = target ? target->GetSimId() : 0;
+    command.units = {m_ActiveObject->GetSimId()};
+    Commands::issue(command);
+}
+
 void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
     using Commands::Type;
     // Only people command a side; once it passed to the AI (surrender, a player who left)
@@ -9175,6 +9303,27 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
             return;
         case Type::Drive:
             ExecuteDrive(command, target);
+            return;
+        case Type::TurretAttack:
+        case Type::TurretDismantle:
+            if (!Mods::switches().turret_control)
+                return;
+            for (int id : command.units) {
+                CMatrixMapStatic *o = Commands::find(id);
+                if (!o || !o->IsCannon() || o->GetSide() != m_Id || !o->AsCannon()->IsBuilt())
+                    continue;
+                CMatrixCannon *cannon = o->AsCannon();
+                if (command.type == Type::TurretAttack) {
+                    cannon->OrderAttack(target);
+                    continue;
+                }
+                // Half the price back, times the share of hit points left; whole units, rounded down.
+                const SCannonProps &props = g_Config.m_CannonsProps[cannon->m_Num - 1];
+                const float share = std::clamp(cannon->GetHitPoint() / cannon->GetMaxHitPoint(), 0.0f, 1.0f);
+                for (int r = 0; r < MAX_RESOURCES; r++)
+                    AddResourceAmount(ERes(r), int(float(props.m_Resources[r]) * 0.5f * share));
+                cannon->Dismantle();
+            }
             return;
         default:
             break;
@@ -9312,7 +9461,22 @@ void CMatrixSideUnit::PGOrderStop(int no) {
 
     PGRemoveAllPassive(no, m_PlayerGroup[no].m_Obj);
 
-    if (m_PlayerGroup[no].m_To.Dist2(PGCalcPlaceCenter(no)) > POW2(10)) {
+    if (Mods::switches().stop_in_place) {
+        // StopInPlace switch (the battle fixes mod): each robot halts where it stands and keeps that spot as its
+        // place. The original game spread the group over the free places round its centre, so robots walked on.
+        for (CMatrixMapStatic *obj = CMatrixMapStatic::GetFirstLogic(); obj; obj = obj->GetNextLogic()) {
+            if (!obj->IsLiveRobot() || obj->GetSide() != m_Id || obj->AsRobot()->GetGroupLogic() != no ||
+                obj->AsRobot()->IsDisableManual() || !PrepareBreakOrder(obj))
+                continue;
+            CMatrixRobotAI *robot = obj->AsRobot();
+            robot->StopCapture();
+            robot->RemoveOrder(ROT_MOVE_RETURN);
+            robot->StopMoving();
+            robot->GetEnv()->m_Place = -1;
+            robot->GetEnv()->m_PlaceAdd = CPoint(robot->GetMapPosX(), robot->GetMapPosY());
+        }
+    }
+    else if (m_PlayerGroup[no].m_To.Dist2(PGCalcPlaceCenter(no)) > POW2(10)) {
         PGAssignPlacePlayer(no, m_PlayerGroup[no].m_To);
     }
     else {

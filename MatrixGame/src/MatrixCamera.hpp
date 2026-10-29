@@ -48,6 +48,8 @@ enum EFrustumPlane { FPLANE_LEFT, FPLANE_RIGHT, FPLANE_BOTTOM, FPLANE_TOP };
 //#define MAX_VIEW_DISTANCE_SQ    (MAX_VIEW_DISTANCE * MAX_VIEW_DISTANCE)
 extern float MAX_VIEW_DISTANCE;
 void SetMaxCameraDistance(float perc);
+// The far view: the distance set times this scale; a battle's camera takes it at once.
+void SetViewScale(float scale);
 
 #define FOG_NEAR_K 0.5
 #define FOG_FAR_K  0.7
@@ -126,6 +128,9 @@ struct SAutoFlyData {
     void AddWarPair(CMatrixMapStatic *tgt, CMatrixMapStatic *attacker);
 };
 
+// The view's turn in a turret by the turn keys, radians per ms (TurretControl).
+constexpr float turret_view_turn_speed = 0.002f;
+
 class CMatrixCamera : public CMain {
     D3DVIEWPORT9 m_ViewPort;
     D3DXMATRIX m_MatProj;
@@ -166,6 +171,10 @@ class CMatrixCamera : public CMain {
 
     D3DXVECTOR2 m_XY_Strategy;
     float m_Ang_Strategy;
+
+    // In a turret (TurretControl): the view's own turn, by the turn keys; the turret's head follows the cursor.
+    float m_TurretAngZ = 0;
+    const CMatrixMapStatic *m_TurretView = nullptr;  // the turret it was set for
 
     SAutoFlyData *m_AFD;
 

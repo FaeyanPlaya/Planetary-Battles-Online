@@ -10,13 +10,23 @@
 #include "MatrixFlyer.hpp"
 #include "MatrixRobot.hpp"
 #include "MatrixObjectCannon.hpp"
+#include <input.hpp>
 
 #include "Effects/MatrixEffectBigBoom.hpp"
 
 float MAX_VIEW_DISTANCE = 4000.0f;
+static float view_distance = 4000.0f;  // the original's setting
+static float view_scale = 1.0f;
 
 void SetMaxCameraDistance(float perc) {
-    MAX_VIEW_DISTANCE = 4000.0 * (1.0 + 0.01 * perc);
+    view_distance = 4000.0 * (1.0 + 0.01 * perc);
+    MAX_VIEW_DISTANCE = view_distance * view_scale;
+}
+
+void SetViewScale(float scale) {
+    view_scale = scale;
+    MAX_VIEW_DISTANCE = view_distance * view_scale;
+    if (g_MatrixMap) g_MatrixMap->m_Camera.ResizeScreen();  // the projection's far plane
 }
 
 void SAutoFlyData::Release(void) {
@@ -858,6 +868,11 @@ void CMatrixCamera::CalcLinkPoint(D3DXVECTOR3 &lp, float &angz) {
 
             angz = (float)(atan2(-bot->m_Forward.x, bot->m_Forward.y) + M_PI_MUL(1));
         }
+        else if (arcade_object->IsCannon()) {
+            const D3DXVECTOR3 centre = arcade_object->GetGeoCenter();
+            lp = D3DXVECTOR3(centre.x, centre.y, centre.z + g_Config.m_CamParams[CAMERA_INROBOT].m_CamHeight);
+            angz = m_TurretAngZ;
+        }
     }
     else {
         DCP();
@@ -932,6 +947,23 @@ void CMatrixCamera::Takt(float ms) {
     float newangz;
     float newdist = LerpDist();
     float newangx = LerpAng();
+
+    CMatrixMapStatic *turret = g_MatrixMap->GetPlayerSide()->GetArcadedObject();
+    if (turret && turret->IsCannon()) {
+        if (m_TurretView != turret) {  // just in: the view looks where the head does
+            m_TurretView = turret;
+            m_TurretAngZ = float(turret->AsCannon()->HeadAngle() + M_PI_MUL(1));
+        }
+        int turn = 0;  // the angle grows to the right
+        if (Input::isKeyPressed(KA_UNIT_LEFT) || Input::isKeyPressed(KA_UNIT_LEFT_ALT))
+            --turn;
+        if (Input::isKeyPressed(KA_UNIT_RIGHT) || Input::isKeyPressed(KA_UNIT_RIGHT_ALT))
+            ++turn;
+        m_TurretAngZ += float(turn) * turret_view_turn_speed * ms;
+    }
+    else {
+        m_TurretView = nullptr;
+    }
 
     DCP();
     CalcLinkPoint(newlp, newangz);

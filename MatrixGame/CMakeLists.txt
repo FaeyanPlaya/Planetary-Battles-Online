@@ -124,6 +124,11 @@ if (NOT MATRIXGAME_BUILD_DLL)
     endif ()
 endif ()
 
+# Our mods are built into the EXE; the players' mods folder beside it is left empty for now.
+if (NOT MATRIXGAME_BUILD_DLL)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mods)
+endif ()
+
 # Copy the DATA/robots.pkg file from the game
 if (NOT MATRIXGAME_BUILD_DLL)
     if (NOT MATRIXGAME_PKG_SPACE_RANGERS)

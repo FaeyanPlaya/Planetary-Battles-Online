@@ -13,7 +13,11 @@
 #include "random.hpp"
 enum EWeapon : unsigned int;
 
-#define MAX_EFFECT_DISTANCE_SQ ((3000) * (3000))
+// Effects are made only this near the camera (farther with the far view, a personal mod, by its scale).
+float MaxEffectDistanceSq();
+#define MAX_EFFECT_DISTANCE_SQ (MaxEffectDistanceSq())
+// How many effects of a kind are kept: the original's count, times the far view's scale.
+int EffectCap(int original);
 
 // billboards
 
@@ -173,11 +177,11 @@ typedef struct {
 
 } SSpotProperties;
 
-#define MAX_EFFECTS_EXPLOSIONS   50
-#define MAX_EFFECTS_POINT_LIGHTS 50
-#define MAX_EFFECTS_SMOKEFIRES   100
-#define MAX_EFFECTS_LANDSPOTS    100
-#define MAX_EFFECTS_FIREANIM     50
+#define MAX_EFFECTS_EXPLOSIONS   EffectCap(50)
+#define MAX_EFFECTS_POINT_LIGHTS EffectCap(50)
+#define MAX_EFFECTS_SMOKEFIRES   EffectCap(100)
+#define MAX_EFFECTS_LANDSPOTS    EffectCap(100)
+#define MAX_EFFECTS_FIREANIM     EffectCap(50)
 
 // common
 enum EEffectType {

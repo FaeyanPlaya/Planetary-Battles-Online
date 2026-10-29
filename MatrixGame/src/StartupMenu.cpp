@@ -2,7 +2,6 @@
 #include "StartupMenu.hpp"
 #include "LobbyModel.hpp"
 #include "LobbyWindow.hpp"
-#include "MapWindow.hpp"
 #include "SettingsWindow.hpp"
 #include "SettingsModel.hpp"
 #include "MatrixMap.hpp"
@@ -71,7 +70,8 @@ class Form final : public CForm {
         if (!menu) {
             using SettingsModel::text_element;
             const int height = menu_height + (can_rejoin ? item_step : 0);
-            auto markup = std::wstring(L"2|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:") + std::to_wstring(menu_width) +
+            auto markup = std::to_wstring(SettingsModel::window_border) + L"|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:" +
+                          std::to_wstring(menu_width) +
                           L"|_HEIGHT:" + std::to_wstring(height) + L"|_TEXTP:L|_TEXT: |_TEXTP:B";
             markup += text_element(L"MatrixGame", L"Font.2Ranger", 0xff000000, 0, 35, menu_width, 1);
             const std::wstring nick = LobbyWindow::player_name(network);
@@ -112,7 +112,7 @@ class Form final : public CForm {
                 NetBattle::request_rejoin(LobbyWindow::player_name(network));
                 SETFLAG(g_Flags, GFLAG_EXITLOOP);
                 break;
-            case NewBattle: MapWindow::open(MapWindow::Origin::Startup, values); break;
+            case NewBattle: LobbyWindow::open_local(values, network.lobby_local ? network : without_lobby()); break;
             case HostBattle: open_host(network.lobby ? network : without_lobby()); break;
             case JoinBattle: LobbyWindow::open_join(values, network.lobby ? network : without_lobby()); break;
             case Name: LobbyWindow::open_name(false); break;
@@ -131,7 +131,7 @@ class Form final : public CForm {
             show_menu();
         }
     }
-    bool windows_active() const { return MapWindow::active() || LobbyWindow::active() || SettingsWindow::startup_active(); }
+    bool windows_active() const { return LobbyWindow::active() || SettingsWindow::startup_active(); }
     int item_at(int x, int y) const {
         x -= menu->m_PosX;
         y -= menu->m_PosY;
@@ -150,7 +150,6 @@ public:
     }
     ~Form() {
         if (g_FormCur == this) FormChange(nullptr);
-        MapWindow::shutdown();
         LobbyWindow::shutdown();
         SettingsWindow::shutdown();
         release_menu();
@@ -162,7 +161,8 @@ public:
             opened_network = true;
             if (network.lobby_test_size.first > 0)  // the device changes in the next frames, as after Settings
                 Display::request_size(network.lobby_test_size.first, network.lobby_test_size.second);
-            if (network.role == NetBattle::Role::Host) open_host(network);
+            if (network.lobby_local) LobbyWindow::open_local(values, network);
+            else if (network.role == NetBattle::Role::Host) open_host(network);
             else LobbyWindow::open_join(values, network);
             if (LobbyWindow::active()) return;
         }
@@ -217,12 +217,6 @@ public:
             if (status == B_WHEEL) LobbyWindow::mouse_wheel(key, x, y);
             return;
         }
-        if (MapWindow::active()) {
-            if ((status == B_DOWN || status == B_DOUBLE) && key == VK_LBUTTON)
-                MapWindow::mouse_down(x, y, status == B_DOUBLE);
-            if (status == B_WHEEL) MapWindow::mouse_wheel(key, x, y);
-            return;
-        }
         if (status != B_DOWN || key != VK_LBUTTON || !menu) return;
         if (const int at = item_at(x, y); at >= 0) {
             select(at);
@@ -233,8 +227,7 @@ public:
         if (!resources_ready || g_D3DD->TestCooperativeLevel() != D3D_OK) return;
         if (down) Input::onKeyDown(key); else Input::onKeyUp(key);
         const bool accepted = actions.accept(key, down);
-        if (SettingsWindow::startup_keyboard(key, down) || LobbyWindow::keyboard(key, down) ||
-            MapWindow::keyboard(key, down) || !accepted)
+        if (SettingsWindow::startup_keyboard(key, down) || LobbyWindow::keyboard(key, down) || !accepted)
             return;
         const int first = first_item(), count = shown_items();
         if (key == VK_UP) select(first + (item - first + count - 1) % count);
@@ -248,7 +241,6 @@ public:
         if (event == SYSEV_DEACTIVATING || event == SYSEV_INPUT_RESET) {
             Input::onFocusLost();
             actions = {};
-            MapWindow::reset_input();
             LobbyWindow::reset_input();
             SettingsWindow::startup_reset_input();
         }
@@ -281,10 +273,7 @@ bool run(StandaloneSettings::Values &values) {
             MsgWaitForMultipleObjects(0, nullptr, FALSE, 20, QS_ALLINPUT);
         }};
     L3GRun(platform);
-    auto choice = MapWindow::take_startup_choice();
-    if (!choice && LobbyWindow::started()) choice = values;
-    const bool start = choice && !FLAG(g_Flags, GFLAG_APPCLOSE);
-    if (start) values = std::move(*choice);
+    const bool start = LobbyWindow::started() && !FLAG(g_Flags, GFLAG_APPCLOSE);
     RESETFLAG(g_Flags, GFLAG_EXITLOOP);
     return start;
 }

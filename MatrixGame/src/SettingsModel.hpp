@@ -12,6 +12,10 @@ namespace SettingsModel {
 
 enum class Language { English, Russian };
 
+// The frame of this project's windows (the hint markup's first number): the game's large panel without its help mark
+// (CMatrixHint makes it from border 2).
+constexpr int window_border = 5;
+
 enum class Row {
     DisplayGroup,
     Resolution,
@@ -29,6 +33,9 @@ enum class Row {
     CameraSpeed,
     RandomGenerator,
     DelayedDamage,
+    ModsGroup,       // this person's own mods
+    FarView,         // farview and its scale
+    InterfaceFixes,  // interface
     Count
 };
 
@@ -45,7 +52,7 @@ struct Layout {
     static constexpr int width = 460;
     static constexpr int title_y = 30;
     static constexpr int first_row_y = 58;
-    static constexpr int row_height = 20;
+    static constexpr int row_height = 17;
     static constexpr int label_x = 70;
     static constexpr int previous_x = 250;  // "<" marker; the left half of the value cell steps back.
     static constexpr int value_x = 264;
@@ -76,7 +83,9 @@ Language detect_language(const std::wstring &menu_text);
 
 class Window {
 public:
-    Window(StandaloneSettings::Values values, std::vector<Resolution> resolutions, Language language);
+    // default_personal: the personal mods of a person who never chose (PersonalMods=Default).
+    Window(StandaloneSettings::Values values, std::vector<Resolution> resolutions, Language language,
+           std::vector<std::string> default_personal = {});
 
     const StandaloneSettings::Values &values() const { return m_Values; }
     bool changed() const { return m_Values != m_Original; }
@@ -106,6 +115,10 @@ private:
     Language m_Language;
     int m_Selected;
     bool m_Error = false;
+    std::vector<std::string> m_DefaultPersonal;
+
+    bool personal(const char *id) const;
+    void set_personal(const char *id, bool on);
 
     const wchar_t *text(const wchar_t *english, const wchar_t *russian) const;
 };

@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // Rules that change how a battle plays out: the random generator, the original/corrected modes, the
 // resource balance and every side's bonus. Every client of a shared battle and every replay of its
@@ -41,6 +42,8 @@ struct Rules {
     // A person whose connection failed or whom the host did not wait for: the AI plays their side until they are
     // back (on), or the side gets no new orders (off: its robots finish the orders they have, nothing is built).
     bool dropped_ai = true;
+    // The battle mods (Mods ids, the host's choice): every peer plays with their switches.
+    std::vector<std::string> mods{};
     bool operator==(const Rules &) const = default;
 };
 
@@ -57,6 +60,7 @@ BattleChoice::Bonus bonus(int side);
 bool manual_control();
 bool manual_bonus();
 bool dropped_ai();
+const std::vector<std::string> &mods();
 
 // Rules the next battle uses whatever the person's settings say (a host's choice, a record being
 // replayed); the settings then neither choose nor change them. nullopt returns to the settings.
@@ -65,8 +69,8 @@ const std::optional<Rules> &prescribed();
 
 // One line of space-separated pairs: rng=ParkMiller delayed_damage=corrected group_counts=corrected
 // place_containment=corrected zero_x_trace=corrected resources=equal ai_resources=map
-// bonus=None,AirSupport,None,None manual=on manual_bonus=on dropped=ai   (ai_resources: map or x1..x4; the
-// manual keys and dropped (ai or idle) may be missing, as in records from before them: on, ai)
+// bonus=None,AirSupport,None,None manual=on manual_bonus=on dropped=ai mods=pbo   (ai_resources: map or x1..x4;
+// the manual keys, dropped (ai or idle) and mods (ids or -) may be missing, as in records from before them: on, ai, none)
 std::string to_text(const Rules &rules);
 // Reads to_text output; every key must be present once with a valid value.
 std::optional<Rules> from_text(std::string_view text);

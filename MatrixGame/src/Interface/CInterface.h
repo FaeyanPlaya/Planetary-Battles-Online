@@ -11,6 +11,8 @@
 
 class CIFaceImage;
 class CIFaceStatic;
+class CMatrixCannon;
+class CTextureManaged;
 class CIFaceCounter;
 class CMatrixHint;
 
@@ -285,6 +287,8 @@ public:
     std::wstring m_CurrentHintControlName;
 
     DWORD m_IfListFlags;
+    CTextureManaged *m_TurretPicture = nullptr;  // the selected turret's picture (CreateTurretPersonal)
+    DWORD m_OrderCancelTime = 0;                 // when ocan last cancelled an order (GetTickCount)
     Focus m_InFocus;
     CInterface *m_First, *m_Last;
     CInterface *m_FocusedInterface;
@@ -342,6 +346,8 @@ public:
     void DeleteProgressBars(CMatrixMapStatic *from);
 
     void CreatePersonal();
+    // TurretControl: the turret's picture in the panel, as a selected robot's (drawn when it is selected).
+    void CreateTurretPersonal(CMatrixCannon *turret);
     void DeletePersonal();
 
     void ResetOrderingMode();
@@ -379,6 +385,8 @@ public:
     bool CorrectCoordinates(int screen_width, int screen_height, int &posx, int &posy, int width, int height,
                             const std::wstring &name);
     void AddHintReplacements(const std::wstring &element_name);
+    // TurretControl: the hint markup of a selected turret's button (or of the way out of a turret), else empty.
+    std::wstring TurretHint(const std::wstring &element);
     bool CheckShowHintLogic(const std::wstring &element_name);
     // Asks to leave or enter a robot (drive commands); RobotLeft and RobotEntered then change the
     // interface when the command runs.

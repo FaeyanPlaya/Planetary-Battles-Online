@@ -13,9 +13,11 @@
 #include "StandaloneRuntime.hpp"
 #include "MapSelection.hpp"
 #include "MapCatalog.hpp"
+#include "MapShare.hpp"
+#include "Mods.hpp"
+#include "MapPacks.hpp"
 #include "SettingsWindow.hpp"
 #include "SettingsModel.hpp"
-#include "MapWindow.hpp"
 #include "StartupMenu.hpp"
 #include "BattleLoading.hpp"
 #include "BattleLaunch.hpp"
@@ -101,6 +103,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
         // --setup-yes (tests): a first start takes the first Space Rangers HD install found without asking.
         const bool setup_yes = std::erase(arguments, std::wstring_view(L"--setup-yes")) > 0;
         const auto net =NetBattle::parse(arguments);  // a battle shared over the network, if any
+        // Copies of a host's maps (MapShare) stay only for the way back to that battle or its lobby.
+        if (!net.lobby_return && !net.rejoin && !NetBattle::rejoin_ticket()) MapShare::forget();
         const auto launch = BattleLaunch::classify(arguments);
         if (launch.selected && arguments.size() == 2) BattleLoading::connect(launch.event);
         StartupMenu::set_direct_start(launch.selected);
@@ -134,6 +138,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
                         L"Game resources required", MB_OK | MB_ICONINFORMATION);
             return exit_code;
         }
+        // Map mods of the person's Space Rangers HD (its Mods folder); a battle a lobby started does not ask again.
+        MapPacks::set_game_mods(GameData::game_mods(app_path.parent_path(), !setup_yes && !BattleLoading::has_parent()));
+        if (net.check_maps) MapPacks::request_check();
 
         // The host chooses the map, seed and rules of a shared battle; the others receive them.
         std::optional<NetBattle::Start> shared;
@@ -174,6 +181,13 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
             if (shared)
             {
                 NetBattle::run(net, *shared);
+            }
+            else if (NetBattle::local_battle())
+            {
+                // Alone against the AI: the game's own loop. The window closed: the game does not start again.
+                L3GRun();
+                if (FLAG(g_Flags, GFLAG_APPCLOSE)) NetBattle::cancel_return();
+                else if (!NetBattle::return_to_menu()) NetBattle::after_local_battle(false);
             }
             else if (const auto &lobby = NetBattle::prepared())
             {
@@ -250,10 +264,6 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
     }
     else if (exit_code == 0 && NetBattle::return_to_menu()) {
         NetBattle::restart_to_menu();
-    }
-    else if (exit_code == 0 && MapSelection::relaunch_requested() && !MapSelection::relaunch()) {
-        MessageBoxW(nullptr, L"The game could not be started again on the chosen map. Start it again manually.",
-                    L"Map", MB_OK | MB_ICONWARNING);
     }
 
     BattleLoading::failed();
@@ -524,6 +534,10 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
                 ShowWindow(g_Wnd, SW_SHOWNORMAL);
                 UpdateWindow(g_Wnd);
             }
+            if (MapPacks::check_requested()) {
+                MapPacks::log_missing();
+                return;
+            }
             if (!StartupMenu::run(standalone.values)) return;
         }
         if (const auto &lobby = NetBattle::prepared()) {
@@ -555,6 +569,18 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
         auto mine = StandaloneSettings::battle_rules(standalone.values);
         if (!map) mine.bonus[PLAYER_SIDE - 1] = standalone.values.battle_bonus;
         BattleRules::set_sides(mine);
+    }
+    // The battle mods' switches (the prescribed battle's mods, else this person's own) and this person's own mods;
+    // without mods: the original game.
+    {
+        const auto personal = standalone.values.personal_mods ? *standalone.values.personal_mods
+                                                              : Mods::default_personal(Mods::installed());
+        std::string missing, skipped;
+        if (!Mods::apply(BattleRules::mods(), personal, missing, skipped))
+            throw std::runtime_error("The battle needs mods this PC does not have: " + missing);
+        if (!skipped.empty()) lgr.warning("Personal mods not installed: {}")(skipped);
+        SetViewScale(Mods::view_scale());  // the far view
+        lgr.notice("Battle mods: {}; personal mods: {}")(Mods::join(BattleRules::mods()), Mods::join(personal));
     }
 #endif
     g_MatrixMap = HNew(g_MatrixHeap) CMatrixMapLogic;
@@ -599,7 +625,11 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
     if (!planet) {
         // The host game names the planet of the battle; standalone, the statistics show the map's name.
         std::string error;
-        const auto metadata = MapMetadata::load(error);
+        // A map mod's map is named in the mod's own Lang.dat.
+        const MapPacks::Pack *pack = MapPacks::for_map(mapname);
+        const bool russian = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
+                             SettingsModel::Language::Russian;
+        const auto metadata = pack ? MapMetadata::load(error, MapPacks::names_file(*pack, russian)) : MapMetadata::load(error);
         auto key = std::filesystem::path(mapname).filename().wstring();
         for (auto &ch : key) ch = wchar(std::towlower(ch));
         const auto found = metadata.find(key);
@@ -607,6 +637,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
             found != metadata.end() && !found->second.name.empty() ? MapMetadata::plain_text(found->second.name)
                                                                    : std::filesystem::path(mapname).stem().wstring());
     }
+    MapPacks::use_for(mapname);  // a map mod's map: its files and sky
     stor.Load(mapname.c_str());
     DCP();
 
@@ -941,7 +972,6 @@ void CGame::Deinit(void) {
         g_Render = NULL;
     }
 
-    MapWindow::shutdown();
     SettingsWindow::shutdown();
     BattleStats::clear();
     ScreenLayout::laid_out(0, 0);

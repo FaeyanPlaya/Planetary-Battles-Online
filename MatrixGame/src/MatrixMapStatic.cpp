@@ -15,6 +15,9 @@
 #include "MatrixObjectCannon.hpp"
 
 #include "Mem.hpp"
+#include "Mods.hpp"
+
+#include <algorithm>
 
 bool FreeObjResources(uintptr_t user) {
     DTRACE();
@@ -431,78 +434,90 @@ bool CMatrixMapStatic::RenderToTexture(SRenderTexture *rt, int n, /*float *fff,*
         ASSERT_DX(g_D3DD->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0, 1.0f, 0));
     }
 
-    ASSERT(IsRobot());
+    ASSERT(IsRobot() || IsCannon());
 
     RNeed(MR_Graph | MR_Matrix);
 
-    float h = AsRobot()->GetChassisHeight();
-    float ra = h;
-    /*
-        if (fff)
-        {
-            h += fff[0];
-            ra += fff[1];
-            h += fff[2];
-            ra += fff[3];
-        }
-    */
-
-    CMatrixRobotAI *r = AsRobot();
-    for (int i = 0; i < r->m_UnitCnt; ++i) {
-        if (r->m_Unit[i].m_Type == MRT_CHASSIS) {
-            switch (r->m_Unit[i].u1.s1.m_Kind) {
-                case RUK_CHASSIS_ANTIGRAVITY:
-                    h -= 5;
-                    ra -= 5.5;
-                    break;
-                case RUK_CHASSIS_HOVERCRAFT:
-                    h -= 7;
-                    break;
-                case RUK_CHASSIS_PNEUMATIC:
-                    h -= 9;
-                    ra -= 1;
-                    break;
-                case RUK_CHASSIS_TRACK:
-                    h -= 5;
-                    // ra -= 1;
-                    break;
-                case RUK_CHASSIS_WHEEL:
-                    h -= 8;
-                    ra += 3.5f;
-                    break;
-            }
-            break;
-        }
+    float h = 0, ra = 0;
+    if (IsCannon()) {
+        // A turret (TurretControl's panel): framed by its own bounds.
+        D3DXVECTOR3 center;
+        D3DXVec3TransformCoord(&center, &GetGeoCenter(), &m_Core->m_IMatrix);
+        h = center.z;
+        ra = GetRadius() * 1.3f;  // with a margin: a robot's picture is framed by its chassis height
+        // Seen from the head's side, wherever it turned: the picture of one kind of turret is always the same.
+        anglez -= AsCannon()->HeadAngle() - AsCannon()->m_Angle;
     }
-    for (int i = 0; i < r->m_UnitCnt; ++i) {
-        if (r->m_Unit[i].m_Type == MRT_ARMOR) {
-            switch (r->m_Unit[i].u1.s1.m_Kind) {
-                case RUK_ARMOR_DIPLOID:
-                    h += 9.0f;
-                    ra += 5.5f;
-                    break;
-                case RUK_ARMOR_PARAGON:
-                    h += 5.5f;
-                    ra += 3.0f;
-                    break;
-                case RUK_ARMOR_FULLSTACK:
-                    h += 13.5;
-                    ra += 6;
-                    break;
-                case RUK_ARMOR_BIREX:
-                    h += 7.0f;
-                    ra += 2.5f;
-                    break;
-                case RUK_ARMOR_TRIDENT:
-                    h += 10.0f;
-                    ra += 5.5f;
-                    break;
-                case RUK_ARMOR_MONOSTACK:
-                    h += 7.5f;
-                    ra += 6.5f;
-                    break;
+    else {
+        h = AsRobot()->GetChassisHeight();
+        ra = h;
+        /*
+            if (fff)
+            {
+                h += fff[0];
+                ra += fff[1];
+                h += fff[2];
+                ra += fff[3];
             }
-            break;
+        */
+
+        CMatrixRobotAI *r = AsRobot();
+        for (int i = 0; i < r->m_UnitCnt; ++i) {
+            if (r->m_Unit[i].m_Type == MRT_CHASSIS) {
+                switch (r->m_Unit[i].u1.s1.m_Kind) {
+                    case RUK_CHASSIS_ANTIGRAVITY:
+                        h -= 5;
+                        ra -= 5.5;
+                        break;
+                    case RUK_CHASSIS_HOVERCRAFT:
+                        h -= 7;
+                        break;
+                    case RUK_CHASSIS_PNEUMATIC:
+                        h -= 9;
+                        ra -= 1;
+                        break;
+                    case RUK_CHASSIS_TRACK:
+                        h -= 5;
+                        // ra -= 1;
+                        break;
+                    case RUK_CHASSIS_WHEEL:
+                        h -= 8;
+                        ra += 3.5f;
+                        break;
+                }
+                break;
+            }
+        }
+        for (int i = 0; i < r->m_UnitCnt; ++i) {
+            if (r->m_Unit[i].m_Type == MRT_ARMOR) {
+                switch (r->m_Unit[i].u1.s1.m_Kind) {
+                    case RUK_ARMOR_DIPLOID:
+                        h += 9.0f;
+                        ra += 5.5f;
+                        break;
+                    case RUK_ARMOR_PARAGON:
+                        h += 5.5f;
+                        ra += 3.0f;
+                        break;
+                    case RUK_ARMOR_FULLSTACK:
+                        h += 13.5;
+                        ra += 6;
+                        break;
+                    case RUK_ARMOR_BIREX:
+                        h += 7.0f;
+                        ra += 2.5f;
+                        break;
+                    case RUK_ARMOR_TRIDENT:
+                        h += 10.0f;
+                        ra += 5.5f;
+                        break;
+                    case RUK_ARMOR_MONOSTACK:
+                        h += 7.5f;
+                        ra += 6.5f;
+                        break;
+                }
+                break;
+            }
         }
     }
 
@@ -532,7 +547,7 @@ bool CMatrixMapStatic::RenderToTexture(SRenderTexture *rt, int n, /*float *fff,*
 
     ASSERT_DX(g_D3DD->BeginScene());
 
-    AsRobot()->SetInterfaceDraw(true);
+    SetInterfaceDraw(true);
     //    g_MatrixMap->m_Camera.SetFrustumCenter(*D3DXVec3TransformCoord(&fc, &fc, &m_Core->m_Matrix));
 
     D3DXMATRIX imatView;
@@ -541,12 +556,14 @@ bool CMatrixMapStatic::RenderToTexture(SRenderTexture *rt, int n, /*float *fff,*
     g_MatrixMap->m_Camera.SetDrawNowParams(imatView, *D3DXVec3TransformCoord(&fc, &fc, &m_Core->m_Matrix));
 
     CVectorObject::DrawBegin();
-    r->m_Unit[0].m_Graph->SetAnimByName(ANIMATION_NAME_STAY);
-    r->m_Unit[0].m_Graph->FirstFrame();
+    if (IsRobot()) {
+        AsRobot()->m_Unit[0].m_Graph->SetAnimByName(ANIMATION_NAME_STAY);
+        AsRobot()->m_Unit[0].m_Graph->FirstFrame();
+    }
     Draw();
     CVectorObject::DrawEnd();
 
-    AsRobot()->SetInterfaceDraw(false);
+    SetInterfaceDraw(false);
     // Return old
     g_MatrixMap->m_Camera.RestoreCameraParams();
 
@@ -714,13 +731,33 @@ void CMatrixMapStatic::ShowGroups(void) {
 
 // sorting mechanics
 
-PCMatrixMapStatic CMatrixMapStatic::objects[MAX_OBJECTS_PER_SCREEN];
+std::vector<PCMatrixMapStatic> CMatrixMapStatic::objects;
 int CMatrixMapStatic::objects_left;
 int CMatrixMapStatic::objects_rite;
 
+// How many of the nearest objects are drawn: the far view sees an area larger by its scale squared, so the
+// original's limit dropped its far objects before the fog.
+static int ObjectsPerScreen() {
+    const float scale = Mods::view_scale();
+    return int(float(MAX_OBJECTS_PER_SCREEN) * scale * scale + 0.5f);
+}
+
 void CMatrixMapStatic::SortBegin(void) {
-    objects_left = MAX_OBJECTS_PER_SCREEN >> 1;
-    objects_rite = MAX_OBJECTS_PER_SCREEN >> 1;
+    objects.clear();
+    objects_left = 0;
+    objects_rite = 0;
+}
+
+// The objects in the order the original's insertion kept (by depth, equal ones in the order taken); past the
+// limit the farthest are not drawn.
+void CMatrixMapStatic::SortFinish(void) {
+    std::stable_sort(objects.begin(), objects.end(),
+                     [](const CMatrixMapStatic *a, const CMatrixMapStatic *b) { return a->m_Z < b->m_Z; });
+    if (objects.size() > size_t(ObjectsPerScreen()))
+        objects.resize(ObjectsPerScreen());
+    objects_rite = int(objects.size());
+    for (CMatrixMapStatic *o : objects)
+        o->WillDraw();
 }
 
 void CMatrixMapStatic::SortEndRecalcTerainColor(void) {
@@ -813,75 +850,13 @@ void CMatrixMapStatic::Sort(const D3DXMATRIX &sort) {
         ShowGroups();
 #endif
 
-    bool noleft = (objects_left <= 0);
-    bool norite = (objects_rite >= MAX_OBJECTS_PER_SCREEN);
-
     m_Z = Double2Int((sort._13 * m_Core->m_GeoCenter.x + sort._23 * m_Core->m_GeoCenter.y +
                       sort._33 * m_Core->m_GeoCenter.z + sort._43) *
                      256.0);
 
-    if (objects_left == objects_rite) {
-        objects[objects_left] = this;
-        ++objects_rite;
-        return;
-    }
-    // seek index
-    int idx;
-    int idx0 = objects_left;
-    int idx1 = objects_rite;
-    for (;;) {
-        idx = ((idx1 - idx0) >> 1) + idx0;
-
-        if (m_Z < objects[idx]->m_Z) {
-            // left
-            if (idx == idx0)
-                break;
-            idx1 = idx;
-        }
-        else {
-            // rite
-            ++idx;
-            if (idx == idx1)
-                break;
-            idx0 = idx;
-        }
-    }
-
-    if (noleft && norite) {
-        if (idx == objects_rite)
-            return;  // far object
-        --objects_rite;
-        norite = false;
-        goto insert;
-    }
-
-    if (!norite && (idx == objects_rite)) {
-        ++objects_rite;
-        objects[idx] = this;
-    }
-    else if (!noleft && (idx == objects_left)) {
-        --objects_left;
-        objects[idx - 1] = this;
-    }
-    else {
-    insert:
-        int lc = (idx - objects_left);
-        int rc = (objects_rite - idx);
-        bool expand_left = norite || ((lc <= rc) && !noleft);
-
-        if (expand_left) {
-            memcpy(&objects[objects_left - 1], &objects[objects_left], sizeof(PCMatrixMapStatic) * lc);
-            --objects_left;
-            objects[idx - 1] = this;
-        }
-        else {
-            memcopy_back_dword(&objects[idx + 1], &objects[idx], rc);
-            ++objects_rite;
-            objects[idx] = this;
-        }
-    }
-
-    WillDraw();
+    // Ordered and cut in SortFinish (was an insertion here, which dropped the farthest past 2560 objects).
+    objects.push_back(this);
+    objects_rite = int(objects.size());
 }
 
 CMatrixMapStatic *CMatrixMapStatic::GetVisObj(int i) {
@@ -896,6 +871,7 @@ void CMatrixMapStatic::RemoveFromSorted(CMatrixMapStatic *ms) {
     for (int i = objects_left; i < objects_rite; ++i) {
         if (objects[i] == ms) {
             objects[i] = objects[--objects_rite];
+            objects.pop_back();
             return;
         }
     }

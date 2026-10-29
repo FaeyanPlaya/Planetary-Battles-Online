@@ -8,6 +8,7 @@
 #include "../MatrixInstantDraw.hpp"
 #include "../MatrixSampleStateManager.hpp"
 #include "../Text/Render.hpp"
+#include "../SettingsModel.hpp"
 
 #include "MatrixSoundManager.hpp"
 #include "StringConstants.hpp"
@@ -46,7 +47,16 @@ CMatrixHint *CMatrixHint::Build(int border, const std::wstring &soundin, const s
     CBitmap bmps;
     CBlockPar *bph = NULL;
     if (border >= 0) {
-        bph = g_MatrixData->BlockGet(PAR_SOURCE_HINTS)->BlockGetNE(utils::format(L"%d", border));
+        CBlockPar *hints = g_MatrixData->BlockGet(PAR_SOURCE_HINTS);
+        bph = hints->BlockGetNE(utils::format(L"%d", border));
+        // This project's windows (SettingsModel::window_border): the game's large panel (border 2) without the help
+        // mark low in its left top corner. LeftTopPlain=x,y: from there on the left piece's panel covers the corner (its
+        // rounded edge, left of x, and its top, above y, stay).
+        if (!bph && border == SettingsModel::window_border && hints->BlockGetNE(L"2")) {
+            bph = hints->BlockGetAdd(utils::format(L"%d", border));
+            bph->CopyFrom(*hints->BlockGet(L"2"));
+            bph->ParSetAdd(L"LeftTopPlain", L"20,39");  // the mark is right and below; 75 - 39 keeps the 3-row stripes
+        }
 
         if (bph) {
             std::wstring src;
@@ -336,6 +346,12 @@ CMatrixHint *CMatrixHint::Build(int border, const std::wstring &soundin, const s
     // lt
     if (parts[0].present) {
         bmpf.Copy(CPoint(0, 0), parts[0].size, bmps, parts[0].pos);
+        const auto plain = bph ? bph->ParGetNE(L"LeftTopPlain") : ParamParser{};
+        const CPoint from = plain.GetCountPar(L",") == 2 ? CPoint(plain.GetStrPar(0, L",").GetInt(), plain.GetStrPar(1, L",").GetInt())
+                                                         : CPoint(0, 0);
+        if (from.y > 0 && from.y < parts[0].size.y && from.x >= 0 && from.x < parts[3].size.x && parts[3].present)
+            bmpf.Tile(from, CPoint(parts[0].size.x - from.x, parts[0].size.y - from.y), bmps,
+                      CPoint(parts[3].pos.x + from.x, parts[3].pos.y), CPoint(parts[3].size.x - from.x, parts[3].size.y));
     }
 
     // rt

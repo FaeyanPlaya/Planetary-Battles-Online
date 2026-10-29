@@ -5,6 +5,7 @@
 #include "BattleChoice.hpp"
 #include "random.hpp"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,12 @@ struct Values {
     GroupCountMode group_counts = GroupCountMode::Corrected;
     PlaceContainmentMode place_containment = PlaceContainmentMode::Corrected;
     ZeroXTraceMode zero_x_trace = ZeroXTraceMode::Corrected;
+    // The battle mods (Mods ids) of this person's own battles and lobbies, last chosen as a host; nullopt: never
+    // chosen, the mods' own defaults (Mods=Default; Mods=None: none).
+    std::optional<std::vector<std::string>> mods;
+    // This person's own mods (PersonalMods=, the same forms): what they see and how they control, in every battle.
+    std::optional<std::vector<std::string>> personal_mods;
+    int far_view_scale = 200;  // FarViewScale=: how far the far view reaches, percent of the original's (150-300)
     bool operator==(const Values &) const = default;
 };
 

@@ -27,6 +27,7 @@
 #include "../MatrixObject.hpp"
 #include "../MatrixRenderPipeline.hpp"
 #include "../MatrixSkinManager.hpp"
+#include "../Mods.hpp"
 #include <math.h>
 
 #define M_PI 3.14159265358979323846
@@ -436,6 +437,13 @@ void SEffectHandler::Release(void)
         effect = NULL;
     }
 }
+
+float MaxEffectDistanceSq() {
+    const float distance = 3000.0f * Mods::view_scale();
+    return distance * distance;
+}
+
+int EffectCap(int original) { return int(float(original) * Mods::view_scale() + 0.5f); }
 
 void CMatrixEffect::CreateExplosion(const D3DXVECTOR3 &pos, const SExplosionProperties &props, bool fire) {
     // Created only near the camera, so the effect's whole lifetime is presentation.

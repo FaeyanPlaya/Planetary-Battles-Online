@@ -35,7 +35,7 @@ void execute(const Command &command) {
 constexpr const char *g_names[] = {"",           "stop",         "move",         "attack",    "capture",
                                    "patrol",     "bomb",         "repair",       "auto-attack", "auto-capture",
                                    "auto-defence", "build-robot", "build-turret", "cancel-build", "maintenance",
-                                   "surrender",  "drive",        "rejoin"};
+                                   "surrender",  "drive",        "rejoin",       "turret-attack", "turret-dismantle"};
 
 }  // namespace
 

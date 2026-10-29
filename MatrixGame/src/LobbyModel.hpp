@@ -64,9 +64,12 @@ struct Layout {
     static constexpr int status_y = 508;
     static constexpr int legend_y = 532;
     static constexpr int buttons_y = 566;
-    static constexpr int primary_x = 330;
-    static constexpr int leave_x = 580;
+    static constexpr int mods_x = 205;  // shows the mods in the list's place, and back to the maps
+    static constexpr int primary_x = 455;
+    static constexpr int leave_x = 705;
     static constexpr int button_width = 160;
+    static constexpr int mod_rows = 3;  // a mod in the list: its name, then two lines of its description
+    static constexpr int toggle_size = 16;  // a mod's switch, right of its name: a round button, lit when on
 };
 
 // A length of the grid in pixels at this scale.
@@ -82,6 +85,13 @@ struct MapRow {
 // The map list's order, chosen by its column headers.
 enum class MapSort { Name, People };
 
+// A battle mod in the lobby's list: the host's installed ones; a client's, with those the host chose that it lacks.
+struct ModRow {
+    std::wstring name, description;
+    bool on = false;  // the host chose it for the battle
+    enum class Problem { None, Missing, Differs } problem = Problem::None;  // a client's copy of a mod that is on
+};
+
 // Separator lines between the lobby's parts (the game's statistics lines, stretched).
 struct Line {
     int x, y, length;
@@ -89,16 +99,30 @@ struct Line {
 };
 const std::vector<Line> &separators();
 std::wstring line_bitmap(int index);  // the runtime bitmap name of separators()[index]
+std::wstring toggle_bitmap(bool on);   // the runtime bitmap name of a mod's switch (Layout::toggle_size square)
+
+// Why this PC cannot play the lobby's map.
+struct MapProblem {
+    enum class Kind { None, PackMissing, PackDiffers, FilesMissing };
+    Kind kind = Kind::None;
+    std::wstring what;  // PackMissing: the map mod's id; PackDiffers: its name; FilesMissing: the first file lacking
+    int count = 0;      // FilesMissing: how many files lack (as far as counted)
+    bool operator==(const MapProblem &) const = default;
+};
 
 struct Screen {
     Language language = Language::English;
     bool host = true;
+    bool local = false;        // the lobby without a network: the host alone, the AI plays the other sides
     std::vector<MapRow> maps;
     MapSort sort = MapSort::Name;
     std::vector<int> order;    // the list's rows as indexes into `maps`; empty: in the order of `maps`
     int selected = -1;         // the lobby's map in `maps`; -1 none
     std::wstring missing_map;  // a client's: the host's map that this PC does not have
     bool map_differs = false;  // a client's: this PC's file of the host's map is another one
+    int map_progress = -1;     // a client's: percent of the host's map file received while it comes (MapShare)
+    bool map_failed = false;   // a client's: the host's map file could not be received
+    MapProblem map_problem{};  // the map's map mod or files, on this PC
     int page = 0;
     std::vector<Lobby::Person> people;
     int you = 0;
@@ -112,6 +136,9 @@ struct Screen {
     int delay = 0;             // Lobby::State::delay: ms, 0 auto
     int auto_delay = 0;        // Lobby::State::auto_delay: ms, 0 measuring
     bool dropped_ai = true;    // Lobby::State::dropped_ai
+    std::vector<ModRow> mods;
+    bool mods_view = false;    // the list shows the mods
+    int mods_page = 0;
     double scale = 1;          // pixels per unit of Layout
     // The drawn width of a text in a font; empty (tests): texts are not shortened.
     std::function<int(const std::wstring &, const wchar_t *font)> text_width;
@@ -130,7 +157,13 @@ Fitted fit_row(const Screen &screen, const std::wstring &text, int width);
 
 // A lobby is for two people at least: a map is offered when it takes everyone in, and two at least.
 bool offered(const Screen &screen, int index);
+// The host starts once everyone is ready; the lobby without a network, at once.
 bool can_start(const Screen &screen);
+// A client has every mod the host chose, the same as the host's.
+bool mods_fine(const Screen &screen);
+// This PC has the map's map mod (the host's) and every file the map names.
+bool map_fine(const Screen &screen);
+int mods_page_count(const Screen &screen);
 // Two people or more chose one side: the start draws who keeps it.
 bool sides_coincide(const Screen &screen);
 int page_count(const Screen &screen);
@@ -148,7 +181,8 @@ struct Hit {
     int manual = 0;  // 1 the switch of direct robot control, 2 of its bonus, 3 who plays a dropped person's side
     int side = 0;    // -1 or +1: an arrow of this person's side
     int sort = -1;   // a list header: the order it chooses (MapSort)
-    int action = 0;  // 1 the primary button (start, ready), -1 leave
+    int action = 0;  // 1 the primary button (start, ready), -1 leave, 2 the mods' button
+    int mod = -1;    // the mods' list: a mod's rows (index into Screen::mods)
     int person = -1; // the host: a client's name (asks whether to send them away)
     int kick = 0;    // the host, in the asking row: 1 send away, -1 not
     int delay = 0;   // -1 or +1: a delay arrow

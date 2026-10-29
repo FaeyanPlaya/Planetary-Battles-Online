@@ -8,6 +8,7 @@
 
 #include "MatrixRobot.hpp"
 #include "DelayedDamage.hpp"
+#include "Mods.hpp"
 #include "MatrixObjectBuilding.hpp"
 #include "Logic/MatrixRule.h"
 #include "MatrixObjectCannon.hpp"
@@ -352,7 +353,10 @@ void CMatrixRobotAI::LogicTakt(int ms) {
         return;
     }
 
-    if (GetBase()) {
+    // A robot with a base (one just built, leaving its lift; or one capturing it) dies after 10 s with it, so that a
+    // robot stuck on a lift frees the base. A capture held up longer (its lift kept from closing) killed the capturer;
+    // the CaptureNoTimeout switch (the battle fixes mod) stops the count while the robot captures.
+    if (GetBase() && !(Mods::switches().capture_no_timeout && FindOrderLikeThat(ROT_CAPTURE_FACTORY))) {
         m_TimeWithBase += ms;
         if (m_TimeWithBase > 10000) {
             GetBase()->Close();
@@ -1271,8 +1275,10 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                 else if (m_OrdersList[0].GetOrderPhase() == ROP_CAPTURE_SETTING_UP) {
                     // kshhhhchk "setting up devices" kshhhhchk
                     // The lift began to close under the robot (the base's new robot left it or died on it): raise
-                    // it again, as on the way in.
-                    if (factory->IsBase() && factory->m_State != BASE_OPENED && factory->m_State != BASE_OPENING)
+                    // it again, as on the way in (CaptureLift switch; the original game left the robot standing in
+                    // the air where the top had been).
+                    if (Mods::switches().capture_lift && factory->IsBase() && factory->m_State != BASE_OPENED &&
+                        factory->m_State != BASE_OPENING)
                         factory->Open();
                     if (RotateRobot(
                                 D3DXVECTOR3(m_PosX + factory->GetMatrix()._21, m_PosY + factory->GetMatrix()._22, 0))) {
@@ -1293,7 +1299,8 @@ void CMatrixRobotAI::LogicTakt(int ms) {
 
                     // kshhhhchk "captureing factory" kshhhhchk
                     if (factory->IsBase()) {
-                        if (m_CurrState != ROBOT_BASE_CAPTURE && factory->m_State != BASE_OPENED) {
+                        if (Mods::switches().capture_lift && m_CurrState != ROBOT_BASE_CAPTURE &&
+                            factory->m_State != BASE_OPENED) {
                             // Not riding the lift yet: it goes down with the robot only from the top (it stood on
                             // it in the air when something else had closed it).
                             if (factory->m_State != BASE_OPENING)
@@ -4431,8 +4438,10 @@ void CMatrixRobotAI::CalcRobotMass() {
 
 // A robot on a base's lift (leaving it, or capturing the base) stands off the move grid. The path check that
 // sorts the enemies a robot sees into reachable and ignored failed there both ways: the robot ignored every
-// enemy it saw for 5 s at a time, and every enemy ignored it, point-blank. Seen and in reach is enough there.
+// enemy it saw for 5 s at a time, and every enemy ignored it, point-blank. Seen and in reach is enough there
+// with the LiftSight switch (Planetary Battles Online mod); the original game keeps the check.
 bool CMatrixRobotAI::OffMoveGrid(const CPoint &from, const CPoint &to) {
+    if (!Mods::switches().lift_sight) return false;
     const byte mm = m_Unit[0].u1.s1.m_Kind - 1;  // as the path check takes it
     return g_MatrixMap->FindNearPlace(mm, from) < 0 || g_MatrixMap->FindNearPlace(mm, to) < 0;
 }

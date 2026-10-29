@@ -7,6 +7,8 @@
 #include "WindowDisplay.hpp"
 #include "BattleRules.hpp"
 #include "Commands.hpp"
+#include "Mods.hpp"
+#include "MatrixCamera.hpp"
 
 namespace StandaloneSettings {
 namespace {
@@ -20,6 +22,10 @@ void apply_immediate(const Values &values) {
     g_Config.m_CamMoveSpeed = camera_speed * static_cast<float>(values.camera_speed) / 100.0f;
     SoundBridge::master_volume(static_cast<float>(values.sound_volume) / 100.0f);
     SoundBridge::music_volume(static_cast<float>(values.music_volume) / 100.0f);
+    // This person's own mods: drawing and input only, so at once, in a battle too.
+    Mods::set_personal(values.personal_mods ? *values.personal_mods : Mods::default_personal(Mods::installed()),
+                       static_cast<float>(values.far_view_scale) / 100.0f);
+    SetViewScale(Mods::view_scale());
     if (battle_rules_locked())
         return;
     BattleRules::apply_modes(battle_rules(values));
@@ -27,10 +33,12 @@ void apply_immediate(const Values &values) {
 }  // namespace
 
 BattleRules::Rules battle_rules(const Values &values) {
-    return {values.random, values.delayed_damage == DamageAttribution::Original,
-            values.group_counts == GroupCountMode::Original,
-            values.place_containment == PlaceContainmentMode::Original,
-            values.zero_x_trace == ZeroXTraceMode::Original};
+    BattleRules::Rules rules{values.random, values.delayed_damage == DamageAttribution::Original,
+                             values.group_counts == GroupCountMode::Original,
+                             values.place_containment == PlaceContainmentMode::Original,
+                             values.zero_x_trace == ZeroXTraceMode::Original};
+    rules.mods = values.mods ? *values.mods : Mods::default_battle(Mods::installed());
+    return rules;
 }
 
 void apply_startup(const Values &values, SRobotsSettings &settings) {

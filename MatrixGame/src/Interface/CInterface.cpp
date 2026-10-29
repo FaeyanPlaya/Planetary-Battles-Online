@@ -26,6 +26,7 @@
 #include "MatrixHint.hpp"
 #include "../MatrixFormGame.hpp"
 #include "../BattleRules.hpp"
+#include "../SettingsModel.hpp"
 
 #include "../Text/Render.hpp"
 #include <input.hpp>
@@ -1385,6 +1386,14 @@ void CInterface::Init(void) {
             CMatrixRobotAI *cur_r = NULL;
             CMatrixFlyer *cur_f = NULL;
 
+            // TurretControl: the turret the person is in, or the one selected.
+            CMatrixCannon *sel_turret = NULL;
+            if (player_side->IsTurretMode())
+                sel_turret = player_side->GetArcadedObject()->AsCannon();
+            else if (player_side->m_CurrSel == TURRET_SELECTED && player_side->m_ActiveObject &&
+                     player_side->m_ActiveObject->IsCannon())
+                sel_turret = player_side->m_ActiveObject->AsCannon();
+
             if (player_side->IsRobotMode()) {
                 cur_r = player_side->GetArcadedObject()->AsRobot();
                 robot_sel = true;
@@ -1494,7 +1503,16 @@ void CInterface::Init(void) {
                 // Always visible
                 // elements////////////////////////////////////////////////////////////////////////////////////
                 if (pElement->m_strName == IF_NAME_LABEL) {
-                    if (gsel || player_side->IsArcadeMode()) {
+                    if (sel_turret) {
+                        const std::wstring turret_name = g_MatrixData->BlockGet(IF_LABELS_BLOCKPAR)
+                                                                 ->BlockGet(L"Turrets")
+                                                                 ->ParGet(std::format(L"Tur{}_Name", sel_turret->m_Num));
+                        if (name != turret_name) {
+                            name = turret_name;
+                            new_name = true;
+                        }
+                    }
+                    else if (gsel || player_side->IsArcadeMode()) {
                         if ((rsel || robot_sel) && cur_r) {
                             if (name != cur_r->m_Name) {
                                 name = cur_r->m_Name;
@@ -1536,7 +1554,15 @@ void CInterface::Init(void) {
                     }
                 }
                 else if (pElement->m_strName == IF_LIVES_LABEL) {
-                    if (gsel || player_side->IsArcadeMode()) {
+                    if (sel_turret) {
+                        // A tenth of the inner value, as robots and buildings show theirs.
+                        if (lives != sel_turret->GetHitPoint() / 10) {
+                            lives = sel_turret->GetHitPoint() / 10;
+                            max_lives = sel_turret->GetMaxHitPoint() / 10;
+                            new_lives = true;
+                        }
+                    }
+                    else if (gsel || player_side->IsArcadeMode()) {
                         if ((rsel || robot_sel) && cur_r) {
                             if (lives != cur_r->GetHitPoint()) {
                                 lives = cur_r->GetHitPoint();
@@ -1593,7 +1619,7 @@ void CInterface::Init(void) {
                     pElement->SetVisibility(true);
                 }
 
-                if (pElement->m_strName == IF_NAME_LABEL && player_side->m_CurrSel != NOTHING_SELECTED) {
+                if (pElement->m_strName == IF_NAME_LABEL && (player_side->m_CurrSel != NOTHING_SELECTED || sel_turret)) {
                     if (new_name) {
                         pElement->m_StateImages[IFACE_NORMAL].m_Caption = name;
                         pElement->m_StateImages[IFACE_NORMAL].SetStateText(true);
@@ -1660,7 +1686,7 @@ void CInterface::Init(void) {
                         }
                     }
                 }
-                if (pElement->m_strName == IF_LIVES_LABEL && player_side->m_CurrSel != NOTHING_SELECTED) {
+                if (pElement->m_strName == IF_LIVES_LABEL && (player_side->m_CurrSel != NOTHING_SELECTED || sel_turret)) {
                     if (new_lives) {
                         pElement->m_StateImages[IFACE_NORMAL].m_Caption =
                             utils::format(L"%d/%d", Float2Int(lives), Float2Int(max_lives));
@@ -1833,6 +1859,30 @@ void CInterface::Init(void) {
                     }
                     else if (pElement->m_strName == IF_ZAGLUSHKA1) {
                         pElement->SetVisibility(true);
+                    }
+                }
+
+                // TurretControl: the selected turret's panel (target, cancel, manual control, dismantle), or the way
+                // out of the turret the person is in.
+                if (sel_turret) {
+                    sel_turret->CreateProgressBarClone(m_xPos + 68, m_yPos + 179, 68, PBC_CLONE2);
+                    if (player_side->IsTurretMode()) {
+                        if (pElement->m_strName == IF_LEAVE_ROBOT || pElement->m_strName == IF_MANUAL_BG)
+                            pElement->SetVisibility(true);
+                    }
+                    else if (!ordering) {
+                        if (pElement->m_strName == IF_ORDER_FIRE || pElement->m_strName == IF_ORDER_STOP ||
+                            pElement->m_strName == IF_ORDER_CANCEL || pElement->m_strName == IF_MANUAL_BG) {
+                            pElement->SetVisibility(true);
+                        }
+                        else if (pElement->m_strName == IF_ENTER_ROBOT && BattleRules::manual_control()) {
+                            pElement->SetVisibility(true);
+                        }
+                        else if (IS_ORDER_GLOW(pElement->m_nId)) {
+                            const int glow = pElement->m_nId - ORDERS_GLOW_ID;
+                            if ((glow == 0 && !sel_turret->OrderTarget()) || (glow == 3 && sel_turret->OrderTarget()))
+                                pElement->SetVisibility(true);
+                        }
                     }
                 }
 
@@ -3589,6 +3639,21 @@ void CIFaceList::LogicTakt(int ms) {
             }
         }
     }
+    else if (ps->IsTurretMode()) {
+        // In a turret (TurretControl): as in a robot, red over an enemy in reach, yellow beyond, blue elsewhere.
+        if (g_IFaceList->m_InFocus == INTERFACE) {
+            g_MatrixMap->m_Cursor.Select(CURSOR_ARROW);
+        }
+        else if (g_MatrixMap->IsTraceNonPlayerObj()) {
+            CMatrixCannon *cannon = ps->GetArcadedObject()->AsCannon();
+            const D3DXVECTOR3 to = g_MatrixMap->m_TraceStopPos - cannon->GetGeoCenter();
+            g_MatrixMap->m_Cursor.Select(D3DXVec3LengthSq(&to) <= POW2(cannon->GetFireRadius()) ? CURSOR_CROSS_RED
+                                                                                               : CURSOR_CROSS_YELLOW);
+        }
+        else {
+            g_MatrixMap->m_Cursor.Select(CURSOR_CROSS_BLUE);
+        }
+    }
     else {
         CPoint mp = g_MatrixMap->m_Cursor.GetPos();
 
@@ -3962,7 +4027,7 @@ void CIFaceList::SlideFocusedInterfaceLeft() {
 
 void CIFaceList::LiveRobot(void) {
     CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
-    if (ps->IsRobotMode()) {
+    if (ps->IsRobotMode() || ps->IsTurretMode()) {
         // A command, so every peer takes the person out of the robot at the same step.
         ps->RequestDrive(Commands::DriveAction::Leave, ps->GetArcadedObject());
     }
@@ -3983,15 +4048,23 @@ void CIFaceList::RobotLeft(CMatrixMapStatic *obj) {
     else if (obj && obj->GetObjectType() == OBJECT_TYPE_FLYER) {
         type = FLYER;
     }
+    else if (obj && obj->IsCannon() && obj->AsCannon()->IsBuilt()) {
+        type = TURRET;  // the turret left stays selected (TurretControl)
+    }
 
     CMatrixGroup *grp = ps->GetCurSelGroup();
 
     grp->RemoveAll();
-    if (type != NOTHING) {  // a robot that died in the person's hands is not selected
-        grp->AddObject(obj, -4);
-        ps->SetCurGroup(ps->CreateGroupFromCurrent());
+    if (type == TURRET) {
+        ps->Select(TURRET, obj);
     }
-    ps->Select(type, NULL);
+    else {
+        if (type != NOTHING) {  // a robot that died in the person's hands is not selected
+            grp->AddObject(obj, -4);
+            ps->SetCurGroup(ps->CreateGroupFromCurrent());
+        }
+        ps->Select(type, NULL);
+    }
 
     CInterface *ifs = g_IFaceList->m_First;
     while (ifs) {
@@ -4006,6 +4079,12 @@ void CIFaceList::RobotLeft(CMatrixMapStatic *obj) {
 
 void CIFaceList::EnterRobot(bool pos) {
     CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
+    // The selected turret is entered by a command, as a robot (TurretControl).
+    if (ps->m_CurrSel == TURRET_SELECTED && ps->m_ActiveObject && ps->m_ActiveObject->IsCannon()) {
+        if (!ps->IsArcadeMode())
+            ps->RequestDrive(Commands::DriveAction::Enter, ps->m_ActiveObject);
+        return;
+    }
     if (ps->GetCurGroup() && ps->GetCurGroup()->m_FirstObject) {
         CMatrixMapStatic *o = ps->GetCurGroup()->m_FirstObject->GetObject();
         if (pos) {
@@ -4109,12 +4188,23 @@ void __stdcall CIFaceList::PlayerAction(void *object) {
         SETFLAG(m_IfListFlags, PREORDER_BOMB);
         SETFLAG(m_IfListFlags, ORDERING_MODE);
     }
+    else if (element->m_strName == IF_ORDER_CANCEL && ps->m_CurrSel == TURRET_SELECTED && !ps->IsArcadeMode() &&
+             !FLAG(m_IfListFlags, ORDERING_MODE)) {
+        // The cross of a selected turret dismantles it (TurretControl); not the second click of a double click
+        // whose first one cancelled an order at the same place.
+        if (GetTickCount() - m_OrderCancelTime > 500)
+            ps->IssueTurretOrder(Commands::Type::TurretDismantle, NULL);
+    }
     else if (element->m_strName == IF_ORDER_CANCEL) {
+        m_OrderCancelTime = GetTickCount();
         if (ps->m_CurrentAction == BUILDING_TURRET) {
             ps->m_CannonForBuild.Delete();
             ps->m_CurrentAction = NOTHING_SPECIAL;
         }
         ResetOrderingMode();
+    }
+    else if (element->m_strName == IF_ORDER_STOP && ps->m_CurrSel == TURRET_SELECTED) {
+        ps->IssueTurretOrder(Commands::Type::TurretAttack, NULL);  // the turret chooses its targets again
     }
     else if (element->m_strName == IF_ORDER_STOP) {
         ps->IssueGroupOrder(Commands::Type::Stop, D3DXVECTOR3(0, 0, 0), NULL);
@@ -4528,6 +4618,42 @@ void CIFaceList::CreatePersonal() {
     }
 }
 
+void CIFaceList::CreateTurretPersonal(CMatrixCannon *turret) {
+    DeletePersonal();
+    SRenderTexture rt[1];
+    rt[0].ts = TEXSIZE_256;
+    if (!turret->RenderToTexture(rt, 1))
+        return;
+    m_TurretPicture = rt[0].tex;
+
+    for (CInterface *interfaces = m_First; interfaces; interfaces = interfaces->m_NextInterface) {
+        if (interfaces->m_strName != IF_MAIN)
+            continue;
+        // The place and size of a selected robot's picture (CreatePersonal).
+        CIFaceImage *image = HNew(g_MatrixHeap) CIFaceImage;
+        image->m_Image = m_TurretPicture;
+        image->m_Height = 114;
+        image->m_Width = 114;
+        image->m_NextImage = NULL;
+        image->m_PrevImage = NULL;
+        image->m_strName = L"";
+        image->m_Type = IFACE_IMAGE;
+        image->m_TexHeight = 256;
+        image->m_TexWidth = 256;
+        image->m_xTexPos = 0;
+        image->m_yTexPos = 0;
+        CIFaceStatic *s = interfaces->CreateStaticFromImage(81, 61, 0.0000001f, *image, true);
+        if (s) {
+            FSET(ON_PRESS, s, g_IFaceList, CIFaceList::JumpToRobot);
+            s->SetVisibility(true);
+            s->m_nId = PERSONAL_ICON_ID;
+        }
+        interfaces->SortElementsByZ();
+        HDelete(CIFaceImage, image, g_MatrixHeap);
+        break;
+    }
+}
+
 void CIFaceList::DeletePersonal() {
     DTRACE();
     CMatrixSideUnit *player_side = g_MatrixMap->GetPlayerSide();
@@ -4551,6 +4677,12 @@ void CIFaceList::DeletePersonal() {
         interfaces = interfaces->m_NextInterface;
     }
 
+    // the turret's picture is the interface's own
+    if (m_TurretPicture) {
+        g_Cache->Destroy(m_TurretPicture);
+        m_TurretPicture = NULL;
+    }
+
     // progress bar
     CMatrixMapStatic *s = CMatrixMapStatic::GetFirstLogic();
 
@@ -4563,6 +4695,9 @@ void CIFaceList::DeletePersonal() {
         }
         else if (s->IsBuilding()) {
             s->AsBuilding()->DeleteProgressBarClone(PBC_CLONE2);
+        }
+        else if (s->IsCannon()) {
+            s->AsCannon()->DeleteProgressBarClone(PBC_CLONE2);
         }
 
         s = s->GetNextLogic();
@@ -5085,6 +5220,37 @@ bool CIFaceList::CorrectCoordinates(int screen_width, int screen_height, int &po
     return true;
 }
 
+std::wstring CIFaceList::TurretHint(const std::wstring &element) {
+    CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
+    const bool in_turret = ps->IsTurretMode();
+    if (!in_turret && (ps->m_CurrSel != TURRET_SELECTED || ps->IsArcadeMode()))
+        return {};
+    const bool ru = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
+                    SettingsModel::Language::Russian;
+    const wchar_t *text = nullptr;
+    if (in_turret) {
+        if (element == IF_LEAVE_ROBOT)
+            text = ru ? L"\u0412\u044b\u0439\u0442\u0438 \u0438\u0437 \u0442\u0443\u0440\u0435\u043b\u0438 (\u041f\u0440\u043e\u0431\u0435\u043b)." : L"Leave the turret (Space).";
+    }
+    else if (element == IF_ORDER_FIRE) {
+        text = ru ? L"\u0410\u0442\u0430\u043a\u043e\u0432\u0430\u0442\u044c \u0446\u0435\u043b\u044c (A). \u0422\u0443\u0440\u0435\u043b\u044c \u0431\u044c\u0451\u0442 \u0435\u0451, \u043f\u043e\u043a\u0430 \u0432\u0438\u0434\u0438\u0442, \u043f\u043e\u0442\u043e\u043c \u0441\u043d\u043e\u0432\u0430 \u0432\u044b\u0431\u0438\u0440\u0430\u0435\u0442 \u0446\u0435\u043b\u0438 \u0441\u0430\u043c\u0430."
+                  : L"Attack a target (A). The turret fires at it while it sees it, then chooses its targets again.";
+    }
+    else if (element == IF_ORDER_STOP) {
+        text = ru ? L"\u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u043f\u0440\u0438\u043a\u0430\u0437 (S): \u0442\u0443\u0440\u0435\u043b\u044c \u0441\u0430\u043c\u0430 \u0432\u044b\u0431\u0438\u0440\u0430\u0435\u0442 \u0446\u0435\u043b\u0438." : L"Cancel the order (S): the turret chooses its targets.";
+    }
+    else if (element == IF_ORDER_CANCEL && !FLAG(m_IfListFlags, ORDERING_MODE)) {
+        text = ru ? L"\u0420\u0430\u0437\u043e\u0431\u0440\u0430\u0442\u044c \u0442\u0443\u0440\u0435\u043b\u044c (Delete). \u041c\u0435\u0441\u0442\u043e \u043e\u0441\u0432\u043e\u0431\u043e\u0434\u0438\u0442\u0441\u044f, \u0432\u0435\u0440\u043d\u0451\u0442\u0441\u044f \u043f\u043e\u043b\u043e\u0432\u0438\u043d\u0430 \u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u0438 \u0441 \u0443\u0447\u0451\u0442\u043e\u043c \u043f\u043e\u0432\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0439."
+                  : L"Dismantle the turret (Delete). Its place frees; half its price comes back, less its damage.";
+    }
+    else if (element == IF_ENTER_ROBOT) {
+        text = ru ? L"\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0442\u044c \u0442\u0443\u0440\u0435\u043b\u044c\u044e \u0432\u0440\u0443\u0447\u043d\u0443\u044e (\u041f\u0440\u043e\u0431\u0435\u043b)." : L"Control the turret by hand (Space).";
+    }
+    if (!text)
+        return {};
+    return std::format(L"0|_COLOR:FFCBCCCE|_FONT:Font.2Small|_WIDTH:175|_ALIGN:0:0|_TEXT:{}", text);
+}
+
 void CIFaceList::AddHintReplacements(const std::wstring &element_name) {
     CBlockPar *repl = g_MatrixData->BlockGet(PAR_REPLACE);
     CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
@@ -5238,6 +5404,13 @@ void __stdcall CIFaceList::JumpToBuilding(void*)
 void __stdcall CIFaceList::JumpToRobot(void*)
 {
     CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
+
+    // A selected turret's picture (TurretControl) shows the turret.
+    if (ps->m_CurrSel == TURRET_SELECTED && !ps->IsArcadeMode() && ps->m_ActiveObject) {
+        const D3DXVECTOR3 &pos = ps->m_ActiveObject->GetGeoCenter();
+        g_MatrixMap->m_Camera.SetXYStrategy(D3DXVECTOR2(pos.x, pos.y));
+        return;
+    }
 
     if (!ps->GetCurGroup())
         return;

@@ -2,6 +2,7 @@
 #include "StandaloneSettings.hpp"
 #include "RandomConfiguration.hpp"
 #include "MapCatalog.hpp"
+#include "Mods.hpp"
 
 #include "CBlockPar.hpp"
 #include "CException.hpp"
@@ -24,7 +25,8 @@ constexpr std::array keys{L"RandomGenerator", L"ResolutionWidth", L"ResolutionHe
                           L"FullscreenMode",  L"SoundVolume",     L"StencilShadows",   L"ProjectedShadows",
                           L"Skybox",          L"RobotShadows",    L"CameraSpeed",      L"DelayedDamage",
                           L"Map",             L"GroupCounts",      L"BattleBonus",      L"PlaceContainment",
-                          L"ZeroXTrace",      L"MusicVolume"};
+                          L"ZeroXTrace",      L"MusicVolume",      L"Mods",             L"PersonalMods",
+                          L"FarViewScale"};
 
 std::optional<std::wstring> single(const Base::CBlockPar &options, const wchar_t *key) {
     if (options.ParCount(key) != 1) return std::nullopt;
@@ -74,6 +76,23 @@ std::optional<BattleChoice::Bonus> battle_bonus(const std::wstring &value) {
     if (value == L"airsupport") return BattleChoice::Bonus::AirSupport;
     if (value == L"reinforcedarmor") return BattleChoice::Bonus::ReinforcedArmor;
     return std::nullopt;
+}
+
+// Default, None or mod ids separated by commas.
+std::optional<std::optional<std::vector<std::string>>> mod_list(const std::wstring &value) {
+    if (value == L"default") return std::optional<std::vector<std::string>>{};
+    if (value == L"none") return std::optional<std::vector<std::string>>{std::vector<std::string>{}};
+    std::vector<std::string> ids;
+    std::wstring_view list = value;
+    while (!list.empty()) {
+        const auto comma = list.find(L',');
+        const std::string id = Mods::id_of(utils::trim(std::wstring(list.substr(0, comma))));
+        list = comma == std::wstring_view::npos ? std::wstring_view{} : list.substr(comma + 1);
+        if (id.empty()) return std::nullopt;
+        if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+    }
+    if (ids.empty()) return std::nullopt;
+    return std::optional<std::vector<std::string>>{ids};
 }
 
 std::optional<PlaceContainmentMode> place_containment(const std::wstring &value) {
@@ -132,6 +151,12 @@ std::wstring value_text(const Values &values, std::wstring_view key) {
     if (key == L"PlaceContainment") return utils::to_wstring(name(values.place_containment));
     if (key == L"ZeroXTrace") return utils::to_wstring(name(values.zero_x_trace));
     if (key == L"MusicVolume") return std::to_wstring(values.music_volume);
+    if (key == L"FarViewScale") return std::to_wstring(values.far_view_scale);
+    if (key == L"Mods" || key == L"PersonalMods") {
+        const auto &mods = key == L"Mods" ? values.mods : values.personal_mods;
+        if (!mods) return L"Default";
+        return mods->empty() ? L"None" : utils::to_wstring(Mods::join(*mods));
+    }
     throw std::logic_error("Unknown settings key");
 }
 
@@ -298,6 +323,10 @@ Selection resolve(const Base::CBlockPar &options) {
     read(options, L"ZeroXTrace", values.zero_x_trace, zero_x_trace, selection);
     read(options, L"MusicVolume", values.music_volume,
          [](const std::wstring &value) { return percent(value, 0, 100); }, selection);
+    read(options, L"Mods", values.mods, mod_list, selection);
+    read(options, L"PersonalMods", values.personal_mods, mod_list, selection);
+    read(options, L"FarViewScale", values.far_view_scale,
+         [](const std::wstring &value) { return percent(value, 150, 300); }, selection);
     return selection;
 }
 

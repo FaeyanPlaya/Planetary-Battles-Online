@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -37,6 +38,21 @@ std::vector<Copy> files_to_copy(const std::filesystem::path &install, const std:
 // found, for tests), copies. The install is only read. False when robots.pkg is still missing.
 // The environment variable PBO_NO_SETUP turns it off (startup tests).
 bool setup(const std::filesystem::path &game, bool assume_yes);
+
+// CFG\game-path.txt in the game folder: the Space Rangers HD install the files came from (UTF-8), then the words
+// "mods" once its Mods folder was seen there and "never" when the person said not to look for it again. An empty
+// path: none was found.
+struct Install {
+    std::filesystem::path path;
+    bool mods_seen = false, never = false;
+    bool operator==(const Install &) const = default;
+};
+std::optional<Install> load_install(const std::filesystem::path &game);
+void save_install(const std::filesystem::path &game, const Install &install);
+// The Space Rangers HD Mods folder whose map mods the game offers (MapPacks): the saved install's. With none saved
+// it looks for an install once, quietly. When the Mods folder seen there is gone it asks (ask: else nothing): look
+// again, later (this start without), or never. Empty: none. PBO_NO_SETUP turns it off.
+std::filesystem::path game_mods(const std::filesystem::path &game, bool ask);
 
 // 64-bit FNV-1a of a file's bytes, continuing from seed; 0 when it cannot be read.
 std::uint64_t hash_file(const std::filesystem::path &file, std::uint64_t seed = 14695981039346656037ull);

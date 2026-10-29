@@ -36,7 +36,9 @@ std::pair<std::wstring, std::wstring> split(const std::wstring &file) {
     return {folded(file.substr(0, dot)), folded(file.substr(dot + 1))};
 }
 
-std::wstring in_folder(const std::wstring &file) { return std::wstring(folder) + L"\\" + file; }
+// The packaged and loose files of a folder: a loose name replaces packaged ones.
+std::vector<Map> merged(const std::wstring &where, const std::vector<std::wstring> &packed,
+                        const std::vector<std::wstring> &loose);
 
 }  // namespace
 
@@ -55,6 +57,15 @@ bool valid_path(std::wstring_view path) {
 }
 
 std::vector<Map> merge(const std::vector<std::wstring> &packed, const std::vector<std::wstring> &loose) {
+    return merged(folder, packed, loose);
+}
+
+std::vector<Map> listed(const std::wstring &where, const std::vector<std::wstring> &files) { return merged(where, {}, files); }
+
+namespace {
+std::vector<Map> merged(const std::wstring &where, const std::vector<std::wstring> &packed,
+                        const std::vector<std::wstring> &loose) {
+    const auto in_folder = [&](const std::wstring &file) { return where + L"\\" + file; };
     struct Found {
         Map map;
         bool present = false;
@@ -91,6 +102,7 @@ std::vector<Map> merge(const std::vector<std::wstring> &packed, const std::vecto
     // std::map orders by the folded stem, which is the display order.
     return maps;
 }
+}  // namespace
 
 std::vector<Map> scan() {
     std::vector<std::wstring> loose;

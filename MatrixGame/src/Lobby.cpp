@@ -1,6 +1,7 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "Lobby.hpp"
 #include "BattleRules.hpp"
+#include "Mods.hpp"
 #include "PlayerName.hpp"
 
 #include "utils.hpp"
@@ -32,6 +33,22 @@ std::wstring decode_name(std::string_view text) {
 
 std::string encode_name(const std::wstring &name) {
     return PlayerName::valid(name) ? utils::from_wstring(name) : std::string("-");
+}
+
+std::optional<std::vector<ModRef>> parse_mods(std::string_view list) {
+    std::vector<ModRef> mods;
+    if (list == "-") return mods;
+    while (!list.empty()) {
+        const auto comma = list.find(',');
+        const auto item = list.substr(0, comma);
+        list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
+        const auto colon = item.find(':');
+        if (colon == std::string_view::npos) return std::nullopt;
+        ModRef mod{std::string(item.substr(0, colon)), std::string(item.substr(colon + 1))};
+        if (Mods::id_of(std::wstring(mod.id.begin(), mod.id.end())) != mod.id || mod.hash.empty()) return std::nullopt;
+        mods.push_back(std::move(mod));
+    }
+    return mods;
 }
 
 std::optional<std::vector<Person>> parse_people(std::string_view list) {
@@ -68,22 +85,30 @@ std::optional<std::vector<Person>> parse_people(std::string_view list) {
 }  // namespace
 
 std::string to_line(const State &state, int you) {
-    std::string people, pings;
+    std::string people, pings, mods;
+    for (const ModRef &m : state.mods) mods += (mods.empty() ? "" : ",") + m.id + ":" + m.hash;
     for (const Person &p : state.people) {
         people += std::format("{}{}:{}:{}:{}", people.empty() ? "" : ",", BattleRules::bonus_name(p.bonus),
                               p.ready ? 1 : 0, p.side, encode_name(p.name));
         pings += (pings.empty() ? "" : ",") + (p.ping >= 0 ? std::to_string(p.ping) : std::string("-"));
     }
-    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} auto={} people={} pings={} maphash={} map={}",
+    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} auto={} people={} pings={} maphash={} mods={} mappack={} map={}",
                        you, state.ai_resources, state.manual_control ? 1 : 0, state.manual_bonus ? 1 : 0, state.delay,
                        state.dropped_ai ? "ai" : "idle", state.auto_delay, people, pings,
-                       state.map_hash.empty() ? "-" : state.map_hash, utils::from_wstring(state.map));
+                       state.map_hash.empty() ? "-" : state.map_hash, mods.empty() ? "-" : mods,
+                       state.map_pack.empty() ? "-" : state.map_pack, utils::from_wstring(state.map));
 }
 
 int auto_delay_for(int slowest, int turn_ms) {
     if (turn_ms <= 0) return 200;
     const int needed = std::max(slowest, 0) + turn_ms + 50;
     return std::clamp((needed + turn_ms - 1) / turn_ms, 2, 8) * turn_ms;
+}
+
+int typical_round_trip(std::vector<int> sample) {
+    if (sample.empty()) return 0;
+    std::sort(sample.begin(), sample.end());
+    return sample[sample.size() / 2];
 }
 
 int delay_turns(const State &state, int turn_ms) {
@@ -150,6 +175,19 @@ std::optional<Received> from_line(std::string_view line) {
         }
         else if (key == "maphash") {
             r.state.map_hash = value == "-" ? std::string() : std::string(value);
+            continue;  // optional
+        }
+        else if (key == "mappack") {
+            if (value != "-" && (value.find(':') == std::string_view::npos ||
+                                 Mods::id_of(std::wstring(value.begin(), value.begin() + value.find(':'))).empty()))
+                return std::nullopt;
+            r.state.map_pack = value == "-" ? std::string() : std::string(value);
+            continue;  // optional
+        }
+        else if (key == "mods") {
+            auto mods = parse_mods(value);
+            if (!mods) return std::nullopt;
+            r.state.mods = std::move(*mods);
             continue;  // optional
         }
         else if (key == "people") {

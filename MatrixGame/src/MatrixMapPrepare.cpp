@@ -20,6 +20,8 @@
 #include "WindowDisplay.hpp"
 #include "BattleRules.hpp"
 
+#include <stupid_logger.hpp>
+
 #include <new>
 #include <algorithm>
 #include <vector>
@@ -1099,11 +1101,12 @@ int CMatrixMap::PrepareMap(CStorage &stor, const std::wstring &mapname) {
         m_SkyColor = propval->GetAsParamParser(ic).GetDword() | 0xFF000000;
 
     ic = propkey->FindAsWStr(DATA_SKYNAME);
-    if (ic >= 0) {
+    // A sky the data does not know (a map mod's, without the mod): no sky box, the sky colour.
+    CBlockPar *skbp = ic >= 0 ? g_MatrixData->BlockGet(L"Sky")->BlockGetNE(propval->GetAsWStr(ic)) : nullptr;
+    if (ic >= 0 && !skbp)
+        lgr.warning("The map's sky {} is not in the data: drawn without it")(utils::from_wstring(propval->GetAsWStr(ic)));
+    if (skbp) {
         std::wstring skyname;
-        skyname = propval->GetAsWStr(ic);
-
-        CBlockPar *skbp = g_MatrixData->BlockGet(L"Sky")->BlockGet(skyname);
 
         m_SkyAngle = GRAD2RAD((float)skbp->ParGet(L"Angle").GetDouble());
         m_SkyDeltaAngle = GRAD2RAD((float)skbp->ParGet(L"DeltaAngle").GetDouble());

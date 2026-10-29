@@ -2,7 +2,7 @@
 #include "SettingsWindow.hpp"
 #include "SettingsModel.hpp"
 #include "StandaloneRuntime.hpp"
-#include "MapWindow.hpp"
+#include "Mods.hpp"
 
 #include "MatrixMap.hpp"
 #include "MatrixSoundManager.hpp"
@@ -145,7 +145,7 @@ void open() {
     const auto size = Display::current_size();
     values.display.width = size.width;
     values.display.height = size.height;
-    model.emplace(values, adapter_modes(), language());
+    model.emplace(values, adapter_modes(), language(), Mods::default_personal(Mods::installed()));
     resume();
 }
 
@@ -320,7 +320,7 @@ void open_startup(StandaloneSettings::Values &values) {
     const auto size = Display::current_size();
     shown.display.width = size.width;
     shown.display.height = size.height;
-    model.emplace(shown, adapter_modes(), language());
+    model.emplace(shown, adapter_modes(), language(), Mods::default_personal(Mods::installed()));
     startup_values = &values;
     startup_keys = {Input::isVKeyPressed(VK_RETURN) || (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0,
                     Input::isVKeyPressed(VK_ESCAPE) || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0};

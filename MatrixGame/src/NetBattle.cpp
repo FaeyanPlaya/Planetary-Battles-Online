@@ -11,6 +11,8 @@
 #include "Factions.hpp"
 #include "PlayerName.hpp"
 #include "GameData.hpp"
+#include "MapShare.hpp"
+#include "Mods.hpp"
 #include "SettingsModel.hpp"
 #include "MatrixGame.h"
 #include "StringConstants.hpp"
@@ -64,6 +66,7 @@ constexpr long long ticket_lifetime_s = 12 * 3600;
 std::vector<std::unique_ptr<NetLink::Connection>> g_links;
 std::optional<Prepared> g_prepared;
 bool g_return_to_menu = false;
+bool g_test_pointer = false;  // --net-test-pointer
 std::wstring g_restart_arguments;  // the lobby (or battle) to come back to; empty: the startup menu
 
 int parse_int(std::wstring_view text, const char *what) {
@@ -1027,6 +1030,8 @@ Options parse(std::vector<std::wstring_view> &arguments) {
         else if (a == L"--net-exit") o.exit_ms = parse_int(value(), "exit time");
         else if (a == L"--net-wait") o.wait_s = std::max(1, parse_int(value(), "wait time"));
         else if (a == L"--net-fast") o.fast = true;
+        else if (a == L"--net-check-maps") o.check_maps = true;
+        else if (a == L"--net-test-pointer") g_test_pointer = true;
         else if (a == L"--net-test-desync") o.test_desync_ms = parse_int(value(), "desync time");
         else if (a == L"--net-test-lost") std::tie(o.test_lost_ms, o.test_lost_length) = parse_pair(value(), "--net-test-lost");
         else if (a == L"--net-test-hang") std::tie(o.test_hang_ms, o.test_hang_length) = parse_pair(value(), "--net-test-hang");
@@ -1047,10 +1052,15 @@ Options parse(std::vector<std::wstring_view> &arguments) {
             o.dropped_ai = v == L"ai" ? 1 : 0;
         }
         else if (a == L"--net-test-dump") o.test_dump_ms = parse_int(value(), "dump time");
+        else if (a == L"--net-mods") o.mods = Mods::split(utils::from_wstring(value()));
         else if (a == L"--lobby-host" || a == L"--lobby-join") {
             o.role = a == L"--lobby-host" ? Role::Host : Role::Client;
             o.lobby = true;
             parse_endpoint(value(), o);
+        }
+        else if (a == L"--lobby-local") {
+            o.lobby = true;
+            o.lobby_local = true;
         }
         else if (a == L"--lobby-map") o.lobby_map = value();
         else if (a == L"--lobby-start") o.lobby_start = std::clamp(parse_int(value(), "lobby start count"), 1, Lobby::max_people);
@@ -1079,10 +1089,10 @@ std::string start_line(const Start &s) {
         any = any || PlayerName::valid(name);
         names += (names.empty() ? "" : ",") + (PlayerName::valid(name) ? utils::from_wstring(name) : std::string("-"));
     }
-    return std::format("start side={} host={} seed={} humans={} turn={} delay={} step={}{}{} map={}", s.side, s.host_side,
+    return std::format("start side={} host={} seed={} humans={} turn={} delay={} step={}{}{}{} map={}", s.side, s.host_side,
                        s.seed, side_list(s.human_sides), s.config.turn_ms, s.config.delay, s.config.step_ms,
                        any ? " names=" + names : std::string(), s.key.empty() ? std::string() : " key=" + s.key,
-                       utils::from_wstring(s.map));
+                       s.map_hash.empty() ? std::string() : " maphash=" + s.map_hash, utils::from_wstring(s.map));
 }
 
 std::optional<Start> parse_start(std::string_view line) {
@@ -1123,6 +1133,10 @@ std::optional<Start> parse_start(std::string_view line) {
         }
         else if (key == "key") {  // optional
             s.key = value;
+            continue;
+        }
+        else if (key == "maphash") {  // optional
+            s.map_hash = value;
             continue;
         }
         else continue;
@@ -1195,6 +1209,14 @@ std::optional<Start> connect_back(const Options &options, const StandaloneSettin
         return std::nullopt;
     }
     start->rules = *rules;
+    // A map the host gave for this battle: its copy, kept while the person may come back.
+    if (!start->map_hash.empty() && !MapShare::used(start->map)) {
+        const auto own = MapShare::read(start->map);
+        if ((!own || MapShare::fingerprint(*own) != start->map_hash) && !MapShare::use(start->map, start->map_hash)) {
+            back_failed(L"На этом ПК нет карты этого боя.", L"This PC does not have the battle's map.", "no map");
+            return std::nullopt;
+        }
+    }
     g_links.push_back(std::move(link));
     lgr.warning("Net: coming back to the battle as side {}")(start->side);
     return start;
@@ -1274,6 +1296,7 @@ std::optional<Start> connect(const Options &options, const StandaloneSettings::V
         start.rules.manual_control = options.manual_control != 0;
         start.rules.manual_bonus = options.manual_bonus != 0;
         start.rules.dropped_ai = options.dropped_ai != 0;
+        if (options.mods) start.rules.mods = *options.mods;
         start.rules.bonus.fill(BattleChoice::Bonus::None);
         start.rules.bonus[0] = settings.battle_bonus;  // the host plays side 1
         start.side = 1;
@@ -1345,6 +1368,7 @@ Start lobby_start(const Lobby::State &state, const std::vector<int> &sides, cons
                   std::uint32_t seed, int delay) {
     Start start;
     start.map = state.map;
+    start.map_hash = state.map_hash;
     start.seed = seed;
     start.config.delay = delay;
     start.rules = StandaloneSettings::battle_rules(settings);
@@ -1352,6 +1376,8 @@ Start lobby_start(const Lobby::State &state, const std::vector<int> &sides, cons
     start.rules.manual_control = state.manual_control;
     start.rules.manual_bonus = state.manual_bonus;
     start.rules.dropped_ai = state.dropped_ai;
+    start.rules.mods.clear();
+    for (const Lobby::ModRef &mod : state.mods) start.rules.mods.push_back(mod.id);
     start.rules.bonus.fill(BattleChoice::Bonus::None);
     for (std::size_t i = 0; i < sides.size() && i < state.people.size(); ++i) {
         start.rules.bonus[sides[i] - 1] = state.people[i].bonus;
@@ -1370,6 +1396,22 @@ void prepare(Options options, Start start, std::vector<std::unique_ptr<NetLink::
 const std::optional<Prepared> &prepared() { return g_prepared; }
 
 bool return_to_menu() { return g_return_to_menu; }
+
+bool local_battle() { return g_prepared && g_prepared->options.role == Role::None; }
+
+bool test_pointer() { return g_test_pointer; }
+
+void after_local_battle(bool to_lobby) {
+    g_return_to_menu = true;
+    g_restart_arguments = to_lobby ? L" --lobby-local" : L"";
+}
+
+void cancel_return() {
+    g_return_to_menu = false;
+    g_restart_arguments.clear();
+}
+
+const std::wstring &restart_arguments() { return g_restart_arguments; }
 
 bool restart_to_menu() {
     const auto executable = Startup::ExecutablePath();

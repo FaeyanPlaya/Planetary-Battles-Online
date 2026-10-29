@@ -3028,10 +3028,11 @@ void CMatrixMapLogic::Takt(int step) {
 
     DCP();
 
-    // Robots driven directly take their step here, after the sides' logic (ProceedLogic skips them).
+    // Robots driven directly take their step here, after the sides' logic (ProceedLogic skips them). A driven
+    // turret takes its step in ProceedLogic as any other.
     for (int i = 0; i < m_SideCnt; i++) {
         CMatrixSideUnit &side = m_Side[i];
-        if (!side.GetArcadedObject())
+        if (!side.GetArcadedObject() || side.GetArcadedObject()->IsCannon())
             continue;
         DCP();
         side.GetArcadedObject()->StaticTakt(step);

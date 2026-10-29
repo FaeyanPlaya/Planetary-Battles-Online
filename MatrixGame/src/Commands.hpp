@@ -30,12 +30,18 @@ enum class Type : int {
     CancelBuild,
     Maintenance,
     Surrender,  // params: 0 the person gave up, 1 left the battle, 2 lost the connection; the side plays on under the AI
-    // Direct control of the robot `target` (a person "in" it): params action (DriveAction), held keys
+    // Direct control of the robot or turret `target` (a person "in" it): params action (DriveAction), held keys
     // (DRIVE_* bits), the aim's z, then (a shared battle's) the aim's rate per ms in x and y (float bits);
     // x, y: the aim on the ground.
     Drive,
     // The side's person came back after losing the connection (NetBattle): people command it again.
     Rejoin,
+    // The turrets `units` fire at the unit `target` while it is in their reach; target 0: they choose their
+    // targets themselves again (TurretControl switch).
+    TurretAttack,
+    // The built turrets `units` are dismantled: their places free, half their price back times their hit points'
+    // share (TurretControl switch).
+    TurretDismantle,
 };
 
 enum class DriveAction : int { Input = 0, Enter = 1, Leave = 2, Explode = 3 };

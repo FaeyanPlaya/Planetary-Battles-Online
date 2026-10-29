@@ -10,6 +10,8 @@
 
 class CMatrixBuilding;
 class CMatrixRovotAI;
+class CMatrixSideUnit;
+class CMatrixEffectSelection;
 
 #define CANNON_FIRE_THINK_PERIOD 100
 #define CANNON_NULL_TARGET_TIME  1000
@@ -18,6 +20,12 @@ class CMatrixRovotAI;
 #define CANNNON_MIN_DANGLE GRAD2RAD(2)
 
 #define CANNON_COLLIDE_R 20
+
+// A dismantled turret (TurretControl) sinks this long, at this speed (units per ms), before it goes.
+constexpr int dismantle_time = 1500;
+constexpr float dismantle_sink_speed = 0.03f;
+// The selection ring around a selected turret (TurretControl).
+constexpr float turret_selection_size = 30.0f;
 enum ECannonState {
     CANNON_IDLE,
     CANNON_UNDER_CONSTRUCTION,
@@ -132,6 +140,12 @@ public:
     int m_FireMatrix[2];
 
     SObjectCore *m_TargetCore;
+    // TurretControl: the unit a person ordered the turret to fire at (null: the turret chooses).
+    SObjectCore *m_OrderCore = nullptr;
+    // Dismantled (TurretControl): no wreck, the turret sinks into its place and goes.
+    bool m_Dismantled = false;
+    // Selected by this client's person (TurretControl): the ring around it.
+    CMatrixEffectSelection *m_Selection = nullptr;
 
     int m_LastDelayDamageSide;
     int m_MiniMapFlashTime;
@@ -140,6 +154,13 @@ public:
 
     void BeginFireAnimation(void);
     void EndFireAnimation(void);
+
+    // A person in the turret: it turns to their aim and fires while they hold the button.
+    void DriveTakt(int takt, const CMatrixSideUnit &driver);
+    // Turns the head and the barrel toward `pos` by one step, as the turret's own aiming does; true when aimed.
+    bool TurnTo(const D3DXVECTOR3 &pos, int takt);
+    // The weapons' step: fire effects, the hits' bookkeeping and the fire animation.
+    void WeaponsTakt(int takt);
 
 public:
     CMatrixCannon(void);
@@ -214,4 +235,28 @@ public:
     void OnOutScreen(void){};
 
     float GetStrength(void);
+
+    // TurretControl. A built turret, not dying: one a person may order, enter or dismantle.
+    bool IsBuilt() const { return m_CurrState == CANNON_IDLE && !IsDIP(); }
+    // The side whose person is in this turret, or null.
+    CMatrixSideUnit *Driver() const;
+    bool IsDriven() const { return Driver() != nullptr; }
+    // Where the head looks (radians, as the camera's z angle counts it from the y axis).
+    float HeadAngle() const { return m_Unit[1].u1.s1.m_Angle + m_Angle; }
+    // Fire at `target` while it is in reach (null: choose targets again).
+    void OrderAttack(CMatrixMapStatic *target);
+    CMatrixMapStatic *OrderTarget() const { return m_OrderCore ? m_OrderCore->m_Object : nullptr; }
+    // The manual control bonus: the weapons reach farther while a person is in the turret.
+    void SetDriveBonus(bool on);
+    // Dismantles the turret: its place frees at once, the turret sinks into the ground and is deleted.
+    void Dismantle();
+    // This client's selection: the ring, and the health bar in the panel.
+    void Select();
+    void UnSelect();
+    void CreateProgressBarClone(float x, float y, float width, EPBCoord clone_type) {
+        m_PB.CreateClone(clone_type, x, y, width);
+    }
+    void DeleteProgressBarClone(EPBCoord clone_type) { m_PB.KillClone(clone_type); }
+    // The turret dies or goes: this client's person no longer has it selected.
+    void LeaveSelection();
 };

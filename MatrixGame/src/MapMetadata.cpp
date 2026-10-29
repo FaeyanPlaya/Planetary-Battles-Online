@@ -153,7 +153,12 @@ Catalog catalog(const Node &root) {
     Catalog result;
     for (const auto &map : maps->children) {
         if (!map.block) invalid();
-        const auto file = filename(value(map, L"Map"));
+        // A map mod's Lang.dat names its maps with their folder (Mods\...\DATA\Maps\x.cmap): the file is the key
+        // (a path that climbs out stays unnamed).
+        std::wstring named = value(map, L"Map");
+        if (const auto slash = named.find_last_of(L"\\/"); slash != std::wstring::npos && named.find(L"..") == std::wstring::npos)
+            named.erase(0, slash + 1);
+        const auto file = filename(named);
         if (file.empty()) continue;
         Entry entry;
         entry.name = single_line(value(map, L"Name"));

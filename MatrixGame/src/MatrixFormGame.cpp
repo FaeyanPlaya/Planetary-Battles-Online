@@ -6,7 +6,9 @@
 #include "MatrixFormGame.hpp"
 #include "BattleStats.hpp"
 #include "SettingsWindow.hpp"
-#include "MapWindow.hpp"
+#include "NewBattle.hpp"
+#include "NetBattle.hpp"
+#include "Mods.hpp"
 #include "BattleLoading.hpp"
 #include "ScreenLayout.hpp"
 #include "MatrixMap.hpp"
@@ -426,8 +428,8 @@ void CFormMatrixGame::Takt(int step) {
 
     if (g_MatrixMap->m_Console.IsActive())
         return;
-    if (SettingsWindow::active() || MapWindow::active())
-        return;  // The arrow keys navigate the settings and map dialogs instead of the camera.
+    if (SettingsWindow::active())
+        return;  // The arrow keys navigate the settings dialog instead of the camera.
 
     if (!g_MatrixMap->GetPlayerSide()->IsArcadeMode())
     {
@@ -500,11 +502,6 @@ void selcallback(CMatrixMapStatic *ms, uintptr_t param) {
 #endif
 
 void CFormMatrixGame::MouseMove(int x, int y) {
-    if (MapWindow::active()) {
-        g_MatrixMap->m_Cursor.SetPos(x, y);
-        return;
-    }
-
     DTRACE();
 
     CMatrixSideUnit *p_side = g_MatrixMap->GetPlayerSide();
@@ -517,7 +514,7 @@ void CFormMatrixGame::MouseMove(int x, int y) {
 
         // SetCursorPos(p.x, p.y);
 
-        if (p_side->GetArcadedObject()) {
+        if (p_side->GetArcadedObject() && p_side->GetArcadedObject()->IsRobot()) {
             int dx = x - g_MatrixMap->m_Cursor.GetPosX();
             if (Commands::deferred())
                 p_side->MouseTurn(dx);  // a shared battle: as A or D, through the drive commands
@@ -588,15 +585,8 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
         Input::onKeyUp(key);
     }
 
-    if (MapWindow::active()) {
-        if ((status == B_DOWN || status == B_DOUBLE) && key == VK_LBUTTON)
-            MapWindow::mouse_down(x, y, status == B_DOUBLE);
-        if (status == B_WHEEL) MapWindow::mouse_wheel(key, x, y);
-        return; // No camera or battle input passes through the selector.
-    }
-
     if ((status == B_DOWN || status == B_DOUBLE) && key == VK_LBUTTON &&
-        (MapWindow::menu_mouse_down(x, y) || SettingsWindow::mouse_down(x, y) || SettingsWindow::menu_mouse_down(x, y))) {
+        (NewBattle::menu_mouse_down(x, y) || SettingsWindow::mouse_down(x, y) || SettingsWindow::menu_mouse_down(x, y))) {
         return;
     }
 
@@ -656,7 +646,19 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
             CMultiSelection::m_GameSelection->End();
             DCP();
 
-            if (1 /*cbs.calls > 0*/) {
+            // TurretControl: a click on a built turret of the side selects it (frames select robots and buildings).
+            CMatrixMapStatic *turret = g_MatrixMap->m_TraceStopObj;
+            const bool turret_clicked = Mods::switches().turret_control && !ps->GetCurSelGroup()->GetObjectsCnt() &&
+                                        IS_TRACE_STOP_OBJECT(turret) && turret->IsCannon() &&
+                                        turret->GetSide() == ps->m_Id && turret->AsCannon()->IsBuilt();
+            if (turret_clicked) {
+                ps->Select(TURRET, turret);
+                ps->GroupsUnselectSoft();
+                ps->GetCurSelGroup()->RemoveAll();
+                ps->SetCurGroup(NULL);
+                ps->Reselect();
+            }
+            else if (1 /*cbs.calls > 0*/) {
                 DCP();
                 if (ps->GetCurSelGroup()->GetFlyersCnt() > 1 ||
                     ps->GetCurSelGroup()->GetRobotsCnt() > 1 ||
@@ -851,7 +853,7 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
         return;
     }
 
-    if (MapWindow::menu_keyboard(vk, down) || MapWindow::keyboard(vk, down) || SettingsWindow::keyboard(vk, down))
+    if (NewBattle::menu_keyboard(vk, down) || SettingsWindow::keyboard(vk, down))
     {
         return;
     }
@@ -986,6 +988,13 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
                 return;
             }
         }
+        else if (ps->IsTurretMode()) {
+            // Space or Enter: out of the turret (TurretControl).
+            if (isKeyPressed(KA_UNIT_ENTER) || isKeyPressed(KA_UNIT_ENTER_ALT)) {
+                g_IFaceList->LiveRobot();
+                return;
+            }
+        }
         else {
             CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
             if (!FLAG(g_IFaceList->m_IfListFlags, ORDERING_MODE) /*!IS_PREORDERING_NOSELECT*/) {
@@ -1081,6 +1090,23 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
                         //"A"ttack
                         SETFLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE);
                         SETFLAG(g_IFaceList->m_IfListFlags, ORDERING_MODE);
+                    }
+                }
+                else if (ps->m_CurrSel == TURRET_SELECTED && ps->m_ActiveObject && ps->m_ActiveObject->IsCannon()) {
+                    // A turret selected (TurretControl): Space or Enter goes in, A orders a target, S cancels the
+                    // order, Delete dismantles it.
+                    if (isKeyPressed(KA_UNIT_ENTER) || isKeyPressed(KA_UNIT_ENTER_ALT)) {
+                        g_IFaceList->EnterRobot(false);
+                    }
+                    else if (isKeyPressed(KA_ORDER_ATTACK)) {
+                        SETFLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE);
+                        SETFLAG(g_IFaceList->m_IfListFlags, ORDERING_MODE);
+                    }
+                    else if (isKeyPressed(KA_ORDER_STOP)) {
+                        ps->IssueTurretOrder(Commands::Type::TurretAttack, NULL);
+                    }
+                    else if (vk == VK_DELETE) {
+                        ps->IssueTurretOrder(Commands::Type::TurretDismantle, NULL);
                     }
                 }
                 else if (ps->m_CurrSel == BUILDING_SELECTED || ps->m_CurrSel == BASE_SELECTED) {
@@ -1798,14 +1824,13 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
 
 void CFormMatrixGame::SystemEvent(ESysEvent se) {
     DTRACE();
-    if (se == SYSEV_POINTER_LEFT) {
+    if (se == SYSEV_POINTER_LEFT && !NetBattle::test_pointer()) {
         g_MatrixMap->m_Cursor.SetPos(-1, -1);
         g_MatrixMap->MouseCam(false);
         if (CMultiSelection::m_GameSelection) CMultiSelection::m_GameSelection->End(false);
     }
     if (se == SYSEV_DEACTIVATING || se == SYSEV_INPUT_RESET) {
         Input::onFocusLost();
-        MapWindow::reset_input();
         g_MatrixMap->m_VKeyDown = 0;
         g_MatrixMap->MouseCam(false);
         g_MatrixMap->m_Console.Keyboard(VK_SHIFT, false);

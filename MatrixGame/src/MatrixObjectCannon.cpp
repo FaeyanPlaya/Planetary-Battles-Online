@@ -12,6 +12,10 @@
 #include "MatrixRobot.hpp"
 #include "MatrixObjectBuilding.hpp"
 #include "MatrixFlyer.hpp"
+#include "MatrixSide.hpp"
+#include "Commands.hpp"
+#include "random.hpp"
+#include "Effects/MatrixEffectSelection.hpp"
 #include "ShadowStencil.hpp"
 #include "Interface/CInterface.h"
 
@@ -118,6 +122,9 @@ CMatrixCannon::~CMatrixCannon() {
     }
     if (m_TargetCore) {
         m_TargetCore->Release();
+    }
+    if (m_OrderCore) {
+        m_OrderCore->Release();
     }
 }
 
@@ -656,6 +663,20 @@ bool CMatrixCannon::CalcBounds(D3DXVECTOR3 &minv, D3DXVECTOR3 &maxv) {
 void CMatrixCannon::DIPTakt(float ms) {
     DTRACE();
 
+    if (m_Dismantled) {
+        bool gone = true;
+        for (int i = 0; i < m_UnitCnt; ++i) {
+            if (m_Unit[i].u1.s2.m_TTL <= 0)
+                continue;
+            m_Unit[i].u1.s2.m_TTL -= ms;
+            m_Unit[i].m_Matrix._43 -= ms * dismantle_sink_speed;
+            gone = false;
+        }
+        if (gone)
+            g_MatrixMap->StaticDelete(this);
+        return;
+    }
+
     D3DXVECTOR3 *pos;
     D3DXMATRIX *mat;
 
@@ -787,6 +808,27 @@ static bool FindTarget(const D3DXVECTOR3 &center, CMatrixMapStatic *ms, uintptr_
     return true;
 }
 
+// A unit a person may order a turret of `side` to fire at: a live enemy robot, flyer or built turret.
+static bool OrderableTarget(CMatrixMapStatic *o, int side) {
+    if (!o || o->GetSide() == side)
+        return false;
+    return o->IsLiveRobot() || o->IsLiveActiveCannon() || (o->IsFlyer() && ((CMatrixFlyer *)o)->GetHitPoint() > 0);
+}
+
+// The turret sees `target` within `radius`: neither the ground nor a building or a map object stands between.
+static bool SeesTarget(CMatrixCannon *cannon, CMatrixMapStatic *target, float radius) {
+    const D3DXVECTOR3 center = cannon->GetGeoCenter();
+    const D3DXVECTOR3 to = target->GetGeoCenter() - center;
+    if (D3DXVec3LengthSq(&to) > POW2(radius))
+        return false;
+    CMatrixMapStatic *cel =
+            g_MatrixMap->Trace(NULL, center, target->GetGeoCenter(),
+                               TRACE_OBJECTSPHERE | TRACE_ROBOT | TRACE_FLYER | TRACE_CANNON | TRACE_LANDSCAPE, cannon);
+    if (cel != target)
+        return false;
+    return g_MatrixMap->Trace(NULL, center, target->GetGeoCenter(), TRACE_BUILDING | TRACE_OBJECT, cannon) == NULL;
+}
+
 void CMatrixCannon::BeginFireAnimation(void) {
     for (int i = 0; i < m_UnitCnt; i++) {
         if (m_Unit[i].m_Type == CUT_SHAFT) {
@@ -838,6 +880,12 @@ void CMatrixCannon::LogicTakt(int takt) {
     }
 
     if (m_ParentBuilding && m_ParentBuilding->m_Side != m_Side) {
+        // The building captured: a person of the old side in the turret leaves it, its order goes, and it is no
+        // longer selected (leaving selects the turret left).
+        if (CMatrixSideUnit *driver = Driver())
+            driver->LeaveRobot();
+        OrderAttack(nullptr);
+        LeaveSelection();
         SetSide(m_ParentBuilding->m_Side);
 
         CMatrixMapStatic *ms = CMatrixMapStatic::GetFirstLogic();
@@ -950,6 +998,12 @@ void CMatrixCannon::LogicTakt(int takt) {
         return;
     }
 
+    // A person in the turret aims and fires it (TurretControl).
+    if (const CMatrixSideUnit *driver = Driver()) {
+        DriveTakt(takt, *driver);
+        return;
+    }
+
     // cannon logic!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     SCannonProps *props = &g_Config.m_CannonsProps[m_Num - 1];
@@ -986,6 +1040,15 @@ void CMatrixCannon::LogicTakt(int takt) {
 
         g_MatrixMap->FindObjects(GetGeoCenter(), props->seek_radius, 1, TRACE_ROBOT | TRACE_FLYER, NULL, FindTarget,
                                  (uintptr_t)&data);
+
+        // The unit a person ordered goes first whenever the turret sees it in its seek radius; the order lasts
+        // while the unit lives as an enemy (TurretControl).
+        if (CMatrixMapStatic *order = OrderTarget()) {
+            if (!OrderableTarget(order, m_Side))
+                OrderAttack(nullptr);
+            else if (SeesTarget(this, order, props->seek_radius))
+                tgt = order;
+        }
 
         if (tgt) {
             if (m_TargetCore)
@@ -1381,6 +1444,12 @@ bool CMatrixCannon::Damage(EWeapon weap, const D3DXVECTOR3 &pos, const D3DXVECTO
 
     inst_death:;
 
+        // Its person drove it: the side leaves it on every peer (and this client's interface comes back).
+        if (CMatrixSideUnit *driver = Driver())
+            driver->LeaveRobot();
+        OrderAttack(nullptr);
+        LeaveSelection();
+
         CMatrixEffect::CreateExplosion(*(D3DXVECTOR3 *)&m_Core->m_Matrix._41, ExplosionRobotBoom, true);
 
         m_ShadowType = SHADOW_OFF;
@@ -1564,4 +1633,178 @@ bool CMatrixCannon::InRect(const CRect &rect) const {
         return true;
 
     return false;
+}
+
+CMatrixSideUnit *CMatrixCannon::Driver() const {
+    for (int i = 0; i < g_MatrixMap->m_SideCnt; i++)
+        if (g_MatrixMap->m_Side[i].GetArcadedObject() == this)
+            return &g_MatrixMap->m_Side[i];
+    return nullptr;
+}
+
+void CMatrixCannon::OrderAttack(CMatrixMapStatic *target) {
+    if (m_OrderCore) {
+        m_OrderCore->Release();
+        m_OrderCore = nullptr;
+    }
+    if (OrderableTarget(target, m_Side))
+        m_OrderCore = target->GetCore(DEBUG_CALL_INFO);
+}
+
+void CMatrixCannon::SetDriveBonus(bool on) {
+    for (int i = 0; i < m_WeaponCnt; ++i) {
+        if (!m_Weapons[i])
+            continue;
+        if (on)
+            m_Weapons[i]->SetArcadeCoefficient();
+        else
+            m_Weapons[i]->SetDefaultCoefficient();
+    }
+}
+
+bool CMatrixCannon::TurnTo(const D3DXVECTOR3 &tgtpos, int takt) {
+    // As the turret's own aiming in LogicTakt: the head turns about z, the barrel about x, each at the turret's
+    // rotation speed (or the "best rotation" when it has none), the barrel within its angles.
+    const SCannonProps &props = g_Config.m_CannonsProps[m_Num - 1];
+    const float mul = props.max_da == 0 ? (float)(1.0 - pow(0.995, double(takt))) : 0.0f;
+    auto step = [&](float &angle, float da, float to) {
+        if (props.max_da == 0) {
+            if (fabs(da) < CANNNON_MIN_DANGLE) {
+                angle = to;
+                return true;
+            }
+            angle += da * mul;
+            return false;
+        }
+        if (fabs(da) < (props.max_da + 0.001)) {
+            angle += da;
+            return true;
+        }
+        angle += da < 0 ? -props.max_da : props.max_da;
+        return false;
+    };
+
+    D3DXVECTOR2 dir(-(tgtpos.x - m_FireCenter.x), (tgtpos.y - m_FireCenter.y));
+    float dang = (float)atan2(dir.x, dir.y);
+    float &head = m_Unit[1].u1.s1.m_Angle;  // counted from the base's own turn, m_Angle
+    const bool matchz = step(head, float(AngleDist(head + m_Angle, dang)), dang - m_Angle);
+    m_Unit[2].u1.s1.m_Angle = head;
+
+    dang = (float)atan2((tgtpos.z - m_FireCenter.z), D3DXVec2Length(&dir));
+    dang = std::clamp(dang, props.max_bottom_angle, props.max_top_angle);
+    const bool matchx = step(m_AngleX, float(AngleDist(m_AngleX, dang)), dang);
+
+    RChange(MR_Matrix | MR_ShadowStencil | MR_ShadowProjTex);
+    RNeed(MR_Matrix);
+    return matchz && matchx;
+}
+
+void CMatrixCannon::WeaponsTakt(int takt) {
+    bool firewas = false;
+    for (int i = 0; i < m_WeaponCnt; ++i) {
+        if (m_Weapons[i]) {
+            SETFLAG(m_ObjectState, OBJECT_CANNON_REF_PROTECTION);
+            RESETFLAG(m_ObjectState, OBJECT_CANNON_REF_PROTECTION_HIT);
+
+            m_Weapons[i]->ResetFireCount();
+            m_Weapons[i]->Takt(float(takt));
+            firewas |= m_Weapons[i]->IsFireWas();
+            bool hw = m_Weapons[i]->IsHitWas();
+            if (hw || FLAG(m_ObjectState, OBJECT_CANNON_REF_PROTECTION_HIT)) {
+                m_TimeFromFire = CANNON_TIME_FROM_FIRE;
+            }
+            else {
+                m_Core->m_Ref += m_Weapons[i]->GetFireCount();
+            }
+
+            RESETFLAG(m_ObjectState, OBJECT_CANNON_REF_PROTECTION);
+            RESETFLAG(m_ObjectState, OBJECT_CANNON_REF_PROTECTION_HIT);
+        }
+    }
+    if (firewas)
+        BeginFireAnimation();
+}
+
+void CMatrixCannon::DriveTakt(int takt, const CMatrixSideUnit &driver) {
+    const int keys = driver.DriveKeys();
+    if (keys & Commands::DRIVE_AIMING)
+        TurnTo(driver.DriveAim(), takt);
+    for (int i = 0; i < m_WeaponCnt; ++i)
+        if (m_Weapons[i])
+            m_Weapons[i]->Modify(m_FireFrom[i], m_FireDir[i], D3DXVECTOR3(0, 0, 0));
+
+    // The barrel fires where it points, aimed or not, while the button is held.
+    if (keys & Commands::DRIVE_FIRE) {
+        m_NullTargetTime = CANNON_NULL_TARGET_TIME;  // firing: the turret's own logic ends it when the person leaves
+        for (int i = 0; i < m_WeaponCnt; ++i)
+            if (m_Weapons[i])
+                m_Weapons[i]->FireBegin(D3DXVECTOR3(0, 0, 0), this);
+    }
+    else if (m_NullTargetTime > 0) {
+        m_NullTargetTime = 0;
+        for (int i = 0; i < m_WeaponCnt; ++i)
+            if (m_Weapons[i])
+                m_Weapons[i]->FireEnd();
+        EndFireAnimation();
+    }
+    WeaponsTakt(takt);
+}
+
+void CMatrixCannon::Dismantle() {
+    if (!IsBuilt())
+        return;
+    if (CMatrixSideUnit *driver = Driver())
+        driver->LeaveRobot();
+    OrderAttack(nullptr);
+    LeaveSelection();
+    if (m_TargetCore) {
+        m_TargetCore->Release();
+        m_TargetCore = NULL;
+    }
+
+    m_ShadowType = SHADOW_OFF;
+    RChange(MR_ShadowProjGeom | MR_ShadowStencil);
+    RNeed(MR_ShadowProjGeom | MR_ShadowStencil);
+    m_CurrState = CANNON_DIP;
+    m_Dismantled = true;
+
+    ReleaseMe();
+    // The place is free now. The destructor runs ReleaseMe again: without the building it does not count the
+    // turret out of it a second time.
+    m_ParentBuilding = NULL;
+
+    for (int i = 0; i < m_WeaponCnt; ++i) {
+        if (m_Weapons[i]) {
+            m_Weapons[i]->Release();
+            m_Weapons[i] = NULL;
+        }
+    }
+    m_WeaponCnt = 0;
+
+    for (int i = 0; i < m_UnitCnt; ++i)
+        m_Unit[i].u1.s2.m_TTL = float(dismantle_time);
+}
+
+void CMatrixCannon::Select() {
+    UnSelect();
+    random::CosmeticScope cosmetic;  // this client's view only
+    const D3DXVECTOR3 pos(m_Pos.x, m_Pos.y, m_Core->m_Matrix._43 + 3);
+    m_Selection = (CMatrixEffectSelection *)CMatrixEffect::CreateSelection(pos, turret_selection_size);
+    if (!g_MatrixMap->AddEffect(m_Selection))
+        m_Selection = NULL;
+}
+
+void CMatrixCannon::UnSelect() {
+    if (m_Selection) {
+        m_Selection->Kill();
+        m_Selection = NULL;
+    }
+}
+
+void CMatrixCannon::LeaveSelection() {
+    UnSelect();
+    DeleteProgressBarClone(PBC_CLONE2);
+    CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
+    if (ps && ps->m_CurrSel == TURRET_SELECTED && ps->m_ActiveObject == this)
+        ps->Select(NOTHING, NULL);
 }

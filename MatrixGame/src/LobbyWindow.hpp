@@ -6,8 +6,9 @@
 
 #include <cstdint>
 
-// The network battle screens of the startup menu: the host's lobby, the screen where a person types
-// the host's address, a client's view of the lobby and the screen of the person's name. Starting a battle prepares it in NetBattle and
+// The battle screens of the startup menu: the host's lobby, the lobby without a network (New battle: alone against
+// the AI), the screen where a person types the host's address, a client's view of the lobby and the screen of the
+// person's name. Starting a battle prepares it in NetBattle and
 // ends the startup menu; the game then loads it.
 namespace LobbyWindow {
 
@@ -15,6 +16,9 @@ bool active();
 // Opens the host's lobby; false when it cannot listen (another lobby has the port).
 // options.lobby (tests): its address, map, start count and bonus.
 bool open_host(const StandaloneSettings::Values &values, const NetBattle::Options &options);
+// Opens the lobby without a network: the host's screen without its network rows; its battle runs alone
+// (NetBattle::local_battle).
+void open_local(const StandaloneSettings::Values &values, const NetBattle::Options &options);
 // Opens the address screen; with options.lobby (tests) it connects to options' address at once.
 void open_join(const StandaloneSettings::Values &values, const NetBattle::Options &options);
 // Opens the screen where a person chooses their PlayerName; forced: the first start, it closes only

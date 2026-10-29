@@ -29,8 +29,10 @@
 #define ROBOT_WEAPONS_PER_ROBOT_CNT 10
 #define ROBOT_MOVECELLS_PER_SIZE    4  // размер стороны квадрата робота в ячейках сетки проходимости
 
-// Shadows are drawn this far from the camera: the fully zoomed out camera stands about 800 away from what it looks at.
-#define DRAW_SHADOWS_DISTANCE_SQ ((2048) * (2048))
+// Shadows are drawn this far from the camera's eye: 1024 (zoomed fully out, those in the middle of the screen are cut
+// off), 1536 times its scale with the far view (a personal mod).
+float DrawShadowsDistanceSq();
+#define DRAW_SHADOWS_DISTANCE_SQ (DrawShadowsDistanceSq())
 
 #define TRACE_LANDSCAPE SETBIT(0)
 #define TRACE_WATER     SETBIT(1)

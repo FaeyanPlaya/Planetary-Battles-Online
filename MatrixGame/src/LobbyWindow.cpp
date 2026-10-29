@@ -4,9 +4,12 @@
 #include "NetLobby.hpp"
 #include "Lockstep.hpp"
 #include "MapCatalog.hpp"
+#include "MapShare.hpp"
 #include "MapMetadata.hpp"
 #include "MapPreview.hpp"
 #include "MapSides.hpp"
+#include "Mods.hpp"
+#include "MapPacks.hpp"
 #include "PlayerName.hpp"
 #include "GameData.hpp"
 #include "CBuf.hpp"
@@ -30,6 +33,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -75,6 +79,10 @@ struct State {
     std::wstring auto_ready_map;  // --lobby-ready: the map it was ready for once (a person may then say no)
     bool side_asked = false;      // --lobby-side asked for
     int kick_asked = -1;          // the host's: the person whose row asks whether to send them away
+    std::string map_failed;       // a client's: the host's map file (fingerprint) that came but could not be kept
+    bool mods_view = false;       // the list shows the battle mods
+    bool local = false;           // Mode::Host without a network: the AI plays the other sides
+    int mods_page = 0;
     MenuKeyLatch actions;
     bool dirty = true;
 };
@@ -85,8 +93,11 @@ bool battle_started = false;
 bool name_saved = false;  // the person chose a name in this run: it wins over --lobby-name
 std::map<std::wstring, int> sides_read;  // by map path, for the whole process
 std::map<std::wstring, std::string> map_hashes;
+std::map<std::wstring, std::vector<std::wstring>> map_lacks;  // MapPacks::missing, by map path, for the whole process
 std::vector<std::unique_ptr<CBitmap>> lines;  // LobbyModel::separators(), made for lines_scale
 double lines_scale = 0;
+std::unique_ptr<CBitmap> toggles[2];  // a mod's switch, off and on, made for toggles_scale
+double toggles_scale = 0;
 
 LobbyModel::MapSort load_sort() {
     std::ifstream in{std::filesystem::path(sort_file)};
@@ -149,9 +160,52 @@ void prepare_lines(double scale) {
     }
 }
 
+// A mod's switch: a round button in a dark rim, lit blue when on, dark when off (a sphere's shading, smoothed edges).
+std::unique_ptr<CBitmap> toggle(int size, bool on) {
+    auto out = std::make_unique<CBitmap>();
+    out->CreateRGBA(size, size);
+    const float r = size * 0.5f, rim = std::max(1.5f, size * 0.12f);
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x) {
+            const float dx = x + 0.5f - r, dy = y + 0.5f - r, d = std::sqrt(dx * dx + dy * dy);
+            const float alpha = std::clamp(r - d, 0.0f, 1.0f);  // the edge's coverage
+            // The rim: metal, lighter at the top; inside: the light, brightest a little above the centre.
+            float red, green, blue;
+            if (d > r - rim) {
+                const float k = 0.55f - 0.25f * dy / r;
+                red = 70 * k + 30, green = 80 * k + 34, blue = 90 * k + 38;
+            }
+            else {
+                const float hx = dx + r * 0.2f, hy = dy + r * 0.3f;
+                const float t = std::clamp(1.0f - std::sqrt(hx * hx + hy * hy) / (r - rim), 0.0f, 1.0f);
+                if (on) red = 20 + 200 * t * t, green = 110 + 140 * t, blue = 200 + 55 * t;
+                else red = 38 + 40 * t * t, green = 42 + 44 * t * t, blue = 48 + 48 * t * t;
+            }
+            const uint32_t pixel = (uint32_t(alpha * 255) << 24) | (uint32_t(std::min(red, 255.0f)) << 16) |
+                                   (uint32_t(std::min(green, 255.0f)) << 8) | uint32_t(std::min(blue, 255.0f));
+            std::memcpy(out->Data() + y * out->Pitch() + x * 4, &pixel, 4);
+        }
+    return out;
+}
+
+void prepare_toggles(double scale) {
+    if (toggles[0] && toggles_scale == scale) return;
+    toggles_scale = scale;
+    for (int on = 0; on < 2; ++on) {
+        toggles[on] = toggle(LobbyModel::px(scale, LobbyModel::Layout::toggle_size), on != 0);
+        CMatrixHint::SetRuntimeBitmap(LobbyModel::toggle_bitmap(on != 0), toggles[on].get());
+    }
+}
+
 // The map file's fingerprint: the same name with other contents must not play together.
 std::string map_hash(const std::wstring &path) {
     if (const auto known = map_hashes.find(path); known != map_hashes.end()) return known->second;
+    // A copy the host gave; a map mod's map: its bundle (the map with the mod's files it takes).
+    if (const auto kept = MapShare::used_hash(path)) return map_hashes[path] = *kept;
+    if (MapPacks::of_map(MapPacks::installed(), path)) {
+        const auto bundle = MapPacks::bundle(path);
+        return map_hashes[path] = bundle ? MapShare::fingerprint(*bundle) : std::string();
+    }
     std::string hash;
     try {
         CBuf data;
@@ -170,18 +224,67 @@ Language language() {
 
 void load_maps(State &s) {
     s.maps = MapCatalog::scan();
+    // The map mods' maps, named by their own Lang.dat.
+    std::map<std::string, MapMetadata::Catalog> pack_names;
+    for (const MapPacks::Pack &pack : MapPacks::installed()) {
+        for (auto map : MapCatalog::listed(pack.path + L"\\" + MapPacks::maps_folder, MapPacks::map_files(pack))) {
+            map.pack = pack.id;
+            s.maps.push_back(std::move(map));
+        }
+        std::string error;
+        if (const auto file = MapPacks::names_file(pack, s.language == Language::Russian); !file.empty())
+            pack_names[pack.id] = MapMetadata::load(error, file);
+        if (!error.empty()) lgr.warning("Map mod {}: names: {}")(pack.id, error);
+    }
     std::string diagnostic;
     const auto metadata = MapMetadata::load(diagnostic);
     if (!diagnostic.empty()) lgr.warning("Map metadata: {}")(diagnostic);
     for (const auto &map : s.maps) {
         std::wstring key = map.name + L".cmap";
         for (auto &ch : key) if (ch >= L'A' && ch <= L'Z') ch += L'a' - L'A';
-        const auto found = metadata.find(key);
-        s.names.push_back(found == metadata.end() || found->second.name.empty() ? map.name
-                                                                                : MapMetadata::plain_text(found->second.name));
+        const auto &names = map.pack.empty() ? metadata : pack_names[map.pack];
+        const auto found = names.find(key);
+        s.names.push_back(found == names.end() || found->second.name.empty() ? map.name
+                                                                             : MapMetadata::plain_text(found->second.name));
         const auto known = sides_read.find(map.path);
         s.sides.push_back(known == sides_read.end() ? -1 : known->second);
     }
+    // A map mod's map named as another map is told by its mod's name.
+    std::vector<std::wstring> plain = s.names;
+    for (auto &name : plain) for (auto &ch : name) ch = wchar_t(std::towlower(ch));
+    for (std::size_t i = 0; i < s.maps.size(); ++i) {
+        if (s.maps[i].pack.empty() || std::count(plain.begin(), plain.end(), plain[i]) < 2) continue;
+        if (const MapPacks::Pack *pack = MapPacks::find(MapPacks::installed(), s.maps[i].pack))
+            s.names[i] += L" (" + pack->name + L")";
+    }
+}
+
+// "<id>:<fingerprint>" of the map mod this map comes from; empty: the game's map.
+std::string pack_ref(const MapCatalog::Map &map) {
+    const MapPacks::Pack *pack = map.pack.empty() ? nullptr : MapPacks::find(MapPacks::installed(), map.pack);
+    return pack ? MapPacks::ref(*pack) : std::string();
+}
+
+// Why this PC cannot play the lobby's map: the host's map mod missing or different, files the map names lacking.
+LobbyModel::MapProblem map_problem(const State &s, int selected, bool differs) {
+    using Kind = LobbyModel::MapProblem::Kind;
+    const auto &st = s.mode == Mode::Host ? s.host.state() : s.client.state();
+    if (s.mode != Mode::Host && !st.map_pack.empty() && !MapShare::used(st.map)) {
+        const std::string id = st.map_pack.substr(0, st.map_pack.find(':'));
+        const MapPacks::Pack *pack = MapPacks::find(MapPacks::installed(), id);
+        if (!pack) return {Kind::PackMissing, utils::to_wstring(id)};
+        if (MapPacks::ref(*pack) != st.map_pack) return {Kind::PackDiffers, pack->name};
+    }
+    if (selected < 0 || differs) return {};
+    const std::wstring &path = s.maps[std::size_t(selected)].path;
+    auto known = map_lacks.find(path);
+    if (known == map_lacks.end()) {
+        known = map_lacks.emplace(path, MapPacks::missing(path)).first;
+        if (!known->second.empty())
+            lgr.warning("Lobby: the map {} lacks {}")(utils::from_wstring(path), utils::from_wstring(known->second[0]));
+    }
+    if (known->second.empty()) return {};
+    return {Kind::FilesMissing, std::filesystem::path(known->second[0]).filename().wstring(), int(known->second.size())};
 }
 
 void read_sides(State &s, std::size_t index) {
@@ -203,10 +306,40 @@ std::vector<int> chosen_sides(const Lobby::State &st) {
 
 unsigned map_sides(const State &s, int index) { return index >= 0 && s.sides[index] > 0 ? unsigned(s.sides[index]) : 0; }
 
+// The battle mods: this PC's, each on when the lobby has it; a client's also lists the host's that it lacks.
+std::vector<LobbyModel::ModRow> mod_rows(const State &s) {
+    const auto &st = lobby(s);
+    const bool ru = s.language == Language::Russian;
+    std::vector<LobbyModel::ModRow> rows;
+    for (const Mods::Mod &m : Mods::installed()) {
+        if (m.kind != Mods::Kind::Battle) continue;
+        const auto chosen = std::find_if(st.mods.begin(), st.mods.end(), [&](const Lobby::ModRef &r) { return r.id == m.id; });
+        LobbyModel::ModRow row{ru ? m.name : m.name_en, ru ? m.description : m.description_en, chosen != st.mods.end()};
+        if (row.on && s.mode != Mode::Host && chosen->hash != m.hash) row.problem = LobbyModel::ModRow::Problem::Differs;
+        rows.push_back(std::move(row));
+    }
+    if (s.mode != Mode::Host)
+        for (const Lobby::ModRef &r : st.mods) {
+            const Mods::Mod *m = Mods::find(Mods::installed(), r.id);
+            if (!m || m->kind != Mods::Kind::Battle)
+                rows.push_back({utils::to_wstring(r.id), {}, true, LobbyModel::ModRow::Problem::Missing});
+        }
+    return rows;
+}
+
+// Installed battle mods with these ids, in the catalogue's order, with this PC's fingerprints.
+std::vector<Lobby::ModRef> mod_refs(const std::vector<std::string> &ids) {
+    std::vector<Lobby::ModRef> refs;
+    for (const Mods::Mod &m : Mods::installed())
+        if (m.kind == Mods::Kind::Battle && std::find(ids.begin(), ids.end(), m.id) != ids.end()) refs.push_back({m.id, m.hash});
+    return refs;
+}
+
 LobbyModel::Screen screen(State &s) {
     LobbyModel::Screen view;
     view.language = s.language;
     view.host = s.mode == Mode::Host;
+    view.local = s.local;
     for (std::size_t i = 0; i < s.maps.size(); ++i)
         view.maps.push_back({s.names[i], s.sides[i] < 0 ? -1 : MapSides::count(unsigned(s.sides[i]))});
     view.sort = map_sort;
@@ -220,11 +353,20 @@ LobbyModel::Screen screen(State &s) {
     view.delay = st.delay;
     view.auto_delay = st.auto_delay;
     view.dropped_ai = st.dropped_ai;
+    view.mods = mod_rows(s);
+    view.mods_view = s.mods_view;
+    view.mods_page = std::clamp(s.mods_page, 0, LobbyModel::mods_page_count(view) - 1);
     view.scale = LobbyModel::scale_for(g_ScreenX, g_ScreenY);
     view.selected = selected(s);
     if (view.selected < 0 && !st.map.empty()) view.missing_map = std::filesystem::path(st.map).stem().wstring();
     if (!view.host && view.selected >= 0 && !st.map_hash.empty())
         view.map_differs = map_hash(s.maps[view.selected].path) != st.map_hash;
+    view.map_problem = map_problem(s, view.selected, view.map_differs);
+    if (!view.host) {
+        view.map_progress = s.client.map_progress();
+        view.map_failed = s.client.map_refused() || (!st.map_hash.empty() && s.map_failed == st.map_hash) ||
+                          st.map_hash.empty() || !MapCatalog::valid_path(st.map);
+    }
     view.page = view.host ? s.page : LobbyModel::page_of(LobbyModel::row_of(view, view.selected));
     view.address = s.host_address;
     view.loading = !view.host && s.client.phase() == NetLobby::Client::Phase::Loading;
@@ -260,6 +402,7 @@ void rebuild() {
     else {
         const LobbyModel::Screen view = screen(s);
         prepare_lines(view.scale);
+        prepare_toggles(view.scale);
         markup = LobbyModel::hint_template(view);
     }
     CMatrixHint *built = CMatrixHint::Build(markup, static_cast<CBlockPar *>(nullptr));
@@ -312,6 +455,22 @@ void start_host() {
     }
     NetBattle::Start start = NetBattle::lobby_start(st, sides, s.values, seed,
                                                      Lobby::delay_turns(st, Lockstep::Config{}.turn_ms));
+    if (s.local) {
+        // Alone against the AI: the game's own loop runs the battle (NetBattle::local_battle). The next lobby opens
+        // on this map with this bonus.
+        lgr.notice("Lobby: starting {} against the AI")(utils::from_wstring(st.map));
+        auto values = s.values;
+        values.map = st.map;
+        values.battle_bonus = s.bonus;
+        std::string error;
+        if (!StandaloneSettings::save(values, error)) lgr.warning("Lobby: cannot keep the map chosen: {}")(error);
+        NetBattle::Options options = s.options;
+        options.role = NetBattle::Role::None;
+        options.lobby_local = true;
+        NetBattle::prepare(std::move(options), std::move(start), {});
+        finish();
+        return;
+    }
     lgr.notice("Lobby: starting {} for {} people, delay {} turns")(utils::from_wstring(st.map), st.people.size(),
                                                                   start.config.delay);
     // NetBattle::run gives the clients' links the human sides in increasing order: the drawn sides
@@ -385,7 +544,7 @@ void connect() {
 
 void select_map(State &s, int index) {
     if (!LobbyModel::offered(screen(s), index)) return;
-    s.host.set_map(s.maps[index].path, map_sides(s, index), map_hash(s.maps[index].path));
+    s.host.set_map(s.maps[index].path, map_sides(s, index), map_hash(s.maps[index].path), pack_ref(s.maps[index]));
     s.dirty = true;
 }
 
@@ -441,15 +600,82 @@ void set_bonus(State &s, int index) {
     s.dirty = true;
 }
 
+// The host switches a battle mod (the row's place among the installed battle mods) and keeps the choice for its
+// next lobbies and own battles.
+void toggle_mod(State &s, int row) {
+    std::vector<std::string> ids;
+    for (const auto &r : s.host.state().mods) ids.push_back(r.id);
+    int index = 0;
+    for (const Mods::Mod &m : Mods::installed()) {
+        if (m.kind != Mods::Kind::Battle) continue;
+        if (index++ != row) continue;
+        if (const auto at = std::find(ids.begin(), ids.end(), m.id); at != ids.end()) ids.erase(at);
+        else ids.push_back(m.id);
+    }
+    s.host.set_mods(mod_refs(ids));
+    s.values.mods = ids;
+    std::string error;
+    if (!StandaloneSettings::save(s.values, error)) lgr.warning("Lobby: cannot keep the mods chosen: {}")(error);
+    lgr.notice("Lobby: battle mods {}")(Mods::join(ids));
+    s.dirty = true;
+}
+
 void primary(State &s) {
     if (s.mode == Mode::Host) {
         start_host();
         return;
     }
     const auto view = screen(s);
-    if (view.loading || !view.missing_map.empty() || (!s.client.ready() && (view.map_differs || !LobbyModel::offered(view, view.selected))))
+    if (view.loading || !view.missing_map.empty() ||
+        (!s.client.ready() && (view.map_differs || !LobbyModel::offered(view, view.selected) || !LobbyModel::mods_fine(view) ||
+                               !LobbyModel::map_fine(view))))
         return;
     s.client.set_ready(!s.client.ready());
+}
+
+// The host's map when this PC lacks its file or has another: a copy kept from before (a battle of this lobby),
+// else the host sends it. The copy is read under the host's name until the lobby or battle is over.
+void share_map(State &s) {
+    const auto &st = s.client.state();
+    if (st.map.empty() || st.map_hash.empty() || !MapCatalog::valid_path(st.map) || s.map_failed == st.map_hash) return;
+    const int index = selected(s);
+    if (index >= 0 && map_hash(s.maps[index].path) == st.map_hash) return;
+    if (!MapShare::use(st.map, st.map_hash)) {
+        auto bytes = s.client.take_map();
+        if (!bytes) {
+            s.client.request_map(st.map_hash);
+            return;
+        }
+        if (!MapShare::store(st.map_hash, *bytes) || !MapShare::use(st.map, st.map_hash)) {
+            lgr.warning("Lobby: cannot keep the host's map {} in {}")(utils::from_wstring(st.map),
+                                                                     utils::from_wstring(MapShare::folder));
+            s.map_failed = st.map_hash;
+            s.dirty = true;
+            return;
+        }
+    }
+    lgr.notice("Lobby: the host's map {} is read from its copy {}")(utils::from_wstring(st.map), st.map_hash);
+    map_hashes.erase(st.map);
+    sides_read.erase(st.map);
+    if (index >= 0) {
+        s.sides[std::size_t(index)] = -1;
+    }
+    else {
+        // A map mod's map the host gave is named by the mod's Lang.dat that came with it.
+        std::wstring name = std::filesystem::path(st.map).stem().wstring();
+        if (const MapPacks::Pack *pack = MapPacks::for_map(st.map)) {
+            std::string error;
+            const auto names = MapMetadata::load(error, MapPacks::names_file(*pack, s.language == Language::Russian));
+            std::wstring key = std::filesystem::path(st.map).filename().wstring();
+            for (auto &ch : key) if (ch >= L'A' && ch <= L'Z') ch += L'a' - L'A';
+            if (const auto found = names.find(key); found != names.end() && !found->second.name.empty())
+                name = MapMetadata::plain_text(found->second.name);
+        }
+        s.maps.push_back({name, st.map, {}, true, {}});
+        s.names.push_back(name);
+        s.sides.push_back(-1);
+    }
+    s.dirty = true;
 }
 
 void track_client(State &s) {
@@ -474,6 +700,7 @@ void track_client(State &s) {
             return;
         }
         if (s.client.failure() != NetLobby::Client::Failure::None) {
+            MapShare::forget();
             s.error = join_error(s.client.failure());
             lgr.warning("Lobby: left the lobby ({})")(int(s.client.failure()));
             s.mode = Mode::Join;
@@ -489,8 +716,10 @@ void track_client(State &s) {
         s.dirty = true;
     }
     if (s.mode != Mode::Client || phase != Phase::InLobby) return;
+    share_map(s);
     const auto view = screen(s);
-    const bool can_ready = view.missing_map.empty() && !view.map_differs && LobbyModel::offered(view, view.selected);
+    const bool can_ready = view.missing_map.empty() && !view.map_differs && LobbyModel::offered(view, view.selected) &&
+                           LobbyModel::mods_fine(view) && LobbyModel::map_fine(view);
     if (!can_ready) s.auto_ready_map.clear();
     if (s.client.ready() && !can_ready) s.client.set_ready(false);
     // (After --lobby-side's request: the host reads them in order.)
@@ -516,7 +745,7 @@ void poll_network(State &s) {
     track_client(s);
 }
 
-void open(Mode mode, const StandaloneSettings::Values &values, const NetBattle::Options &options) {
+void open(Mode mode, const StandaloneSettings::Values &values, const NetBattle::Options &options, bool local = false) {
     shutdown();
     battle_started = false;
     state.emplace();
@@ -524,14 +753,17 @@ void open(Mode mode, const StandaloneSettings::Values &values, const NetBattle::
     s.mode = mode;
     s.values = values;
     s.options = options;
+    s.local = local;
     s.language = language();
     s.bonus = options.lobby_bonus.value_or(values.battle_bonus);
     s.actions = {Input::isVKeyPressed(VK_RETURN) || (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0,
                  Input::isVKeyPressed(VK_ESCAPE) || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0};
     if (mode == Mode::Name) return;
-    s.exclusive_was = Display::exclusive_allowed();
-    s.display_changed = true;
-    Display::set_exclusive_allowed(false);
+    if (!local) {  // a network's lobby goes on in the background: no exclusive mode while it is open
+        s.exclusive_was = Display::exclusive_allowed();
+        s.display_changed = true;
+        Display::set_exclusive_allowed(false);
+    }
     load_maps(s);
     map_sort = load_sort();
 }
@@ -588,6 +820,19 @@ void paste(State &s) {
     CloseClipboard();
 }
 
+// The host's choices as its lobby opens: the last map, direct control, the battle mods.
+void first_choices(State &s, const StandaloneSettings::Values &values, const NetBattle::Options &options) {
+    const std::wstring map = lobby_map(options, values);
+    if (const int index = MapCatalog::find(s.maps, map); index >= 0) {
+        s.host.set_map(s.maps[index].path, map_sides(s, index), map_hash(s.maps[index].path), pack_ref(s.maps[index]));
+        page_to_selected(s);
+    }
+    s.host.set_manual(options.manual_control != 0, options.manual_bonus != 0);  // --net-manual (tests)
+    // The battle mods: --net-mods (tests), else the ones last chosen here (or the mods' defaults).
+    const auto mods = options.mods ? *options.mods : values.mods ? *values.mods : Mods::default_battle(Mods::installed());
+    s.host.set_mods(mod_refs(mods));
+}
+
 void save_name(State &s) {
     if (!PlayerName::valid(s.name)) return;
     if (!PlayerName::save(s.name)) {
@@ -617,7 +862,7 @@ bool open_host(const StandaloneSettings::Values &values, const NetBattle::Option
     s.listen_address = address;
     s.listen_port = port;
     if (address == "0.0.0.0") {
-        // Every address of this PC (a LAN's, a VPN's or Porthole's virtual LAN's), a line each in the lobby.
+        // Every address of this PC (a LAN's, a VPN's or a virtual LAN's), a line each in the lobby.
         for (const auto &a : NetLink::local_addresses()) {
             if (std::count(s.host_address.begin(), s.host_address.end(), L',') >= 3) break;
             s.host_address += (s.host_address.empty() ? L"" : L", ") + utils::to_wstring(a) + L":" + std::to_wstring(port);
@@ -627,16 +872,20 @@ bool open_host(const StandaloneSettings::Values &values, const NetBattle::Option
     else {
         s.host_address = utils::to_wstring(address) + L":" + std::to_wstring(port);
     }
-    const std::wstring map = lobby_map(options, values);
-    if (const int index = MapCatalog::find(s.maps, map); index >= 0) {
-        s.host.set_map(s.maps[index].path, map_sides(s, index), map_hash(s.maps[index].path));
-        page_to_selected(s);
-    }
-    s.host.set_manual(options.manual_control != 0, options.manual_bonus != 0);  // --net-manual (tests)
+    first_choices(s, values, options);
     if (options.delay > 0) s.host.set_delay(options.delay * Lockstep::Config{}.turn_ms);  // --net-delay
     s.host.set_dropped_ai(options.dropped_ai != 0);                                       // --net-dropped
     rebuild();
     return true;
+}
+
+void open_local(const StandaloneSettings::Values &values, const NetBattle::Options &options) {
+    open(Mode::Host, values, options, true);
+    State &s = *state;
+    s.host.open_local(s.bonus, own_name(s));
+    lgr.notice("Lobby: a battle against the AI");
+    first_choices(s, values, options);
+    rebuild();
 }
 
 void open_join(const StandaloneSettings::Values &values, const NetBattle::Options &options) {
@@ -730,6 +979,10 @@ bool keyboard(uint8_t vk, bool down) {
         case VK_RETURN: primary(s); break;
         case '1': case '2': case '3': set_bonus(s, vk - '1'); break;
         case 'S': cycle_side(s, 1); break;
+        case 'M':
+            s.mods_view = !s.mods_view;
+            s.dirty = true;
+            break;
         case VK_NUMPAD1: case VK_NUMPAD2: case VK_NUMPAD3: set_bonus(s, vk - VK_NUMPAD1); break;
         case VK_UP: if (s.mode == Mode::Host) move_map(s, -1); break;
         case VK_DOWN: if (s.mode == Mode::Host) move_map(s, 1); break;
@@ -776,6 +1029,17 @@ bool mouse_down(int x, int y) {
     }
     if (target.action == 1) primary(s);
     else if (target.action == -1) shutdown();
+    else if (target.action == 2) {
+        s.mods_view = !s.mods_view;
+        s.dirty = true;
+    }
+    else if (view.mods_view && target.page) {
+        s.mods_page = std::clamp(view.mods_page + target.page, 0, LobbyModel::mods_page_count(view) - 1);
+        s.dirty = true;
+    }
+    else if (target.mod >= 0) {
+        if (s.mode == Mode::Host) toggle_mod(s, target.mod);
+    }
     else if (target.bonus >= 0) set_bonus(s, target.bonus);
     else if (target.side) cycle_side(s, target.side);
     else if (target.sort >= 0) set_sort(s, LobbyModel::MapSort(target.sort));
@@ -837,6 +1101,7 @@ void shutdown() {
     if (state) {
         state->host.close();
         state->client.close();
+        if (!battle_started) MapShare::forget();  // (a battle reads the host's map from its copy)
         // Back to the menu: the person's own display mode again.
         if (state->display_changed) {
             Display::set_exclusive_allowed(state->exclusive_was);

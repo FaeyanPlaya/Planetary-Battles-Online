@@ -2,6 +2,7 @@
 #include "NetLobby.hpp"
 
 #include "Lockstep.hpp"
+#include "MapShare.hpp"
 #include "PlayerName.hpp"
 
 #include <algorithm>
@@ -15,9 +16,11 @@ namespace {
 constexpr auto hello_wait = std::chrono::seconds(10);
 constexpr auto retry_every = std::chrono::milliseconds(500);
 constexpr auto ping_every = std::chrono::seconds(1);
-constexpr auto ping_sampling = std::chrono::milliseconds(300);  // while auto's delay is measured
-constexpr std::size_t auto_samples = 5;
+constexpr auto ping_skipping = std::chrono::milliseconds(300);  // a new person's first round trips
+constexpr auto ping_sampling = std::chrono::milliseconds(500);  // while auto's delay is measured
+constexpr std::size_t auto_samples = 8;  // Lobby::typical_round_trip takes the middle one
 constexpr auto ping_lost = std::chrono::seconds(5);  // no pong so long: ask again
+constexpr std::size_t send_queue = 2 * MapShare::chunk_size;  // a map file's lines wait behind no more
 
 void refuse(NetLink::Connection &link, const std::string &reason) {
     link.send_line("refused " + reason);
@@ -39,6 +42,11 @@ bool Host::open(const std::string &address, int port, BattleChoice::Bonus bonus,
     m_State.people.push_back({bonus, true, 0, std::move(name)});
     measure_again();
     return true;
+}
+
+void Host::open_local(BattleChoice::Bonus bonus, std::wstring name) {
+    close();
+    m_State.people.push_back({bonus, true, 0, std::move(name)});
 }
 
 bool Host::poll() {
@@ -86,6 +94,7 @@ bool Host::poll() {
                 m_State.people.push_back({hello->bonus, false, 0, hello->name});
                 m_Clients.push_back(std::move(m_Pending[i].link));
                 m_Pings.push_back({});
+                m_Sending.push_back(std::nullopt);
                 m_Events.push_back(std::format("person {} joined", people()));
                 measure_again();
                 changed = true;
@@ -124,6 +133,9 @@ bool Host::poll() {
             else if (line.starts_with("pong ")) {
                 if (pong(i, std::string_view(line).substr(5), std::chrono::steady_clock::now())) changed = true;
             }
+            else if (line.starts_with("mapget ")) {
+                give_map(i, std::string_view(line).substr(7));
+            }
             else if (line == "ready 0" || line == "ready 1") {
                 const bool ready = line == "ready 1";
                 if (ready != person.ready) {
@@ -137,10 +149,69 @@ bool Host::poll() {
             changed = true;
             continue;
         }
+        if (send_map(i)) changed = true;
         measure(i, now);
     }
     if (changed) publish();
     return changed;
+}
+
+void Host::give_map(std::size_t client, std::string_view hash) {
+    auto &link = *m_Clients[client];
+    if (hash.empty() || hash != m_State.map_hash || m_State.map.empty()) {
+        link.send_line("mapno " + std::string(hash));
+        return;
+    }
+    if (!m_MapFile && !m_MapUnreadable) {
+        auto bytes = MapShare::read(m_State.map);
+        if (bytes && MapShare::fingerprint(*bytes) == m_State.map_hash)
+            m_MapFile = std::make_shared<const std::string>(std::move(*bytes));
+        else
+            m_MapUnreadable = true;
+    }
+    if (!m_MapFile) {
+        link.send_line("mapno " + std::string(hash));
+        m_Events.push_back(std::format("cannot send the map to person {}", client + 2));
+        return;
+    }
+    link.send_line(std::format("mapfile {} {}", m_State.map_hash, m_MapFile->size()));
+    m_Sending[client] = 0;
+    m_Events.push_back(std::format("sending the map ({} bytes) to person {}", m_MapFile->size(), client + 2));
+}
+
+bool Host::send_map(std::size_t client) {
+    auto &at = m_Sending[client];
+    if (!at || !m_MapFile) return false;
+    auto &link = *m_Clients[client];
+    const std::string_view file = *m_MapFile;
+    while (*at < file.size() && link.queued() < send_queue) {
+        const std::size_t n = std::min(MapShare::chunk_size, file.size() - *at);
+        link.send_line("mapdata " + MapShare::to_base64(file.substr(*at, n)));
+        *at += n;
+    }
+    if (*at < file.size()) {
+        link.pump();
+        return false;
+    }
+    link.send_line("mapend " + m_State.map_hash);
+    link.pump();
+    at.reset();
+    m_Events.push_back(std::format("sent the map to person {}", client + 2));
+    // The file's lines held the pings back, and the client reads the file now: auto's delay is measured again,
+    // without this person's first round trips (as after joining).
+    m_Pings[client].skip = 5;
+    measure_again();
+    return true;
+}
+
+void Host::stop_sending(const std::string &old_hash) {
+    m_MapFile.reset();
+    m_MapUnreadable = false;
+    for (std::size_t i = 0; i < m_Sending.size(); ++i) {
+        if (!m_Sending[i]) continue;
+        m_Sending[i].reset();
+        m_Clients[i]->send_line("mapno " + old_hash);
+    }
 }
 
 bool Host::measure(std::size_t client, std::chrono::steady_clock::time_point now) {
@@ -149,7 +220,7 @@ bool Host::measure(std::size_t client, std::chrono::steady_clock::time_point now
     p.number = p.number % 1000000 + 1;
     p.waiting = true;
     p.sent = now;
-    p.next = now + (p.skip > 0 || p.sample.size() < auto_samples ? ping_sampling : ping_every);
+    p.next = now + (p.skip > 0 ? ping_skipping : p.sample.size() < auto_samples ? ping_sampling : ping_every);
     m_Clients[client]->send_line(std::format("ping {}", p.number));
     m_Clients[client]->pump();
     return true;
@@ -190,17 +261,22 @@ void Host::measure_again() {
 void Host::settle_auto_delay() {
     if (m_State.auto_delay > 0) return;
     int slowest = 0;
+    std::string samples;  // for the log: each person's round trips
     for (const Ping &p : m_Pings) {
         if (p.sample.size() < auto_samples) return;
-        slowest = std::max(slowest, *std::max_element(p.sample.begin(), p.sample.end()));
+        slowest = std::max(slowest, Lobby::typical_round_trip(p.sample));
+        samples += samples.empty() ? "" : "; ";
+        for (std::size_t i = 0; i < p.sample.size(); ++i) samples += std::format("{}{}", i ? " " : "", p.sample[i]);
     }
     m_State.auto_delay = Lobby::auto_delay_for(slowest, Lockstep::Config{}.turn_ms);
-    m_Events.push_back(std::format("auto delay {} ms (slowest round trip {} ms)", m_State.auto_delay, slowest));
+    m_Events.push_back(std::format("auto delay {} ms (slowest typical round trip {} ms; round trips {})",
+                                   m_State.auto_delay, slowest, samples.empty() ? "-" : samples));
 }
 
 void Host::drop(std::size_t client) {
     m_Clients.erase(m_Clients.begin() + std::ptrdiff_t(client));
     m_Pings.erase(m_Pings.begin() + std::ptrdiff_t(client));
+    m_Sending.erase(m_Sending.begin() + std::ptrdiff_t(client));
     m_State.people.erase(m_State.people.begin() + std::ptrdiff_t(client) + 1);
     m_Events.push_back(std::format("person {} left", client + 2));
     measure_again();
@@ -224,17 +300,21 @@ void Host::publish() {
     }
 }
 
-void Host::set_map(const std::wstring &map, unsigned sides, const std::string &map_hash) {
+void Host::set_map(const std::wstring &map, unsigned sides, const std::string &map_hash, const std::string &map_pack) {
     if (map == m_State.map) {
-        if (map_hash != m_State.map_hash) {
+        if (map_hash != m_State.map_hash || map_pack != m_State.map_pack) {
+            stop_sending(m_State.map_hash);
             m_State.map_hash = map_hash;
+            m_State.map_pack = map_pack;
             publish();
         }
         set_map_sides(sides);
         return;
     }
+    stop_sending(m_State.map_hash);
     m_State.map = map;
     m_State.map_hash = map_hash;
+    m_State.map_pack = map_pack;
     m_MapSides = sides;
     drop_invalid_choices();
     // Everyone agrees to the map anew.
@@ -288,6 +368,14 @@ void Host::set_dropped_ai(bool ai) {
     publish();
 }
 
+void Host::set_mods(const std::vector<Lobby::ModRef> &mods) {
+    if (mods == m_State.mods) return;
+    m_State.mods = mods;
+    // Everyone agrees to the mods anew.
+    for (std::size_t i = 1; i < m_State.people.size(); ++i) m_State.people[i].ready = false;
+    publish();
+}
+
 void Host::set_bonus(BattleChoice::Bonus bonus) {
     if (bonus == m_State.people[0].bonus) return;
     m_State.people[0].bonus = bonus;
@@ -302,6 +390,8 @@ std::vector<std::unique_ptr<NetLink::Connection>> Host::start() {
     m_Listener.reset();
     m_Pending.clear();
     m_Pings.clear();
+    m_Sending.clear();
+    m_MapFile.reset();
     return std::move(m_Clients);
 }
 
@@ -312,6 +402,9 @@ void Host::close() {
     }
     m_Clients.clear();
     m_Pings.clear();
+    m_Sending.clear();
+    m_MapFile.reset();
+    m_MapUnreadable = false;
     m_Pending.clear();
     m_Kicked.clear();
     m_Listener.reset();
@@ -335,6 +428,7 @@ void Client::connect(const std::string &address, int port, BattleChoice::Bonus b
     m_You = 0;
     m_Rules.reset();
     m_Start.reset();
+    forget_map();
     m_Address = address;
     m_Port = port;
     m_Retry = {};
@@ -370,8 +464,13 @@ bool Client::poll() {
     // After the start line the rest is the battle's: it stays in the connection for NetBattle.
     while (m_Phase != Phase::Started && m_Phase != Phase::Failed && m_Link->next_line(line)) {
         if (auto received = Lobby::from_line(line)) {
+            const bool new_map = received->state.map_hash != m_State.map_hash;
             m_State = std::move(received->state);
             m_You = received->you;
+            // The host chose another map: what came of the last one asked for is not handed over (it would be checked
+            // against this map's fingerprint and this map marked failed), and its late refusal does not count (the
+            // host comes back to it: asked again).
+            if (new_map) forget_map();
             if (m_Phase == Phase::Connecting) m_Phase = Phase::InLobby;
             changed = true;
         }
@@ -389,6 +488,51 @@ bool Client::poll() {
         else if (line.starts_with("ping ")) {
             m_Link->send_line("pong " + line.substr(5));  // at once: the host times the answer
             m_Link->pump();
+        }
+        else if (line.starts_with("mapdata ")) {
+            if (!m_MapReceiving) continue;
+            const int before = map_progress();
+            const auto bytes = MapShare::from_base64(std::string_view(line).substr(8));
+            if (!bytes || m_MapBytes.size() + bytes->size() > m_MapSize) {
+                m_MapReceiving = false;
+                m_MapRefused = true;
+                m_MapBytes.clear();
+                changed = true;
+                continue;
+            }
+            m_MapBytes += *bytes;
+            if (map_progress() != before) changed = true;
+        }
+        else if (line.starts_with("mapfile ")) {
+            const std::string_view rest = std::string_view(line).substr(8);
+            const auto space = rest.find(' ');
+            std::size_t size = 0;
+            if (space != std::string_view::npos)
+                std::from_chars(rest.data() + space + 1, rest.data() + rest.size(), size);
+            if (space == std::string_view::npos || rest.substr(0, space) != m_MapWanted) continue;
+            m_MapBytes.clear();
+            m_MapReceiving = size > 0 && size <= MapShare::max_size;
+            m_MapRefused = !m_MapReceiving;
+            m_MapSize = size;
+            if (m_MapReceiving) m_MapBytes.reserve(size);
+            changed = true;
+        }
+        else if (line.starts_with("mapend ")) {
+            if (!m_MapReceiving || std::string_view(line).substr(7) != m_MapWanted) continue;
+            m_MapReceiving = false;
+            if (m_MapBytes.size() == m_MapSize && MapShare::fingerprint(m_MapBytes) == m_MapWanted)
+                m_MapDone = std::move(m_MapBytes);
+            else
+                m_MapRefused = true;
+            m_MapBytes.clear();
+            changed = true;
+        }
+        else if (line.starts_with("mapno ")) {
+            if (std::string_view(line).substr(6) != m_MapWanted) continue;
+            m_MapReceiving = false;
+            m_MapRefused = true;
+            m_MapBytes.clear();
+            changed = true;
         }
         else if (line == "loading") {
             m_Phase = Phase::Loading;
@@ -440,6 +584,30 @@ void Client::set_side(int side) {
     if (!m_Link || m_Phase != Phase::InLobby) return;
     m_Link->send_line(std::format("side {}", side));
     m_Link->pump();
+}
+
+void Client::request_map(const std::string &hash) {
+    if (hash.empty() || hash == m_MapWanted || !m_Link || m_Phase != Phase::InLobby) return;
+    forget_map();
+    m_MapWanted = hash;
+    m_Link->send_line("mapget " + hash);
+    m_Link->pump();
+}
+
+int Client::map_progress() const {
+    if (!m_MapReceiving || m_MapSize == 0) return -1;
+    return int(m_MapBytes.size() * 100 / m_MapSize);
+}
+
+std::optional<std::string> Client::take_map() { return std::exchange(m_MapDone, std::nullopt); }
+
+void Client::forget_map() {
+    m_MapWanted.clear();
+    m_MapBytes.clear();
+    m_MapSize = 0;
+    m_MapReceiving = false;
+    m_MapRefused = false;
+    m_MapDone.reset();
 }
 
 void Client::set_ready(bool ready) {

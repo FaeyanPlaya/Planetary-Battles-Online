@@ -16,6 +16,7 @@ struct Map {
     std::wstring path;     // Matrix\Map\<file>, the form that Config/Map uses.
     std::wstring preview;  // Matrix\Map\<image> with the same name, or empty.
     bool loose = false;    // A loose file, which the loader prefers to a packaged one.
+    std::string pack{};    // The map mod (MapPacks) it comes from; empty: the game's.
     bool operator==(const Map &) const = default;
 };
 
@@ -23,6 +24,8 @@ struct Map {
 // case-insensitively and a loose map replaces a packaged one, as the loader does. A .jpg preview
 // is preferred to a .png one. Only maps with valid remembered paths are listed, sorted by name.
 std::vector<Map> merge(const std::vector<std::wstring> &packed, const std::vector<std::wstring> &loose);
+// The maps of these loose files in another folder (a map mod's DATA\Maps), as merge lists them.
+std::vector<Map> listed(const std::wstring &folder, const std::vector<std::wstring> &files);
 
 // Lists the registered packages and the loose folder relative to the working directory.
 std::vector<Map> scan();

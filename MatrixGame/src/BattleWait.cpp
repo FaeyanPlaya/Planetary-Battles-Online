@@ -2,6 +2,7 @@
 #include "BattleWait.hpp"
 
 #include "Factions.hpp"
+#include "SettingsModel.hpp"
 #include "Interface/MatrixHint.hpp"
 #include "MatrixMap.hpp"
 #include "ScreenLayout.hpp"
@@ -150,8 +151,8 @@ Templates compose(const Window &window, bool ru, int hover,
     inner = t.width - 2 * padding_x;
 
     // Each text a line of its own, row_height high, centred; the buttons' rows stay empty (their own hints).
-    t.window = std::format(L"2|_BORDER:{}:{}:{}:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_TEXTP:L|_COLOR:{:08X}|_FONT:{}|_TEXT:{}",
-                           padding_x, padding_top, padding_x, padding_bottom, inner, row_height + 6, text_colour,
+    t.window = std::format(L"{}|_BORDER:{}:{}:{}:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_TEXTP:L|_COLOR:{:08X}|_FONT:{}|_TEXT:{}",
+                           SettingsModel::window_border, padding_x, padding_top, padding_x, padding_bottom, inner, row_height + 6, text_colour,
                            title_font, title);
     t.window += L"|_HEIGHT:" + std::to_wstring(row_height) + L"|_FONT:" + line_font;
     for (const std::wstring &l : lines) t.window += L"|_TEXT:" + l;

@@ -20,6 +20,9 @@
 
 #include "Effects/MatrixEffectSelection.hpp"
 #include "Effects/MatrixEffectExplosion.hpp"
+#include "Effects/MatrixEffectWeapon.hpp"
+#include "Effects/MatrixEffectElevatorField.hpp"
+#include "Mods.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -678,6 +681,12 @@ void CMatrixBuilding::LogicTakt(int cms) {
                     break;
             }
         }
+        if (m_Kind == BUILDING_REPAIR && Mods::switches().repair_plant) {
+            if (su)
+                RepairTakt(cms);
+            else
+                StopRepair();
+        }
     }
     // if (m_Kind==BUILDING_BASE) CDText::T("hp",(float)m_HitPoint);
 
@@ -1327,8 +1336,117 @@ bool CMatrixBuilding::BuildFlyer(EFlyerKind kind) {
     return true;
 }
 
+// The repair factory's patient: the nearest damaged robot of its side in its capture area.
+struct SFindRepairPatient {
+    CMatrixMapStatic *found = nullptr;
+    float dist2 = CAPTURE_RADIUS * CAPTURE_RADIUS;
+    int side = 0;
+};
+
+static bool FindRepairPatient(const D3DXVECTOR2 &center, CMatrixMapStatic *ms, uintptr_t user) {
+    SFindRepairPatient *data = (SFindRepairPatient *)user;
+    if (ms->GetSide() != data->side || !ms->NeedRepair() || !ms->IsLiveRobot())
+        return true;
+    const D3DXVECTOR2 to = center - *(D3DXVECTOR2 *)&ms->GetGeoCenter();
+    const float dist2 = D3DXVec2LengthSq(&to);
+    if (dist2 < data->dist2) {
+        data->found = ms;
+        data->dist2 = dist2;
+    }
+    return true;
+}
+
+// Points of the repair factory's model (Matrix\Building\b5.cvo, which has no named points): the tips of its two probes
+// either side of the hatch in the front of its body, and the hatch; the pad in front is round its point (0, 0).
+static const D3DXVECTOR3 repair_probes[2] = {D3DXVECTOR3(-22, -28, 20), D3DXVECTOR3(22, -28, 20)};
+static const D3DXVECTOR3 repair_hatch(0, -24, 14);
+
+// The original game's repair factory did nothing. With RepairPlant it repairs a robot of its side standing in its
+// capture area (its pad) with two repairer's beams from its probes, each twice a repairer's rate (a robot with four
+// repairers); the reinforcements' lift field reaches from its hatch to the robot meanwhile (presentation only).
+void CMatrixBuilding::RepairTakt(int cms) {
+    for (auto *&weapon : m_RepairWeapon) {
+        if (weapon && weapon->GetSideStorage() != m_Side) {  // captured: the beams are the new side's
+            StopRepair();
+            weapon->Release();
+            weapon = nullptr;
+        }
+        if (!weapon) {
+            weapon = (CMatrixEffectWeapon *)CMatrixEffect::CreateWeapon(GetGeoCenter(), D3DXVECTOR3(0, 0, 1), 0, nullptr,
+                                                                      WEAPON_REPAIR);
+            weapon->SetOwner(this);
+            weapon->ModifyCoolDown(-0.5f);
+        }
+    }
+    SFindRepairPatient data;
+    data.side = m_Side;
+    g_MatrixMap->FindObjects(m_Pos, CAPTURE_RADIUS, 1, TRACE_ROBOT, this, FindRepairPatient, (uintptr_t)&data);
+    // Beams with nothing more to repair stay a little (a robot under fire is damaged again at once) instead of going
+    // out and starting over.
+    m_RepairIdle = data.found ? 0 : std::min(m_RepairIdle + cms, REPAIR_BEAM_LINGER + 1);
+    if (m_RepairIdle > REPAIR_BEAM_LINGER) {
+        StopRepair();
+        return;
+    }
+    if (data.found) {
+        const D3DXVECTOR3 patient = data.found->GetGeoCenter();
+        for (int i = 0; i < 2; ++i) {
+            D3DXVECTOR3 from, dir;
+            D3DXVec3TransformCoord(&from, &repair_probes[i], &m_Core->m_Matrix);
+            dir = patient - from;
+            D3DXVec3Normalize(&dir, &dir);
+            m_RepairWeapon[i]->Modify(from, dir, D3DXVECTOR3(0, 0, 0));
+            m_RepairWeapon[i]->FireBegin(D3DXVECTOR3(0, 0, 0), this);
+        }
+        D3DXVECTOR3 hatch;
+        D3DXVec3TransformCoord(&hatch, &repair_hatch, &m_Core->m_Matrix);
+        const float radius = data.found->GetRadius();
+        const D3DXVECTOR3 forward = data.found->AsRobot()->m_Forward;
+        if (m_RepairField) {
+            m_RepairField->UpdateData(hatch, patient, radius, forward);
+        }
+        else {
+            random::CosmeticScope cosmetic;  // presentation only: never what the battle computes
+            m_RepairField = (CMatrixEffectElevatorField *)CMatrixEffect::CreateElevatorField(hatch, patient, radius, forward);
+            if (!g_MatrixMap->AddEffect(m_RepairField))
+                m_RepairField = nullptr;
+        }
+    }
+    else {
+        RemoveRepairField();
+    }
+    for (auto *weapon : m_RepairWeapon)
+        if (weapon->IsFire())
+            weapon->Takt(float(cms));
+}
+
+void CMatrixBuilding::RemoveRepairField() {
+    if (!m_RepairField)
+        return;
+#ifdef _DEBUG
+    g_MatrixMap->SubEffect(DEBUG_CALL_INFO, m_RepairField);
+#else
+    g_MatrixMap->SubEffect(m_RepairField);
+#endif
+    m_RepairField = nullptr;
+}
+
+void CMatrixBuilding::StopRepair() {
+    RemoveRepairField();
+    for (auto *weapon : m_RepairWeapon)
+        if (weapon && weapon->IsFire())
+            weapon->FireEnd();
+}
+
 void CMatrixBuilding::ReleaseMe(void) {
     DTRACE();
+
+    StopRepair();
+    for (auto *&weapon : m_RepairWeapon) {
+        if (weapon)
+            weapon->Release();
+        weapon = nullptr;
+    }
 
     DeletePlacesShow();
 

@@ -9,7 +9,9 @@
 #include <windows.h>
 #include "MatrixMap.hpp"
 #include "SettingsWindow.hpp"
-#include "MapWindow.hpp"
+#include "NetBattle.hpp"
+#include "Mods.hpp"
+#include "NewBattle.hpp"
 #include "StandaloneRuntime.hpp"
 #include "BattleRules.hpp"
 #include "ScreenLayout.hpp"
@@ -1614,6 +1616,8 @@ void CMatrixMap::BeforeDraw(void) {
         }
     }
 
+    CMatrixMapStatic::SortFinish();
+
     if (FLAG(m_Flags, MMFLAG_NEEDRECALCTER)) {
         CMatrixMapStatic::SortEndRecalcTerainColor();
         RESETFLAG(m_Flags, MMFLAG_NEEDRECALCTER);
@@ -2392,6 +2396,11 @@ void CMatrixMap::DrawSky(void) {
     ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZWRITEENABLE, TRUE));
     ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZENABLE, TRUE));
     g_D3DD->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+}
+
+float DrawShadowsDistanceSq() {
+    const float distance = Mods::switches().far_view ? 1536.0f * Mods::view_scale() : 1024.0f;
+    return distance * distance;
 }
 
 void CMatrixMap::Draw(void) {
@@ -3485,8 +3494,9 @@ void CMatrixMap::CloseStatistics(void) {
         m_Spectating = true;
         return;
     }
-    if (g_ExitState != 1 && !Commands::deferred() && MapWindow::open_after_battle())
-        return;
+    // A battle from the lobby without a network goes back to it after a decided battle, else to the startup menu.
+    if (NetBattle::local_battle())
+        NetBattle::after_local_battle(g_ExitState != 1);
     SETFLAG(g_Flags, GFLAG_EXITLOOP);
 }
 static void OkJustExitHandler(void) { g_MatrixMap->CloseStatistics(); }
@@ -3637,10 +3647,8 @@ void ResetRequestHandler(void) {
 }
 
 void HelpRequestHandler(void) {
-    if (MapWindow::available()) {
-        MapWindow::open(MapWindow::Origin::Menu, StandaloneSettings::current());
+    if (NewBattle::leave())
         return;
-    }
     g_MatrixMap->LeaveDialogMode();
     std::wstring fn;
     if (CFile::FileExist(fn, L"Manual.exe")) {
@@ -3711,7 +3719,7 @@ void CMatrixMap::EnterDialogMode(const wchar *hint_i) {
             const bool shared_battle = 0 == wcscmp(hint, TEMPLATE_DIALOG_MENU) && Commands::deferred();
             if (0 == wcscmp(hint, TEMPLATE_DIALOG_MENU)) {
                 SettingsWindow::customize_menu(templ);
-                MapWindow::customize_menu(templ);
+                NewBattle::customize_menu(templ);
             }
             if (shared_battle) {
                 utils::replace(templ, L"_COLOR:FFADA793|_POS:247:105|", L"_COLOR:FF6794A3|_POS:247:105|");

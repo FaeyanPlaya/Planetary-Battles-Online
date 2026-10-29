@@ -113,8 +113,13 @@ bool copy_files(const fs::path &install, const fs::path &game, bool ru) {
         }
         lgr.notice("Setup: copied {}")(c.from.string());
     }
-    return file_exists(game / L"DATA" / L"robots.pkg");
+    if (!file_exists(game / L"DATA" / L"robots.pkg")) return false;
+    std::error_code error;
+    save_install(game, {install, fs::is_directory(install / L"Mods", error), false});
+    return true;
 }
+
+fs::path install_file(const fs::path &game) { return game / L"CFG" / L"game-path.txt"; }
 
 }  // namespace
 
@@ -284,6 +289,97 @@ bool setup(const fs::path &game, bool assume_yes) {
                        L"\u0412 \u044d\u0442\u043e\u0439 \u043f\u0430\u043f\u043a\u0435 \u043d\u0435\u0442 Rangers.exe \u0438 DATA\\robots.pkg. \u0423\u043a\u0430\u0437\u0430\u0442\u044c \u0434\u0440\u0443\u0433\u0443\u044e?");
     }
     return false;
+}
+
+std::optional<Install> load_install(const fs::path &game) {
+    std::ifstream in(install_file(game), std::ios::binary);
+    if (!in) return std::nullopt;
+    std::string line;
+    std::getline(in, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    Install install;
+    try {
+        install.path = fs::path(std::u8string(line.begin(), line.end()));
+    }
+    catch (...) {
+        return std::nullopt;
+    }
+    std::string word;
+    while (in >> word) {
+        if (word == "mods") install.mods_seen = true;
+        else if (word == "never") install.never = true;
+    }
+    return install;
+}
+
+void save_install(const fs::path &game, const Install &install) {
+    std::error_code error;
+    fs::create_directories(install_file(game).parent_path(), error);
+    std::ofstream out(install_file(game), std::ios::binary | std::ios::trunc);
+    const std::u8string path = install.path.u8string();
+    out.write(reinterpret_cast<const char *>(path.data()), std::streamsize(path.size()));
+    out << "\r\n";
+    if (install.mods_seen) out << "mods\r\n";
+    if (install.never) out << "never\r\n";
+    if (!out) lgr.warning("Cannot write {}")(install_file(game).string());
+}
+
+fs::path game_mods(const fs::path &game, bool ask) {
+    if (_wgetenv(L"PBO_NO_SETUP")) return {};
+    const auto has_mods = [](const fs::path &install) {
+        std::error_code error;
+        return !install.empty() && fs::is_directory(install / L"Mods", error);
+    };
+    auto saved = load_install(game);
+    if (!saved) {
+        // Files copied before the path was kept (or by hand): look once, without asking.
+        Install found;
+        for (const fs::path &install : find_installs()) {
+            if (found.path.empty() || (!found.mods_seen && has_mods(install))) found = {install, has_mods(install), false};
+        }
+        save_install(game, found);
+        lgr.notice("Space Rangers HD for map mods: {}")(found.path.empty() ? std::string("none found") : found.path.string());
+        return found.mods_seen ? found.path / L"Mods" : fs::path();
+    }
+    if (saved->never) return {};
+    if (has_mods(saved->path)) {
+        if (!saved->mods_seen) save_install(game, {saved->path, true, false});
+        return saved->path / L"Mods";
+    }
+    if (!saved->mods_seen || !ask) return {};
+    const bool ru = russian_ui();
+    const std::wstring message =
+        std::wstring(text(ru, L"The Mods folder of Space Rangers HD (the map mods come from it) is gone from\n",
+                          L"\u041f\u0430\u043f\u043a\u0430 Mods \u0438\u0433\u0440\u044b Space Rangers HD (\u0438\u0437 \u043d\u0435\u0451 \u0431\u0435\u0440\u0443\u0442\u0441\u044f \u043c\u043e\u0434\u044b \u043a\u0430\u0440\u0442) \u043f\u0440\u043e\u043f\u0430\u043b\u0430 \u0438\u0437\n")) +
+        saved->path.wstring() +
+        text(ru, L"\n\nYes: look for it again. No: later (this start goes without it). Cancel: never look again.",
+             L"\n\n\u0414\u0430: \u043d\u0430\u0439\u0442\u0438 \u0435\u0451 \u0437\u0430\u043d\u043e\u0432\u043e. \u041d\u0435\u0442: \u043e\u0442\u043b\u043e\u0436\u0438\u0442\u044c (\u044d\u0442\u043e\u0442 \u0437\u0430\u043f\u0443\u0441\u043a \u0431\u0435\u0437 \u043d\u0435\u0451). \u041e\u0442\u043c\u0435\u043d\u0430: \u0431\u043e\u043b\u044c\u0448\u0435 \u043d\u0435 \u0438\u0441\u043a\u0430\u0442\u044c.");
+    const int answer = MessageBoxW(nullptr, message.c_str(), title, MB_YESNOCANCEL | MB_ICONQUESTION);
+    if (answer == IDCANCEL) {
+        save_install(game, {saved->path, true, true});
+        return {};
+    }
+    if (answer != IDYES) return {};
+    for (const fs::path &install : find_installs())
+        if (has_mods(install)) {
+            save_install(game, {install, true, false});
+            lgr.notice("Space Rangers HD for map mods found again: {}")(install.string());
+            return install / L"Mods";
+        }
+    const wchar_t *prompt = text(ru, L"No Space Rangers HD with a Mods folder was found. Show the folder of the game?",
+                                 L"\u041d\u0435 \u043d\u0430\u0448\u043b\u0438 Space Rangers HD \u0441 \u043f\u0430\u043f\u043a\u043e\u0439 Mods. \u0423\u043a\u0430\u0437\u0430\u0442\u044c \u043f\u0430\u043f\u043a\u0443 \u0438\u0433\u0440\u044b \u0432\u0440\u0443\u0447\u043d\u0443\u044e?");
+    while (MessageBoxW(nullptr, prompt, title, MB_YESNO | MB_ICONQUESTION) == IDYES) {
+        const auto folder = browse_folder(ru);
+        if (!folder) break;
+        for (const fs::path &install : {*folder, folder->parent_path()})
+            if (has_mods(install) && file_exists(install / L"DATA" / L"robots.pkg")) {
+                save_install(game, {install, true, false});
+                return install / L"Mods";
+            }
+        prompt = text(ru, L"That folder is not the game with a Mods folder. Show another?",
+                      L"\u0412 \u044d\u0442\u043e\u0439 \u043f\u0430\u043f\u043a\u0435 \u043d\u0435\u0442 \u0438\u0433\u0440\u044b \u0441 \u043f\u0430\u043f\u043a\u043e\u0439 Mods. \u0423\u043a\u0430\u0437\u0430\u0442\u044c \u0434\u0440\u0443\u0433\u0443\u044e?");
+    }
+    return {};
 }
 
 std::uint64_t hash_bytes(const void *data, std::size_t size, std::uint64_t seed) {

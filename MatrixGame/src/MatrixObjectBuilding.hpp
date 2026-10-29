@@ -11,6 +11,9 @@
 
 #include "Effects/MatrixEffectZahvat.hpp"
 
+class CMatrixEffectWeapon;
+class CMatrixEffectElevatorField;
+
 #define BASE_FLOOR_Z      (-63.0f)
 #define BASE_FLOOR_SPEED  0.0008f
 #define MAX_ZAHVAT_POINTS 14
@@ -30,6 +33,7 @@
 #define CAPTURE_SEEK_ROBOT_PERIOD 500
 
 #define DISTANCE_CAPTURE_ME 300
+#define REPAIR_BEAM_LINGER  500  // RepairPlant: ms a beam with nothing to repair stays on
 
 #define MAX_PLACES 4
 
@@ -203,6 +207,9 @@ public:
     EBaseState m_State;
 
     CMatrixEffectZahvat *m_capture;
+    CMatrixEffectWeapon *m_RepairWeapon[2] = {};    // RepairPlant (Mods): a repair factory's beams, from its probes
+    int m_RepairIdle = 0;                           // ms the beam has had nothing to repair
+    CMatrixEffectElevatorField *m_RepairField = nullptr;  // from the hatch to the robot being repaired (presentation)
     STrueColor m_TrueColor;
     bool m_TrueColorReady;
     ECaptureStatus Capture(CMatrixRobotAI *by);
@@ -278,6 +285,10 @@ public:
     float GetMaxHitPoint() { return m_HitPointMax / 10; }
     float GetHitPoint() { return m_HitPoint / 10; }
     void ReleaseMe();
+    // RepairPlant (Mods): the beams of a repair factory at the nearest damaged robot of its side in its capture area.
+    void RepairTakt(int cms);
+    void StopRepair();
+    void RemoveRepairField();
 
     void SetNeutral(void);
 

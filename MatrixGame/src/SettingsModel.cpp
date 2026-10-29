@@ -17,6 +17,7 @@ using StandaloneSettings::Skybox;
 constexpr std::array window_modes{Mode::Windowed, Mode::Borderless, Mode::Exclusive};
 constexpr std::array fullscreen_modes{Mode::Borderless, Mode::Exclusive};
 constexpr std::array skyboxes{Skybox::Off, Skybox::Low, Skybox::High};
+constexpr std::array far_views{0, 150, 200, 300};  // off, then the scale in percent
 
 template<class T, size_t N>
 T cycle(const std::array<T, N> &items, T current, int direction) {
@@ -40,6 +41,7 @@ constexpr uint32_t arrow_color = 0xFF7D8890;
 constexpr uint32_t legend_color = 0xFF5E676E;
 constexpr uint32_t error_color = 0xFFB01818;
 constexpr int option_indent = 12;
+constexpr int text_height = 19;  // a text element's box (rows are closer: it may reach into the next)
 
 std::wstring hex(uint32_t color) {
     static constexpr wchar_t digits[] = L"0123456789ABCDEF";
@@ -53,14 +55,14 @@ std::wstring hex(uint32_t color) {
 std::wstring text_element(const std::wstring &text, const wchar_t *font, uint32_t color, int x, int y, int width,
                           int align) {
     return L"|_FONT:" + std::wstring(font) + L"|_COLOR:" + hex(color) + L"|_WIDTH:" + std::to_wstring(width) +
-           L"|_HEIGHT:" + std::to_wstring(Layout::row_height - 1) + L"|_ALIGN:" + std::to_wstring(align) +
+           L"|_HEIGHT:" + std::to_wstring(text_height) + L"|_ALIGN:" + std::to_wstring(align) +
            L":0|_POS:" + std::to_wstring(x) + L":" + std::to_wstring(y) + L"|_TEXT:" + text;
 }
 
 bool is_group(int row) {
     const auto value = static_cast<Row>(row);
     return value == Row::DisplayGroup || value == Row::SoundGroup || value == Row::GraphicsGroup ||
-           value == Row::GameplayGroup;
+           value == Row::GameplayGroup || value == Row::ModsGroup;
 }
 
 namespace {
@@ -100,10 +102,24 @@ Language detect_language(const std::wstring &menu_text) {
     return cyrillic ? Language::Russian : Language::English;
 }
 
-Window::Window(StandaloneSettings::Values values, std::vector<Resolution> resolutions, Language language)
+Window::Window(StandaloneSettings::Values values, std::vector<Resolution> resolutions, Language language,
+               std::vector<std::string> default_personal)
   : m_Values(values), m_Original(values), m_Resolutions(std::move(resolutions)), m_Language(language),
-    m_Selected(static_cast<int>(Row::Resolution)) {
+    m_Selected(static_cast<int>(Row::Resolution)), m_DefaultPersonal(std::move(default_personal)) {
     m_Resolutions = resolution_choices(std::move(m_Resolutions), {values.display.width, values.display.height});
+}
+
+bool Window::personal(const char *id) const {
+    const auto &ids = m_Values.personal_mods ? *m_Values.personal_mods : m_DefaultPersonal;
+    return std::ranges::find(ids, id) != ids.end();
+}
+
+// The list is written out once a person chooses (PersonalMods= then names them).
+void Window::set_personal(const char *id, bool on) {
+    auto ids = m_Values.personal_mods ? *m_Values.personal_mods : m_DefaultPersonal;
+    std::erase(ids, id);
+    if (on) ids.emplace_back(id);
+    m_Values.personal_mods = ids;
 }
 
 bool Window::select(int row) {
@@ -149,6 +165,13 @@ bool Window::change(int row, int direction) {
         case Row::ProjectedShadows: values.projected_shadows = !values.projected_shadows; break;
         case Row::Skybox: values.skybox = cycle(skyboxes, values.skybox, direction); break;
         case Row::RobotShadows: values.robot_shadows = !values.robot_shadows; break;
+        case Row::FarView: {
+            const int next = cycle(far_views, personal("farview") ? values.far_view_scale : 0, direction);
+            set_personal("farview", next != 0);
+            if (next != 0) values.far_view_scale = next;
+            break;
+        }
+        case Row::InterfaceFixes: set_personal("interface", !personal("interface")); break;
         case Row::CameraSpeed:
             values.camera_speed = step(values.camera_speed, direction, 25, StandaloneSettings::min_camera_speed,
                                        StandaloneSettings::max_camera_speed);
@@ -204,7 +227,15 @@ std::wstring Window::label(int row) const {
         case Row::RobotShadows:
             result = text(L"Robot shadows", L"\u0422\u0435\u043d\u0438 \u0440\u043e\u0431\u043e\u0442\u043e\u0432");
             break;
+        case Row::FarView:
+            result = text(L"Far view", L"\u0414\u0430\u043b\u044c\u043d\u044f\u044f \u043f\u0440\u043e\u0440\u0438\u0441\u043e\u0432\u043a\u0430");
+            break;
+        case Row::InterfaceFixes:
+            // The mod's own name, Ispravleniya interfeisa, is wider than the label: Pravki interfeisa.
+            result = text(L"Interface fixes", L"\u041f\u0440\u0430\u0432\u043a\u0438 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430");
+            break;
         case Row::GameplayGroup: result = text(L"Gameplay", L"\u0418\u0433\u0440\u0430"); break;
+        case Row::ModsGroup: result = text(L"Mods", L"\u041c\u043e\u0434\u044b"); break;
         case Row::CameraSpeed:
             result = text(L"Camera speed", L"\u0421\u043a\u043e\u0440\u043e\u0441\u0442\u044c \u043a\u0430\u043c"
                                            L"\u0435\u0440\u044b");
@@ -254,6 +285,14 @@ std::wstring Window::value(int row) const {
             }
             return {};
         case Row::RobotShadows: return on_off(values.robot_shadows);
+        case Row::FarView: {
+            if (!personal("farview")) return on_off(false);
+            const int scale = values.far_view_scale;
+            std::wstring times = std::to_wstring(scale / 100);
+            if (scale % 100) times += (m_Language == Language::Russian ? L"," : L".") + std::to_wstring(scale % 100 / 10);
+            return L"x" + times;
+        }
+        case Row::InterfaceFixes: return on_off(personal("interface"));
         case Row::CameraSpeed: return std::to_wstring(values.camera_speed) + L"%";
         case Row::RandomGenerator: return utils::to_wstring(RandomConfiguration::name(values.random));
         case Row::DelayedDamage:
@@ -283,13 +322,13 @@ std::wstring options_text(const Window &window);
 std::wstring hint_template(const Window &window) {
     // The blank block sizes the frame. The copied holes are transparent, so the OK and Cancel hint
     // buttons placed at their positions show through, as in the Exit/Reset/Surrender confirmations.
-    return L"2|_BORDER:0:0:0:28|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
+    return std::to_wstring(window_border) + L"|_BORDER:0:0:0:28|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
            std::to_wstring(Layout::content_height) +
            L"|_TEXTP:L|_TEXT: |_MOD:COPY|_BITMAP:bhole2:CL:6|_MOD:COPY|_BITMAP:bhole2:CR:6|_TEXTP:B" + options_text(window);
 }
 
 std::wstring startup_template(const Window &window) {
-    std::wstring result = L"2|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
+    std::wstring result = std::to_wstring(window_border) + L"|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
                           std::to_wstring(StartupLayout::content_height) + L"|_TEXTP:L|_TEXT: |_TEXTP:B" + options_text(window);
     const bool russian = window.language() == Language::Russian;
     result += text_element(russian ? L"( \u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c )" : L"( Apply )",

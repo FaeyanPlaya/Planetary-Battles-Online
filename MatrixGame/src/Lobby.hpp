@@ -13,16 +13,21 @@
 // person chooses only their own side, bonus and whether they are ready.
 //
 // Client to host: hello pbo <version> bonus=<name> data=<fp> build=<fp> name=<nick> [rejoin=<key>] | bonus <name> | ready 0|1 |
-//   side <n> | pong <n> | bye
+//   side <n> | pong <n> | mapget <hash> | bye
 // (rejoin: a person back to the battle under way that lost its connection, with the key its start line gave it.)
 // Host to client: lobby you=<index> ... (to_line) | refused version|build|data|full|name|kicked|started |
 //   refused rejoin unknown|over|beaten|left | kicked | ping <n> | loading | rules ... | start ... | bye
 // (ping: the client answers pong with the same number at once; the host measures the round trip.)
+// (mapget: a client without the lobby's map file asks for it; the host answers mapfile <hash> <size>, mapdata
+//  <base64> lines of MapShare::chunk_size bytes and mapend <hash>, or mapno <hash> when it cannot send that file,
+//  which also stops a sending the map's change made old.)
 // (data and build: GameData fingerprints of the game files and of the program; both must match.)
+// (The lobby line's mods: the battle mods the host chose with the fingerprints of its folders; a person with a mod
+//  missing or different cannot be ready. mappack: the map mod the host's map comes from (MapPacks), the same.)
 // (rules and start are NetBattle's, sent once the host has loaded the map.)
 namespace Lobby {
 
-constexpr int protocol_version = 8;
+constexpr int protocol_version = 11;
 constexpr int max_people = 4;
 constexpr int default_port = 27960;
 
@@ -35,6 +40,12 @@ struct Person {
     bool operator==(const Person &) const = default;
 };
 
+// A battle mod the host chose: its id and the fingerprint of the host's folder (Mods::Mod).
+struct ModRef {
+    std::string id, hash;
+    bool operator==(const ModRef &) const = default;
+};
+
 struct State {
     std::wstring map;            // Matrix\Map\<file>; empty: none chosen
     int ai_resources = 0;        // BattleRules::Rules::ai_resources
@@ -45,6 +56,8 @@ struct State {
     int delay = 0;               // ms between a command and its execution, whole turns; 0: auto (delay_turns)
     bool dropped_ai = true;      // BattleRules::Rules::dropped_ai
     int auto_delay = 0;          // ms: auto's delay, measured after the people last changed (auto_delay_for); 0: measuring
+    std::vector<ModRef> mods{};  // the battle's mods (BattleRules::Rules::mods)
+    std::string map_pack{};      // the map's map mod, "<id>:<fingerprint>" (MapPacks::ref); empty: the game's map
     bool operator==(const State &) const = default;
 };
 
@@ -55,13 +68,19 @@ int delay_turns(const State &state, int turn_ms);
 // (the round trip), the host gathers them a turn at a time, and 50 ms more for the frames and jitter.
 // 30 ms: 200; 85 (a relay): 300; 150: 300; 160: 400; 250: 400. Two turns at least, eight at most.
 int auto_delay_for(int slowest, int turn_ms);
+// The round trip auto's delay is made for, of a person's sample (auto_samples of them, 500 ms apart): the middle
+// one (of an even count the longer), as frames held up on either side make some long (a window still loading after
+// joining: 125 ms on one computer whose usual round trip is a frame or two, 16-33 ms). A command late for its turn
+// stalls the battle a moment, it does not desynchronize it. {15, 16, 250, 14, 15, 215, 17, 15}: 16; none: 0.
+int typical_round_trip(std::vector<int> sample);
 // The delay choices the host cycles through: auto, then 100 to 500 ms.
 constexpr int delay_choices[] = {0, 200, 300, 400, 500};  // 0: auto; one turn (100) cannot step (Lockstep::usable)
 int next_delay(int delay, int step);
 
 // "lobby you=1 ai=0 manual=1 manual_bonus=1 delay=0 dropped=ai people=None:1:0:Host,AirSupport:0:3:- pings=-,85 maphash=<hex>
-//  map=Matrix\Map\x.cmap" (bonus:ready:chosen side:name, "-" for no name; the manual keys 0 or 1, missing: 1;
-// delay, dropped (ai or idle), auto (auto_delay) and pings may be missing: auto, ai, measuring, unknown);
+//  mods=pbo:<hex>,... mappack=<id>:<hex> map=Matrix\Map\x.cmap" (bonus:ready:chosen side:name, "-" for no name; the manual keys 0 or 1,
+// missing: 1; delay, dropped (ai or idle), auto (auto_delay), pings, mods and mappack ("-": none) may be missing: auto, ai,
+// measuring, unknown, none);
 // you: the receiver's index.
 std::string to_line(const State &state, int you);
 struct Received {

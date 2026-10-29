@@ -5,8 +5,8 @@
 
 #include <string>
 
-// Starting the standalone game on a chosen map. A battle runs once per process, so a new choice is
-// saved as the remembered map and the game is started again.
+// The remembered map (Map= in CFG\standalone.txt: the last one started from the lobby without a network), started
+// directly, and forgotten when it fails to load.
 namespace MapSelection {
 
 // Returns the map to start instead of Config/Map: the remembered map when it can be read, otherwise
@@ -31,16 +31,5 @@ bool forget_remembered_map();
 
 // Whether a map path names a demo, which the game runs in full-auto mode.
 bool is_demo(const std::wstring &path);
-
-// Saves values with map as the remembered map and asks the game to start again once this process
-// has shut down. Returns false and fills error when the settings file cannot be written.
-bool choose(StandaloneSettings::Values values, const std::wstring &map, std::string &error);
-
-bool relaunch_requested();
-
-// Starts a new instance with --start-selected-battle, bypassing the startup menu for a valid selection.
-// Call after session cleanup. Keeps the loading screen until the child presents, reports failure or exits,
-// or until dismissal / a 120-second timeout. The child is not terminated on dismissal or timeout.
-bool relaunch();
 
 }  // namespace MapSelection

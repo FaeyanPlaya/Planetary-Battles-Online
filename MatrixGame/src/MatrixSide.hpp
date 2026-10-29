@@ -74,6 +74,7 @@ enum ESelection {
     BASE_SELECTED = 5,
     GROUP_SELECTED = 6,
     ARCADE_SELECTED = 7,
+    TURRET_SELECTED = 8,  // TurretControl: a turret of the side, m_ActiveObject
 
     ESelection_FORCE_DWORD = 0x7FFFFFFF
 };
@@ -86,6 +87,7 @@ enum ESelType {
     NOTHING = 4,
     GROUP = 5,
     ARCADE = 6,
+    TURRET = 7,
 
     ESelType_FORCE_DWORD = 0x7FFFFFFF
 };
@@ -581,6 +583,7 @@ public:
     bool IsArcadeMode(void) const { return m_Arcaded != NULL; }
     bool IsRobotMode();
     bool IsFlyerMode();
+    bool IsTurretMode() const;  // the side's person is in a turret (TurretControl)
     CMatrixMapStatic *GetArcadedObject(void) { return m_Arcaded; }
     void SetArcadedObject(CMatrixMapStatic *o);
 
@@ -588,14 +591,18 @@ public:
     // only by drive commands, so every peer runs the driven robot alike.
     int DriveKeys() const { return m_DriveKeys; }  // Commands::DRIVE_* bits
     D3DXVECTOR3 DriveAim() const;
-    // Interface (this client's side): asks to enter the robot, leave it or blow it up.
+    // Interface (this client's side): asks to enter the robot or turret, leave it or blow the robot up.
     void RequestDrive(Commands::DriveAction action, CMatrixMapStatic *robot);
     // Interface, every frame in a robot: issues the held keys and the aim when they change.
     void SampleDrive();
+    // Where a cursor ray from `eye` aims when the trace found nothing (sky, water past the map's edge): the water's
+    // surface when the ray goes down to it, else a far point along it (the DriveAimFar switch).
+    static D3DXVECTOR3 DriveFarAim(const D3DXVECTOR3 &eye, const D3DXVECTOR3 &dir);
     // Interface: the mouse camera moved by dx with the person in a robot; a shared battle turns it as A or D.
     void MouseTurn(int dx);
     void IssueDrive(int keys, const D3DXVECTOR3 &aim);
     void ExecuteDrive(const Commands::Command &command, CMatrixMapStatic *target);
+    void ExecuteTurretDrive(const Commands::Command &command, CMatrixCannon *cannon);
     // The side leaves its robot (a command, its death, the side passing to the AI); this client's
     // interface then shows the battle from above again.
     void LeaveRobot();
@@ -693,6 +700,8 @@ public:
     bool IsLocalSide(void) const;
     // Interface: an order for the current selection, as a command.
     void IssueGroupOrder(Commands::Type type, const D3DXVECTOR3 &pos, CMatrixMapStatic *target, int param = 0);
+    // Interface: a turret-attack (target or null) or turret-dismantle command for the selected turret.
+    void IssueTurretOrder(Commands::Type type, CMatrixMapStatic *target);
     // Runs a command of this side (orders, construction, reinforcements).
     void ExecuteCommand(const Commands::Command &command);
     void PGOrderStop(int no);

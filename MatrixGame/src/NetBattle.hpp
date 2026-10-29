@@ -50,7 +50,8 @@
 // The address defaults to 127.0.0.1 (this PC only).
 //
 // The lobby (LobbyWindow) starts the same battles from the startup menu; for tests it opens at once with
-//   --lobby-host [address:]port | --lobby-join address:port
+//   --lobby-host [address:]port | --lobby-join address:port | --lobby-local (the lobby without a network: this person
+//                        alone against the AI)
 //   --lobby-map <map>    host: the map chosen when the lobby opens
 //   --lobby-start <n>    host: start once n people are in and every client is ready
 //   --lobby-ready        client: ready as soon as it is in
@@ -77,6 +78,7 @@ struct Options {
     int lobby_side = 0;
     std::wstring lobby_name;
     bool lobby_return = false;
+    bool lobby_local = false;  // --lobby-local
     std::pair<int, int> lobby_test_size{0, 0};  // --lobby-test-size
     std::wstring map;
     std::optional<std::uint32_t> seed;
@@ -86,6 +88,7 @@ struct Options {
     std::wstring bot;
     int exit_ms = -1;
     bool fast = false;
+    bool check_maps = false;  // --net-check-maps: log what every listed map lacks (MapPacks::missing) and quit
     int test_desync_ms = -1;
     int test_lost_ms = -1, test_lost_length = 0;
     int test_hang_ms = -1, test_hang_length = 0;
@@ -99,6 +102,7 @@ struct Options {
     int test_remove_ms = -1;
     int test_dump_ms = -1;
     int dropped_ai = 1;  // --net-dropped: 1 ai, 0 idle
+    std::optional<std::vector<std::string>> mods;  // --net-mods pbo,... or -: the host's battle mods (else its settings')
 };
 
 // Reads and removes the --net-* arguments. Throws std::runtime_error on a malformed one.
@@ -114,6 +118,8 @@ struct Start {
     Lockstep::Config config;
     std::array<std::wstring, BattleRules::side_count> names;  // the people's PlayerNames by side; empty: none
     std::string key;  // a client's: proves it is this side's person when coming back (rejoin); empty: none
+    std::string map_hash;  // the host's map file (Lobby::State::map_hash): a client that lacks it reads its copy
+                           // (MapShare); empty: not given
 };
 
 // A client's way back to its battle (CFG\rejoin.txt, written when the battle starts, forgotten when the
@@ -144,6 +150,19 @@ struct Prepared {
 };
 void prepare(Options options, Start start, std::vector<std::unique_ptr<NetLink::Connection>> links);
 const std::optional<Prepared> &prepared();
+
+// A battle from the lobby without a network (prepared with Role::None) runs in the game's own loop: no peers, no delay.
+bool local_battle();
+// Test (--net-test-pointer): the cursor stays where posted mouse messages put it when the real one is not over the
+// window, so a script can click the battle without moving the person's cursor.
+bool test_pointer();
+// A battle of this game alone ends: the game starts again at the lobby without a network (to_lobby: after a decided
+// battle, or the battle menu's New battle) or at the startup menu.
+void after_local_battle(bool to_lobby);
+// The game does not start again after all (its window was closed).
+void cancel_return();
+// What the game starts again with (restart_to_menu): empty for the startup menu.
+const std::wstring &restart_arguments();
 
 // After a battle started from the menu's lobby ends (not by closing the window), the game starts again:
 // at the same lobby when the battle was decided and this person stayed to its end (the host opens it
