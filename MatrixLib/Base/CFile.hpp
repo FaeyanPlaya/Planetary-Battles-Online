@@ -56,6 +56,16 @@ public:
     static std::vector<std::wstring> PackedFileNames(const std::wstring &folder);
 #endif
 
+    // Reads of `from` (a relative name, compared ignoring ASCII case and slash direction) open the real file `to`
+    // instead, until the redirection is removed (an empty `to`) or all are cleared: a map a network host gave
+    // for one battle keeps the host's name.
+    static void Redirect(const std::wstring &from, const std::wstring &to);
+    static void ClearRedirects(void);
+    // Folders whose loose files FileExist finds, and OpenRead opens, before those beside the EXE and in the packages
+    // (a map mod's folder for a battle on its maps: its Matrix\... replaces the game's); empty: none.
+    static void SetSearchRoots(std::vector<std::wstring> roots);
+    static const std::vector<std::wstring> &SearchRoots(void);
+
     static void FindFiles(const std::wstring &folderfrom, const wchar *files, ENUM_FILES ef, DWORD user);
 
     void Clear(void);

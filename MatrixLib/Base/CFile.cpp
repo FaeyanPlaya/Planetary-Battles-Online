@@ -13,7 +13,63 @@
 #include <stupid_logger.hpp>
 #include <utils.hpp>
 
+#include <string_view>
+#include <vector>
+
 namespace Base {
+
+namespace {
+std::vector<std::pair<std::wstring, std::wstring>> redirects;  // folded name, real file
+std::vector<std::wstring> search_roots;                         // CFile::SetSearchRoots
+
+std::wstring folded_name(std::wstring_view name) {
+    std::wstring result(name);
+    for (auto &ch : result) {
+        if (ch >= L'A' && ch <= L'Z') ch = static_cast<wchar_t>(ch - L'A' + L'a');
+        else if (ch == L'/') ch = L'\\';
+    }
+    return result;
+}
+
+// The real file read instead of `name` (without its parameters), or nullptr.
+const std::wstring *redirected(std::wstring_view name) {
+    if (redirects.empty()) return nullptr;
+    if (name.size() > 1 && name[0] == L'.' && (name[1] == L'\\' || name[1] == L'/')) name.remove_prefix(2);
+    const std::wstring key = folded_name(name);
+    for (const auto &[from, to] : redirects)
+        if (from == key) return &to;
+    return nullptr;
+}
+}  // namespace
+
+void CFile::Redirect(const std::wstring &from, const std::wstring &to) {
+    const std::wstring key = folded_name(from);
+    std::erase_if(redirects, [&](const auto &r) { return r.first == key; });
+    if (!to.empty()) redirects.emplace_back(key, to);
+}
+
+void CFile::ClearRedirects(void) { redirects.clear(); }
+
+void CFile::SetSearchRoots(std::vector<std::wstring> roots) { search_roots = std::move(roots); }
+
+namespace {
+bool relative(const std::wstring &name) {
+    return !name.empty() && name[0] != L'\\' && name[0] != L'/' && !(name.size() > 1 && name[1] == L':');
+}
+
+// A relative name opened for reading in the first search root that has it, as FileExist finds it.
+HANDLE open_in_roots(const std::wstring &name, DWORD shareMode) {
+    if (!relative(name)) return INVALID_HANDLE_VALUE;
+    for (const auto &root : search_roots) {
+        const HANDLE h = CreateFileW((root + L"\\" + name).c_str(), GENERIC_READ, shareMode, NULL, OPEN_EXISTING,
+                                     FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE) return h;
+    }
+    return INVALID_HANDLE_VALUE;
+}
+}  // namespace
+
+const std::vector<std::wstring> &CFile::SearchRoots(void) { return search_roots; }
 
 #ifndef MAXEXP_EXPORTS
 CPackCollection *CFile::m_Packs;
@@ -114,6 +170,7 @@ void CFile::Clear(void) {
 void CFile::Init(const wchar *filename, int len) {
     Clear();
     m_FileName = std::wstring{filename, static_cast<size_t>(len)};
+    if (const std::wstring *real = redirected(m_FileName)) m_FileName = *real;
 }
 
 void CFile::Open(DWORD shareMode) {
@@ -137,7 +194,8 @@ void CFile::Open(DWORD shareMode) {
 
 void CFile::OpenRead(DWORD shareMode) {
     if (m_Open == 0) {
-        if (IS_UNICODE()) {
+        if ((m_Handle = open_in_roots(m_FileName, shareMode)) != INVALID_HANDLE_VALUE) {}
+        else if (IS_UNICODE()) {
             m_Handle = CreateFileW(m_FileName.c_str(), GENERIC_READ, shareMode, NULL, OPEN_EXISTING,
                                    FILE_ATTRIBUTE_NORMAL, NULL);
         }
@@ -168,7 +226,8 @@ void CFile::OpenRead(DWORD shareMode) {
 
 bool CFile::OpenReadNE(DWORD shareMode) {
     if (m_Open == 0) {
-        if (IS_UNICODE()) {
+        if ((m_Handle = open_in_roots(m_FileName, shareMode)) != INVALID_HANDLE_VALUE) {}
+        else if (IS_UNICODE()) {
             m_Handle = CreateFileW(m_FileName.c_str(), GENERIC_READ, shareMode, NULL, OPEN_EXISTING,
                                    FILE_ATTRIBUTE_NORMAL, NULL);
         }
@@ -552,6 +611,26 @@ bool CFile::FileExist(std::wstring &outname, const wchar *mname, const wchar *ex
 
     if (mname[0] == '.' && (mname[1] == '\\' || mname[1] == '/'))
         mname += 2;
+
+    {
+        const wchar *mark = std::wcschr(mname, L'?');
+        const std::wstring_view plain = mark ? std::wstring_view(mname, std::size_t(mark - mname)) : std::wstring_view(mname);
+        if (const std::wstring *real = redirected(plain)) {
+            if (GetFileAttributesW(real->c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+            outname = withpar ? std::wstring(mname) : std::wstring(plain);  // opened by this name, which Init redirects
+            return true;
+        }
+    }
+
+    // A relative name in a search root: the real file's name there.
+    if (mname[0] && mname[1] != L':' && mname[0] != L'\\' && mname[0] != L'/') {
+        for (const auto &root : search_roots) {
+            const std::wstring rooted = root + L"\\" + mname;
+            if (IS_UNICODE() ? FileExistW(outname, rooted.c_str(), exts, withpar)
+                             : FileExistA(outname, rooted.c_str(), exts, withpar))
+                return true;
+        }
+    }
 
     if (IS_UNICODE()) {
         if (FileExistW(outname, mname, exts, withpar))
