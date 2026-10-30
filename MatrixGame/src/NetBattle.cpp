@@ -683,7 +683,8 @@ bool chat_key(Battle &b, const MSG &m) {
     // Yo (`) always; Enter when it has no other work (it enters the selected robot and leaves the driven one).
     CMatrixSideUnit *own = g_MatrixMap->GetPlayerSide();
     const bool enter_free = !own->IsRobotMode() &&
-                            !(own->GetCurGroup() && (own->m_CurrSel == ROBOT_SELECTED || own->m_CurrSel == GROUP_SELECTED));
+                            !(own->GetCurGroup() && (own->m_CurrSel == ROBOT_SELECTED || own->m_CurrSel == GROUP_SELECTED)) &&
+                            !(Mods::switches().constructor_keys && own->m_ConstructPanel->IsActive());
     const bool opens = m.wParam == VK_OEM_3 || (m.wParam == VK_RETURN && enter_free);
     if (m.message == WM_KEYDOWN && opens && !repeat && !FLAG(g_MatrixMap->m_Flags, MMFLAG_DIALOG_MODE) &&
         !g_MatrixMap->m_DialogModeName && !BattleWait::shown() && !b.catching && !b.session.dropped() && !b.session.alone()) {

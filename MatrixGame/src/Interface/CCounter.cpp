@@ -18,6 +18,16 @@ CIFaceCounter::CIFaceCounter() {
 
 CIFaceCounter::~CIFaceCounter() {}
 
+void CIFaceCounter::KeyUp() {
+    if (m_Counter < UP_LIMIT && (!m_ButtonUp || m_ButtonUp->GetState() != IFACE_DISABLED))
+        Up(nullptr);
+}
+
+void CIFaceCounter::KeyDown() {
+    if (m_Counter > DOWN_LIMIT && (!m_ButtonDown || m_ButtonDown->GetState() != IFACE_DISABLED))
+        Down(nullptr);
+}
+
 void CIFaceCounter::ManageButtons() {
     if ((m_Counter == UP_LIMIT) && m_ButtonUp) {
         m_ButtonUp->SetState(IFACE_DISABLED);

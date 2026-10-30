@@ -17,6 +17,7 @@ public:
     SRobotConfig *m_LastConfig;
 
     void AddConfig(SRobotConfig *config);
+    const SRobotConfig *CurrentConfig() const { return m_CurrentConfig; }
     void __stdcall PrevConfig(void *object);
     void __stdcall NextConfig(void *object);
 

@@ -54,6 +54,9 @@ public:
         DivRes();
         CheckUp();
     }
+    // ConstructorKeys: as the buttons, which a limit or a lack of resources disables.
+    void KeyUp();
+    void KeyDown();
 
     void Disable() {
         if (m_ButtonDown)

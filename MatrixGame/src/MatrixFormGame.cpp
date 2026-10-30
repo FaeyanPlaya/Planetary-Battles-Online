@@ -4,6 +4,7 @@
 // Refer to the LICENSE file included
 
 #include "MatrixFormGame.hpp"
+#include "Interface/CHistory.h"
 #include "BattleNotice.hpp"
 #include "BattleStats.hpp"
 #include "SettingsWindow.hpp"
@@ -434,7 +435,9 @@ void CFormMatrixGame::Takt(int step) {
     if (SettingsWindow::active())
         return;  // The arrow keys navigate the settings dialog instead of the camera.
 
-    if (!g_MatrixMap->GetPlayerSide()->IsArcadeMode())
+    // (ConstructorKeys: the arrows are the constructor's while it is open.)
+    if (!g_MatrixMap->GetPlayerSide()->IsArcadeMode() &&
+        !(Mods::switches().constructor_keys && g_MatrixMap->GetPlayerSide()->m_ConstructPanel->IsActive()))
     {
         if (isKeyPressed(KA_SCROLL_LEFT) || isKeyPressed(KA_SCROLL_LEFT_ALT))
         {
@@ -1120,7 +1123,20 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
                     //Стратегический режим - выбрана База\Завод
                     CMatrixBuilding *bld = (CMatrixBuilding *)ps->m_ActiveObject;
 
-                    if (bld->IsBase() && !ps->m_ConstructPanel->IsActive() &&
+                    if (Mods::switches().constructor_keys && bld->IsBase() && ps->m_ConstructPanel->IsActive() &&
+                        (vk == VK_UP || vk == VK_DOWN || vk == VK_LEFT || vk == VK_RIGHT || vk == VK_RETURN))
+                    {
+                        // ConstructorKeys: the panel's buttons.
+                        if (vk == VK_UP) g_IFaceList->m_RCountControl->KeyUp();
+                        else if (vk == VK_DOWN) g_IFaceList->m_RCountControl->KeyDown();
+                        else if (vk == VK_LEFT) g_ConfigHistory->PrevConfig(nullptr);
+                        else if (vk == VK_RIGHT) g_ConfigHistory->NextConfig(nullptr);
+                        else if (g_IFaceList->m_RCountControl->GetCounter() > 0) {
+                            CSound::Play(S_BUILD_CLICK, SL_INTERFACE);
+                            ps->m_Constructor->RemoteBuild(nullptr);
+                        }
+                    }
+                    else if (bld->IsBase() && !ps->m_ConstructPanel->IsActive() &&
                         isKeyPressed(KA_BUILD_ROBOT))
                     {
                         //"B"ase - Вход в постройку робота
