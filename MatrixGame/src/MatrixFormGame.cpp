@@ -1376,6 +1376,7 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
             g_IFaceList->ResetOrderingMode();
 
             if (Input::isVKeyPressed(VK_CONTROL)) {
+                ps->AssignBuildingGroup(vk);
                 CMatrixMapStatic *o = CMatrixMapStatic::GetFirstLogic();
                 while (o) {
                     if (o->IsRobot() && ((CMatrixRobotAI *)o)->GetCtrlGroup() == vk) {
@@ -1405,6 +1406,24 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
 
                 static uint8_t prev_key = 0;
                 static uint32_t prev_key_time = 0;
+
+                // BuildingGroups: the kept building or turret; pressed again at once, the camera goes to it.
+                if (CMatrixMapStatic *building = ps->BuildingInGroup(vk)) {
+                    if (ps->m_ActiveObject == building && prev_key == vk &&
+                        (g_MatrixMap->GetTime() - prev_key_time) < DOUBLEPRESS_TIME_DELTA) {
+                        g_MatrixMap->m_Camera.SetXYStrategy(
+                                D3DXVECTOR2(building->GetGeoCenter().x, building->GetGeoCenter().y + 100.0f));
+                        return;
+                    }
+                    prev_key = vk;
+                    prev_key_time = g_MatrixMap->GetTime();
+                    ps->Select(building->IsCannon() ? TURRET : BUILDING, building);
+                    ps->GroupsUnselectSoft();
+                    ps->GetCurSelGroup()->RemoveAll();
+                    ps->SetCurGroup(NULL);
+                    ps->Reselect();
+                    return;
+                }
 
                 bool prev_unselected = false;
                 if (!ps->GetCurGroup()) {

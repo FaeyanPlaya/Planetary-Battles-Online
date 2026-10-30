@@ -36,15 +36,32 @@ int people(const Screen &s) { return int(s.people.size()); }
 
 int px(const Screen &s, int value) { return LobbyModel::px(s.scale, value); }
 
-// The font drawn at the screen's scale: bold Verdana (the face of the game's own interface fonts, which have both
-// cases), the title in the Rangers face (capitals only).
+// The font drawn at the screen's scale: the menu's Verdana, heavier, the title in the Rangers face (capitals only).
 std::wstring sized_font(double scale, const wchar_t *font) {
     const std::wstring_view f = font;
     const bool title = f == L"Font.2Ranger";
     const int base = title ? 12 : f == L"Font.2Mini" ? 12 : f == L"Font.2Small" ? 13 : 14;
-    return (title ? L"Font.Title" : L"Font.Bold") + std::to_wstring(std::max(6, LobbyModel::px(scale, base)));
+    return (title ? L"Font.Title" : L"Font.Heavy") + std::to_wstring(std::max(6, LobbyModel::px(scale, base)));
 }
 std::wstring sized_font(const Screen &s, const wchar_t *font) { return sized_font(s.scale, font); }
+
+// Lines of `text` broken at its spaces to fit `width` pixels of `font` (the drawing's own breaking also tears off a
+// punctuation mark that does not fit: "word\n; next"). Whole without a way to measure (tests).
+std::wstring wrapped(const Screen &s, const std::wstring &text, const wchar_t *font, int width) {
+    if (!s.text_width) return text;
+    std::wstring result, line;
+    for (std::size_t at = 0; at <= text.size();) {
+        const std::size_t end = std::min(text.find(L' ', at), text.size());
+        const std::wstring word = text.substr(at, end - at);
+        if (!line.empty() && s.text_width(line + L" " + word, font) > width) {
+            result += line + L"\n";
+            line = word;
+        }
+        else line += (line.empty() ? L"" : L" ") + word;
+        at = end + 1;
+    }
+    return result + line;
+}
 
 // A text in the grid's units (SettingsModel::text_element at the screen's scale), `height` tall.
 std::wstring el(double scale, const std::wstring &text, const wchar_t *font, uint32_t color, int x, int y, int width,
@@ -159,6 +176,8 @@ int mods_page_count(const Screen &s) {
     constexpr int per_page = Layout::visible_rows / Layout::mod_rows;
     return std::max(1, (int(s.mods.size()) + per_page - 1) / per_page);
 }
+
+int mods_page_moved(const Screen &s, int delta) { return std::clamp(s.mods_page + delta, 0, mods_page_count(s) - 1); }
 
 bool sides_coincide(const Screen &s) {
     unsigned chosen = 0;
@@ -419,8 +438,9 @@ std::wstring hint_template(const Screen &s) {
             const std::wstring about = !problem ? mod.description
                                        : mod.problem == ModRow::Problem::Missing ? std::wstring(text(l, L"not on this PC", L"\u043d\u0435\u0442 \u043d\u0430 \u044d\u0442\u043e\u043c \u041f\u041a"))
                                                                                  : std::wstring(text(l, L"differs from the host's", L"\u043e\u0442\u043b\u0438\u0447\u0430\u0435\u0442\u0441\u044f \u043e\u0442 \u0445\u043e\u0441\u0442\u0430"));
-            // Two lines: a longer description wraps (mod.txt keeps it short).
-            result += el(s, about, L"Font.2Mini", problem ? error_color : legend_color, Layout::list_x + 22,
+            // Two lines: a longer description wraps (mod.txt keeps it short). Less than the box: its margins, the stroke.
+            const int about_width = px(s, Layout::list_width - 22) - 6;
+            result += el(s, wrapped(s, about, sized_font(s, L"Font.2Mini").c_str(), about_width), L"Font.2Mini", problem ? error_color : legend_color, Layout::list_x + 22,
                          y + Layout::row_height - 2, Layout::list_width - 22, 0, (Layout::mod_rows - 1) * Layout::row_height - 1);
         }
         if (mods_page_count(s) > 1) {
@@ -624,10 +644,12 @@ std::wstring hint_template(const Screen &s) {
 
     result += el(s, status(s), L"Font.2Small", status_is_error(s) ? error_color : text_color, Layout::list_x,
                  Layout::status_y, Layout::width - 2 * Layout::list_x, 0);
-    result += el(s, s.local  ? text(l, L"Arrows: map. S: side. 1-3: bonus. M: mods. Enter: start. Esc: leave",
-                                    L"\u0421\u0442\u0440\u0435\u043b\u043a\u0438: \u043a\u0430\u0440\u0442\u0430. S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. M: \u043c\u043e\u0434\u044b. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438")
-                    : s.host ? text(l, L"Arrows: map. S: side. 1-3: bonus. Enter: start. Esc: leave. Click a name: send away",
-                                    L"\u0421\u0442\u0440\u0435\u043b\u043a\u0438: \u043a\u0430\u0440\u0442\u0430. S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438. \u041a\u043b\u0438\u043a \u043f\u043e \u043d\u0438\u043a\u0443: \u0432\u044b\u0433\u043d\u0430\u0442\u044c")
+    const std::wstring arrows = s.mods_view ? text(l, L"Arrows: page.", L"\u0421\u0442\u0440\u0435\u043b\u043a\u0438: \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430.")
+                                            : text(l, L"Arrows: map.", L"\u0421\u0442\u0440\u0435\u043b\u043a\u0438: \u043a\u0430\u0440\u0442\u0430.");
+    result += el(s, s.local  ? arrows + text(l, L" S: side. 1-3: bonus. M: mods. Enter: start. Esc: leave",
+                                             L" S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. M: \u043c\u043e\u0434\u044b. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438")
+                    : s.host ? arrows + text(l, L" S: side. 1-3: bonus. Enter: start. Esc: leave. Click a name: send away",
+                                             L" S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438. \u041a\u043b\u0438\u043a \u043f\u043e \u043d\u0438\u043a\u0443: \u0432\u044b\u0433\u043d\u0430\u0442\u044c")
                              : text(l, L"S: side. 1-3: bonus. Enter: ready. Esc: leave. List headers: order",
                                     L"S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. Enter: \u0433\u043e\u0442\u043e\u0432. Esc: \u0432\u044b\u0439\u0442\u0438. \u0417\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0438 \u0441\u043f\u0438\u0441\u043a\u0430: \u0441\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430"),
                  L"Font.2Small", legend_color, Layout::list_x, Layout::legend_y, Layout::width - 2 * Layout::list_x, 0);

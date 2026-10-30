@@ -48,6 +48,7 @@ struct Switches {
     bool turret_laser_glow = false;  // TurretLaserGlow: the laser turret's muzzle glow shows before its barrel
     bool dialog_esc = false;         // DialogEsc: Esc closes the dialogs before and after the battle as Enter does
     bool minimap_cursor = false;     // MinimapCursor: the pointing cross over the minimap instead of the arrow
+    bool building_groups = false;    // BuildingGroups: Ctrl+digit keeps the selected building or turret, a digit selects it
     // Personal: Дальняя прорисовка
     bool far_view = false;  // FarView: the view, effects and shadows reach farther (far_view_scale)
     bool operator==(const Switches &) const = default;

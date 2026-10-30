@@ -23,11 +23,11 @@ LPD3DXFONT loadFont(IDirect3DDevice9* device, std::wstring_view name, size_t siz
     return font;
 };
 
-// The sized fonts of a screen drawn larger: smoothed, bold or not.
-LPD3DXFONT makeFont(IDirect3DDevice9* device, std::wstring_view name, size_t size, bool bold)
+// The sized fonts of a screen drawn larger: smoothed.
+LPD3DXFONT makeFont(IDirect3DDevice9* device, std::wstring_view name, size_t size)
 {
     LPD3DXFONT font{nullptr};
-    if (S_OK != D3DXCreateFontW(device, size, 0, bold ? FW_BOLD : FW_NORMAL, 1, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+    if (S_OK != D3DXCreateFontW(device, size, 0, FW_NORMAL, 1, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                 ANTIALIASED_QUALITY, DEFAULT_PITCH, name.data(), &font))
     {
         lgr.error("Failed to make font: {} {}")(utils::from_wstring(name), size);

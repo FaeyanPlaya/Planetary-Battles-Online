@@ -1,5 +1,6 @@
 #include "Text/Render.hpp"
 #include "Text/Font.hpp"
+#include "Text/FontCache.hpp"
 #include "Text/Parser.hpp"
 
 #include <utils.hpp>
@@ -46,12 +47,26 @@ private:
     T* m_obj;
 };
 
+// The text drawn, then again further right for a heavy font (Text::heavy_stroke).
+template<typename Draw>
+void DrawStroked(float stroke, D3DCOLOR color, RECT rect, Draw draw)
+{
+    draw(rect, color);
+    for (int i = 0; float(i) < stroke; ++i)
+    {
+        OffsetRect(&rect, 1, 0);
+        const float part = stroke - float(i) < 1 ? stroke - float(i) : 1;
+        draw(rect, (color & 0x00ffffff) | (DWORD(float(color >> 24) * part) << 24));
+    }
+}
+
 void DrawComplexText(
     const std::vector<Text::Token>& text,
     Text::Font& font,
     const RECT &rect,
     DWORD format,
-    const D3DCOLOR defaultColor)
+    const D3DCOLOR defaultColor,
+    float stroke)
 {
     const size_t lineHeight = font.GetHeight();
     const size_t spaceWidth = font.GetSpaceWidth();
@@ -97,7 +112,9 @@ void DrawComplexText(
         posRect.left = pos.x;
         posRect.top = pos.y;
         uint32_t textColor = color ? color : defaultColor;
-        font->DrawTextW(NULL, str.data(), str.size(), &posRect, format, textColor);
+        DrawStroked(stroke, textColor, posRect, [&](RECT &at, D3DCOLOR shade) {
+            font->DrawTextW(NULL, str.data(), str.size(), &at, format, shade);
+        });
     };
 
     size_t x = rect.left;
@@ -291,11 +308,13 @@ void Render(
     if (icase_find(text, COLOR_TAG_START) == std::wstring::npos)
     {
         // simple text optimization
-        font->DrawTextW(NULL, text.data(), text.size(), &clipRect, DT_NOCLIP | DT_WORDBREAK | format, color);
+        DrawStroked(heavy_stroke(font_name), color, clipRect, [&](RECT &at, D3DCOLOR shade) {
+            font->DrawTextW(NULL, text.data(), text.size(), &at, DT_NOCLIP | DT_WORDBREAK | format, shade);
+        });
     }
     else
     {
-        DrawComplexText(tokens, font, clipRect, format, color);
+        DrawComplexText(tokens, font, clipRect, format, color, heavy_stroke(font_name));
     }
 
     texture->UnlockRect(0);

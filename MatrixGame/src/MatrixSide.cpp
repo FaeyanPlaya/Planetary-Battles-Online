@@ -9265,6 +9265,21 @@ bool CMatrixSideUnit::IssueRally(CMatrixMapStatic *clicked, const D3DXVECTOR3 &a
     return true;
 }
 
+void CMatrixSideUnit::AssignBuildingGroup(int vk) {
+    const bool building = m_CurrSel == BUILDING_SELECTED || m_CurrSel == BASE_SELECTED || m_CurrSel == TURRET_SELECTED;
+    m_BuildingGroups[vk - '0'] = Mods::switches().building_groups && building && m_ActiveObject ? m_ActiveObject->GetSimId() : 0;
+}
+
+CMatrixMapStatic *CMatrixSideUnit::BuildingInGroup(int vk) {
+    const int id = m_BuildingGroups[vk - '0'];
+    if (!Mods::switches().building_groups || !id)
+        return nullptr;
+    for (CMatrixMapStatic *o = CMatrixMapStatic::GetFirstLogic(); o; o = o->GetNextLogic())
+        if (o->GetSimId() == id)
+            return o->GetSide() == m_Id && (o->IsLiveBuilding() || o->IsLiveCannon()) ? o : nullptr;
+    return nullptr;
+}
+
 bool CMatrixSideUnit::ToggleAutoBoom(void) {
     // Off when every selected bomber has it on, else on for all of them.
     Commands::Command command;

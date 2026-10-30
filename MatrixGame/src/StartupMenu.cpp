@@ -70,7 +70,7 @@ class Form final : public CForm {
         if (!menu) {
             using SettingsModel::text_element;
             const int height = menu_height + (can_rejoin ? item_step : 0);
-            auto markup = std::to_wstring(SettingsModel::window_border) + L"|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:" +
+            auto markup = std::to_wstring(SettingsModel::window_border) + L"|_BORDER:0:0:0:0|_FONT:Font.Heavy14|_WIDTH:" +
                           std::to_wstring(menu_width) +
                           L"|_HEIGHT:" + std::to_wstring(height) + L"|_TEXTP:L|_TEXT: |_TEXTP:B";
             markup += text_element(L"MatrixGame", L"Font.2Ranger", 0xff000000, 0, 35, menu_width, 1);
@@ -86,12 +86,12 @@ class Form final : public CForm {
                 text(L"( Exit )", L"( \u0412\u044b\u0445\u043e\u0434 )"),
             };
             for (int i = first_item(); i < ItemCount; ++i)
-                markup += text_element(labels[i], L"Font.2Normal", i == item ? 0xff0b5fa5 : 0xff000000, item_x, item_y(i),
+                markup += text_element(labels[i], L"Font.Heavy14", i == item ? 0xff0b5fa5 : 0xff000000, item_x, item_y(i),
                                        item_width, 1);
             if (host_failed)
                 markup += text_element(LobbyModel::join_error_text(russian ? LobbyModel::Language::Russian : LobbyModel::Language::English,
                                                                    LobbyModel::JoinError::Busy),
-                                       L"Font.2Small", 0xffb01818, 10, item_y(ItemCount) - 5, menu_width - 20, 1);
+                                       L"Font.Heavy13", 0xffb01818, 10, item_y(ItemCount) - 5, menu_width - 20, 1);
             menu = CMatrixHint::Build(markup, static_cast<CBlockPar *>(nullptr));
         }
         menu->Show((g_ScreenX - menu->m_Width) / 2, (g_ScreenY - menu->m_Height) / 2);

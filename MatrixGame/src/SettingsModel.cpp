@@ -322,19 +322,19 @@ std::wstring options_text(const Window &window);
 std::wstring hint_template(const Window &window) {
     // The blank block sizes the frame. The copied holes are transparent, so the OK and Cancel hint
     // buttons placed at their positions show through, as in the Exit/Reset/Surrender confirmations.
-    return std::to_wstring(window_border) + L"|_BORDER:0:0:0:28|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
+    return std::to_wstring(window_border) + L"|_BORDER:0:0:0:28|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
            std::to_wstring(Layout::content_height) +
            L"|_TEXTP:L|_TEXT: |_MOD:COPY|_BITMAP:bhole2:CL:6|_MOD:COPY|_BITMAP:bhole2:CR:6|_TEXTP:B" + options_text(window);
 }
 
 std::wstring startup_template(const Window &window) {
-    std::wstring result = std::to_wstring(window_border) + L"|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
+    std::wstring result = std::to_wstring(window_border) + L"|_BORDER:0:0:0:0|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
                           std::to_wstring(StartupLayout::content_height) + L"|_TEXTP:L|_TEXT: |_TEXTP:B" + options_text(window);
     const bool russian = window.language() == Language::Russian;
     result += text_element(russian ? L"( \u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c )" : L"( Apply )",
-                           L"Font.2Normal", selected_color, StartupLayout::apply_x, StartupLayout::buttons_y,
+                           L"Font.Heavy14", selected_color, StartupLayout::apply_x, StartupLayout::buttons_y,
                            StartupLayout::button_width, 1);
-    result += text_element(russian ? L"( \u041e\u0442\u043c\u0435\u043d\u0430 )" : L"( Cancel )", L"Font.2Normal",
+    result += text_element(russian ? L"( \u041e\u0442\u043c\u0435\u043d\u0430 )" : L"( Cancel )", L"Font.Heavy14",
                            selected_color, StartupLayout::cancel_x, StartupLayout::buttons_y, StartupLayout::button_width, 1);
     return result;
 }
@@ -353,25 +353,25 @@ std::wstring options_text(const Window &window) {
     for (int row = 0; row < row_count; ++row) {
         const int y = row_top(row);
         if (is_group(row)) {
-            result += text_element(window.label(row), L"Font.2Small", group_color, Layout::label_x, y,
+            result += text_element(window.label(row), L"Font.Heavy13", group_color, Layout::label_x, y,
                                    Layout::previous_x - Layout::label_x, 0);
             continue;
         }
         const bool selected = row == window.selected();
         const uint32_t color = selected ? selected_color : text_color;
         const uint32_t arrows = selected ? selected_color : arrow_color;
-        result += text_element(window.label(row), L"Font.2Normal", color, Layout::label_x + option_indent, y,
+        result += text_element(window.label(row), L"Font.Heavy14", color, Layout::label_x + option_indent, y,
                                Layout::previous_x - Layout::label_x - option_indent, 0);
-        result += text_element(L"<", L"Font.2Normal", arrows, Layout::previous_x, y,
+        result += text_element(L"<", L"Font.Heavy14", arrows, Layout::previous_x, y,
                                Layout::value_x - Layout::previous_x, 0);
-        result += text_element(window.value(row), L"Font.2Normal", color, Layout::value_x, y, Layout::value_width, 1);
-        result += text_element(L">", L"Font.2Normal", arrows, Layout::next_x, y, Layout::cell_right - Layout::next_x,
+        result += text_element(window.value(row), L"Font.Heavy14", color, Layout::value_x, y, Layout::value_width, 1);
+        result += text_element(L">", L"Font.Heavy14", arrows, Layout::next_x, y, Layout::cell_right - Layout::next_x,
                                0);
     }
-    result += text_element(window.legend(), L"Font.2Small", legend_color, Layout::label_x, Layout::legend_y,
+    result += text_element(window.legend(), L"Font.Heavy13", legend_color, Layout::label_x, Layout::legend_y,
                            Layout::cell_right - Layout::label_x, 0);
     if (window.error()) {
-        result += text_element(window.error_text(), L"Font.2Small", error_color, Layout::label_x,
+        result += text_element(window.error_text(), L"Font.Heavy13", error_color, Layout::label_x,
                                Layout::legend_y + Layout::row_height, Layout::cell_right - Layout::label_x, 0);
     }
     return result;

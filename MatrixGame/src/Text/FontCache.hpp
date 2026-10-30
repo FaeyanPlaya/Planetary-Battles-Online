@@ -9,12 +9,12 @@
 namespace Text {
 
 // Owns the fixed UI font set for one device; the loader also supports asset-free tests.
-// With a maker, sized fonts are also made on first use: Font.Bold<px> (Verdana, bold) and Font.Title<px>
-// (the Rangers face), for a screen drawn larger (Font.Bold23).
+// With a maker, sized fonts are also made on first use: Font.Heavy<px> (the menu's Verdana, drawn heavier: see
+// heavy_stroke) and Font.Title<px> (the Rangers face), for a screen drawn larger (Font.Heavy23).
 class FontCache {
 public:
     using Loader = LPD3DXFONT (*)(IDirect3DDevice9 *, std::wstring_view, size_t);
-    using Maker = LPD3DXFONT (*)(IDirect3DDevice9 *, std::wstring_view face, size_t size, bool bold);
+    using Maker = LPD3DXFONT (*)(IDirect3DDevice9 *, std::wstring_view face, size_t size);
 
     FontCache(IDirect3DDevice9 *device, Loader loader, Maker maker = nullptr);
     FontCache(const FontCache &) = delete;
@@ -30,5 +30,10 @@ private:
     IDirect3DDevice9 *m_Device = nullptr;
     Maker m_Maker = nullptr;
 };
+
+// How far a font's text is smeared to the right when drawn, in pixels (a part of a pixel is drawn fainter); 0: not.
+// Verdana has only Regular and Bold, whose letters are other shapes: the screens before a battle keep the regular
+// letters and make them heavier this way, the same at any scale.
+float heavy_stroke(std::wstring_view font_name);
 
 }  // namespace Text

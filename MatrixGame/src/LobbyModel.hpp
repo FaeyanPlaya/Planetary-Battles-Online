@@ -17,7 +17,7 @@ namespace LobbyModel {
 using SettingsModel::Language;
 
 // The lobby is laid out on this logical grid and drawn `scale` times larger (Screen::scale): it fills the
-// window, its fonts sized with it (bold Verdana, Font.Bold<px>). Hits are in the grid's units.
+// window, its fonts sized with it (the menu's Verdana, heavier: Font.Heavy<px>). Hits are in the grid's units.
 struct Layout {
     static constexpr int width = 1070;
     static constexpr int content_height = 600;
@@ -164,6 +164,8 @@ bool mods_fine(const Screen &screen);
 // This PC has the map's map mod (the host's) and every file the map names.
 bool map_fine(const Screen &screen);
 int mods_page_count(const Screen &screen);
+// The mods' page `delta` pages on from the one shown, within the list.
+int mods_page_moved(const Screen &screen, int delta);
 // Two people or more chose one side: the start draws who keeps it.
 bool sides_coincide(const Screen &screen);
 int page_count(const Screen &screen);

@@ -37,10 +37,10 @@ Font &FontCache::Get(std::wstring_view name) {
         }
         return px >= 6 && px <= 96 ? px : 0;
     };
-    if (const int px = sized(L"Font.Bold"))
-        return m_Made.try_emplace(std::wstring(name), m_Maker(m_Device, L"Verdana", size_t(px), true)).first->second;
+    if (const int px = sized(L"Font.Heavy"))
+        return m_Made.try_emplace(std::wstring(name), m_Maker(m_Device, L"Verdana", size_t(px))).first->second;
     if (const int px = sized(L"Font.Title"))
-        return m_Made.try_emplace(std::wstring(name), m_Maker(m_Device, L"Rangers", size_t(px), false)).first->second;
+        return m_Made.try_emplace(std::wstring(name), m_Maker(m_Device, L"Rangers", size_t(px))).first->second;
     throw std::runtime_error("Unknown font: " + utils::from_wstring(name));
 }
 
@@ -62,6 +62,14 @@ void FontCache::OnResetDevice() {
     }
     for (auto &[name, font] : m_Made)
         if (font) check_notification(font->OnResetDevice(), name, "OnResetDevice");
+}
+
+float heavy_stroke(std::wstring_view font_name) {
+    constexpr std::wstring_view prefix = L"Font.Heavy";
+    if (!font_name.starts_with(prefix)) return 0;
+    int px = 0;
+    for (wchar_t ch : font_name.substr(prefix.size())) px = px * 10 + (ch - L'0');
+    return float(px) / 14;
 }
 
 }  // namespace Text

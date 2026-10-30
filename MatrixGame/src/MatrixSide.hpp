@@ -517,6 +517,7 @@ public:
     std::wstring m_PlayerName;
     EPlayerActions m_CurrentAction;
     int m_nCurrRobotPos;
+    int m_BuildingGroups[10] = {};  // BuildingGroups: the sim id each digit keeps (this PC's only, like robots' numbers)
     int m_RallyMarkerTime = 0;  // RallyPoint: ms to the next marker over the selected base's point
     ESelection m_CurrSel;
 
@@ -706,6 +707,10 @@ public:
     // Interface (AutoBoom): turns auto detonation off for the selected bombers when all have it, else on, as a
     // command. Returns whether it turns on; false also when no bomber is selected.
     bool ToggleAutoBoom(void);
+    // BuildingGroups: the digit `vk` now keeps the selected building or turret, or nothing when another thing is selected.
+    void AssignBuildingGroup(int vk);
+    // BuildingGroups: the side's live building or turret the digit `vk` keeps, if any.
+    CMatrixMapStatic *BuildingInGroup(int vk);
     // RallyPoint: with a base selected, a right click on the ground sets its rally point at the cursor's, on the base
     // itself clears it. True when the click was this.
     bool IssueRally(CMatrixMapStatic *clicked, const D3DXVECTOR3 &at);

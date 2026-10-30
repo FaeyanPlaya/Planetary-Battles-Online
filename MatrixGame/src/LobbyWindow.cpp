@@ -577,6 +577,12 @@ void move_map(State &s, int delta) {
     }
 }
 
+// Another page of the mods' list (whoever looks at it: a client's too).
+void page_mods(State &s, int delta) {
+    s.mods_page = LobbyModel::mods_page_moved(screen(s), delta);
+    s.dirty = true;
+}
+
 // The host's list shows the page with the lobby's map.
 void page_to_selected(State &s) {
     const auto view = screen(s);
@@ -984,10 +990,12 @@ bool keyboard(uint8_t vk, bool down) {
             s.dirty = true;
             break;
         case VK_NUMPAD1: case VK_NUMPAD2: case VK_NUMPAD3: set_bonus(s, vk - VK_NUMPAD1); break;
-        case VK_UP: if (s.mode == Mode::Host) move_map(s, -1); break;
-        case VK_DOWN: if (s.mode == Mode::Host) move_map(s, 1); break;
-        case VK_LEFT: case VK_RIGHT:
-            if (s.mode == Mode::Host) {
+        case VK_UP: case VK_LEFT: case VK_DOWN: case VK_RIGHT:
+            if (s.mods_view) page_mods(s, vk == VK_UP || vk == VK_LEFT ? -1 : 1);
+            else if (vk == VK_UP || vk == VK_DOWN) {
+                if (s.mode == Mode::Host) move_map(s, vk == VK_UP ? -1 : 1);
+            }
+            else if (s.mode == Mode::Host) {
                 const auto view = screen(s);
                 s.page = std::clamp(s.page + (vk == VK_LEFT ? -1 : 1), 0, LobbyModel::page_count(view) - 1);
                 s.dirty = true;
@@ -1033,10 +1041,7 @@ bool mouse_down(int x, int y) {
         s.mods_view = !s.mods_view;
         s.dirty = true;
     }
-    else if (view.mods_view && target.page) {
-        s.mods_page = std::clamp(view.mods_page + target.page, 0, LobbyModel::mods_page_count(view) - 1);
-        s.dirty = true;
-    }
+    else if (view.mods_view && target.page) page_mods(s, target.page);
     else if (target.mod >= 0) {
         if (s.mode == Mode::Host) toggle_mod(s, target.mod);
     }
@@ -1079,12 +1084,13 @@ bool mouse_down(int x, int y) {
 }
 
 void mouse_wheel(int steps, int x, int y) {
-    if (!active() || state->mode != Mode::Host) return;
+    if (!active() || (state->mode != Mode::Host && !state->mods_view)) return;
     (void)y;  // anywhere down the list's column
     const double scale = LobbyModel::scale_for(g_ScreenX, g_ScreenY);
     x = int(std::floor((x - hint->m_PosX) / scale));
     if (x < LobbyModel::Layout::list_x || x >= LobbyModel::Layout::list_x + LobbyModel::Layout::list_width) return;
-    move_map(*state, steps > 0 ? -1 : 1);
+    if (state->mods_view) page_mods(*state, steps > 0 ? -1 : 1);
+    else move_map(*state, steps > 0 ? -1 : 1);
 }
 
 void reset_input() {

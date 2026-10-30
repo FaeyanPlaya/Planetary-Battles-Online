@@ -42,6 +42,7 @@ constexpr SwitchName personal_switches[] = {
     {"turretlaserglow", &Switches::turret_laser_glow},
     {"dialogesc", &Switches::dialog_esc},
     {"minimapcursor", &Switches::minimap_cursor},
+    {"buildinggroups", &Switches::building_groups},
     {"farview", &Switches::far_view},
 };
 
@@ -111,10 +112,8 @@ std::vector<Mod> builtin_mods() {
         //   weapon's reach) and bursts only on hitting something (the original burst in the air 1500 ahead when it
         //   locked on nothing).
         made("ballistics", L"Баллистика ракет", L"Missile ballistics",
-             L"Ракета летит на тяге до дальности оружия, потом падает; "
-             L"бьёт на любом расстоянии и взрывается только от удара",
-             L"A missile is powered to its weapon's reach, then falls; it hurts at any distance and bursts only on "
-             L"hitting something",
+             L"После дальности оружия ракета падает, но бьёт на любом расстоянии и только от удара",
+             L"Past its weapon's reach a missile falls, but it hurts at any distance, only on hitting",
              Kind::Battle, {"missileballistics"}),
         // FarView: the far clip plane and the fog, the distance effects are made at and how many of each kind are
         //   kept, all times the scale (FarViewScale=, 1.5 to 3 times, 2 by default); shadows drawn to 1536 times it
@@ -136,10 +135,8 @@ std::vector<Mod> builtin_mods() {
         //   a driven one) and keeps it while it is ahead; else it seeks the enemy most ahead within 45 degrees (the
         //   original: 10 degrees, and only nudged its course). It turns to it at up to HOMING_TURN_RATE.
         made("homing", L"Самонаведение ракет", L"Homing missiles",
-             L"Ракета держит цель стрелка и круто доворачивает на неё; "
-             L"без цели ищет врага впереди в широком конусе",
-             L"A missile keeps to its shooter's target and turns hard to it; without one it seeks an enemy ahead in "
-             L"a wide cone",
+             L"Ракета держит цель стрелка и круто доворачивает; без цели ищет врага в конусе",
+             L"A missile keeps to its shooter's target and turns hard; without one it seeks in a wide cone",
              Kind::Battle, {"homingmissiles"}),
         // DriveAimFar: over the sky or water past the map's edge the cursor's trace finds nothing and the original
         //   kept the robot aiming at the last point it found; the robot now aims along the cursor's ray.
@@ -157,7 +154,7 @@ std::vector<Mod> builtin_mods() {
              L"\u043f\u0440\u0438\u0446\u0435\u043b \u043d\u0430\u0434 \u043c\u0438\u043d\u0438\u043a\u0430\u0440\u0442\u043e\u0439",
              L"A driven robot aims at the sky and at water past the map's edge; the laser turret's muzzle glows; "
              L"Esc closes the dialogs before and after the battle; a cross over the minimap",
-             Kind::Personal, {"driveaimfar", "turretlaserglow", "dialogesc", "minimapcursor"}),
+             Kind::Personal, {"driveaimfar", "turretlaserglow", "dialogesc", "minimapcursor", "buildinggroups"}),
         // LiftSight: robots on a base's lift see the enemies in reach and are seen (the original ignored them there).
         // CaptureLift: a capturer rides the lift down when something else closed it (it stood in the air).
         // DriveReachReset: a robot its driver left loses the reach bonus too (the original kept it).
@@ -170,10 +167,8 @@ std::vector<Mod> builtin_mods() {
         //   that point and wait there (the original sent them to a free place near the base). A right click on the
         //   base itself clears its point. Each base has its own; a captured base loses it. A command (rally).
         made("rally", L"Точка сбора", L"Rally point",
-             L"Правый щелчок по земле при выбранной базе задаёт точку, куда едут построенные ею роботы; "
-             L"правый щелчок по самой базе её снимает",
-             L"A right click on the ground with a base selected sets where the robots it builds go; a right click on "
-             L"the base clears it",
+             L"Правый щелчок по земле при выбранной базе: туда поедут её роботы; по базе: снять",
+             L"A right click on the ground with a base selected: its robots go there; on the base: off",
              Kind::Battle, {"rallypoint"}),
         // RepairPlant: a repair factory of a side keeps two repairer's beams from its probes, at the rate of a robot
         //   with four repairers, on the nearest damaged robot of that side standing in its capture area; the
@@ -197,10 +192,8 @@ std::vector<Mod> builtin_mods() {
         //   hurts a turret 30 (50), the blocker head adds 30 hit points (50), the firewall head costs 40 plasma (50)
         //   and the missile launcher 10 electronics (20). Resources stay the map's. CMatrixConfig::ApplyBalance.
         made("sr2", L"Баланс КР2", L"SR2 balance",
-             L"Оружие и модули как в «Космических рейнджерах 2»: скорострельность, перегрев, урон миномёта по "
-             L"турелям, броня Блокиратора, цены; ресурсы не меняются",
-             L"Weapons and modules as in Space Rangers 2: rates of fire, heat, the mortar's damage to turrets, the "
-             L"blocker's armour, prices; resources unchanged",
+             L"Оружие и модули как в Космических рейнджерах 2; ресурсы на картах не меняются",
+             L"Weapons and modules as in Space Rangers 2; the maps' resources unchanged",
              Kind::Battle, {"sr2balance"}),
         // TurretControl: a person selects their side's turret with a click. An order to attack a unit (a robot, a
         //   flyer or a turret) makes the turret fire at it while it stays in the turret's reach, then the turret
