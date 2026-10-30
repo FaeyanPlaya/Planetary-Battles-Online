@@ -11,14 +11,36 @@
 #include "../MatrixObject.hpp"
 #include "../MatrixFlyer.hpp"
 #include "../MatrixRobot.hpp"
+#include "../MatrixObjectCannon.hpp"
 #include <math.h>
 
 #include "MatrixEffect.hpp"
 #include "MatrixEffectLightening.hpp"
+#include "../Mods.hpp"
 #include "MatrixEffectFlame.hpp"
 #include "MatrixEffectPointLight.hpp"
 #include "MatrixEffectMovingObject.hpp"
 #include "MatrixEffectExplosion.hpp"
+
+// HomingMissiles: the target a missile takes as it is fired: what its shooter fires at (none when it is driven).
+static SObjectCore *ShooterTarget(CMatrixMapStatic *owner) {
+    if (owner == NULL)
+        return NULL;
+    if (owner->IsRobot()) {
+        CMatrixRobotAI *robot = owner->AsRobot();
+        CMatrixMapStatic *target = robot->IsDriven() ? NULL : robot->GetEnv()->m_Target;
+        return target && target->IsLive() ? target->GetCore(DEBUG_CALL_INFO) : NULL;
+    }
+    if (owner->IsCannon()) {
+        CMatrixCannon *cannon = owner->AsCannon();
+        SObjectCore *target = cannon->IsDriven() ? NULL : cannon->m_TargetCore;
+        if (target == NULL || target->m_Object == NULL)
+            return NULL;
+        target->RefInc();
+        return target;
+    }
+    return NULL;
+}
 
 void CMatrixEffectWeapon::WeaponHit(CMatrixMapStatic *hiti, const D3DXVECTOR3 &pos, uintptr_t user, DWORD flags) {
     DTRACE();
@@ -26,9 +48,11 @@ void CMatrixEffectWeapon::WeaponHit(CMatrixMapStatic *hiti, const D3DXVECTOR3 &p
     CMatrixEffectWeapon *w = (CMatrixEffectWeapon *)user;
 
     bool give_damage = true;
-    if (w->m_Type == WEAPON_HOMING_MISSILE || w->m_Type == WEAPON_GUN || w->m_Type == WEAPON_CANNON0 ||
-        w->m_Type == WEAPON_CANNON1 || w->m_Type == WEAPON_CANNON3) {
-        if (POW2(w->m_WeaponDist * w->m_WeaponCoefficient) < m_Dist2)
+    const bool missile = w->m_Type == WEAPON_HOMING_MISSILE || w->m_Type == WEAPON_CANNON3;
+    if (missile || w->m_Type == WEAPON_GUN || w->m_Type == WEAPON_CANNON0 || w->m_Type == WEAPON_CANNON1) {
+        // MissileBallistics: a missile hurts at any distance.
+        if (POW2(w->m_WeaponDist * w->m_WeaponCoefficient) < m_Dist2 &&
+            !(missile && Mods::switches().missile_ballistics))
             give_damage = false;
     }
 
@@ -357,6 +381,12 @@ void CMatrixEffectWeapon::Fire(void) {
             mo.velocity = m_Dir;
             mo.object = LoadObject(OBJECT_PATH_ROCKET, m_Heap);
             mo.handler = MO_Homing_Missile_Takt;
+            mo.common.hm.reach = m_WeaponDist * m_WeaponCoefficient;
+            if (Mods::switches().homing_missiles) {
+                mo.common.hm.target = ShooterTarget(GetOwner());
+                if (mo.common.hm.target)
+                    mo.target = mo.common.hm.target->m_GeoCenter;
+            }
 
             mo.side = m_SideStorage;
             // mo.attacker = m_Owner;
@@ -587,7 +617,7 @@ void CMatrixEffectWeapon::Fire(void) {
                 m_Laser->SetPos(m_Pos, hitpos);
             }
             else {
-                m_Laser = HNew(m_Heap) CLaser(m_Pos, hitpos);
+                m_Laser = HNew(m_Heap) CLaser(m_Pos, hitpos, m_Type == WEAPON_CANNON2);
                 if (!g_MatrixMap->AddEffect(m_Laser))
                     m_Laser = NULL;
             }
@@ -778,9 +808,11 @@ void CMatrixEffectWeapon::SoundHit(EWeapon w, const D3DXVECTOR3 &pos) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-CLaser::CLaser(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1)
-  : CMatrixEffect(), m_bl(TRACE_PARAM_CALL pos0, pos1, LASER_WIDTH, 0xFFFFFFFF, m_BBTextures[BBT_LASER].tex) {
+CLaser::CLaser(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1, bool turret)
+  : CMatrixEffect(), m_bl(TRACE_PARAM_CALL pos0, pos1, LASER_WIDTH, 0xFFFFFFFF, m_BBTextures[BBT_LASER].tex),
+    m_Turret(turret) {
     m_EffectType = EFFECT_LASER;
+    SetPos(pos0, pos1);
 
     if (m_BBTextures[BBT_LASEREND].IsIntense()) {
         new(&m_end) CBillboard(TRACE_PARAM_CALL pos0, LASER_WIDTH * 0.5f, 0, 0xFFFFFFFF,
@@ -792,8 +824,20 @@ CLaser::CLaser(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1)
     }
 }
 
+void CLaser::SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1) {
+    m_bl.SetPos(pos0, pos1);
+    m_From = pos0;
+    const D3DXVECTOR3 way = pos1 - pos0;
+    const float length = D3DXVec3Length(&way);
+    m_Dir = length > 0.001f ? way / length : D3DXVECTOR3(0, 0, 0);
+}
+
 void CLaser::BeforeDraw()
 {
+    // The laser turret's muzzle point is inside its thick barrel, which hid the robot's small glow there.
+    const bool glow = m_Turret && Mods::switches().turret_laser_glow;
+    m_end.m_Pos = glow ? m_From + m_Dir * TURRET_LASER_GLOW_AHEAD : m_From;
+    m_end.SetScale(glow ? TURRET_LASER_GLOW : LASER_WIDTH * 0.5f);
     BYTE a = g_MatrixMap->IsPaused() ? 240 : (BYTE(FRND(128) + 128));
     m_bl.SetAlpha(a);
     m_end.SetAlpha(a);

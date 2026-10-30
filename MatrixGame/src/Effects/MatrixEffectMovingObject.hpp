@@ -17,6 +17,17 @@
 #define MISSILE_IMPACT_RADIUS_SQ (MISSILE_IMPACT_RADIUS * MISSILE_IMPACT_RADIUS)
 #define HM_SEEK_TIME_PERIOD      50
 
+// HomingMissiles: the cone a missile seeks a new target in (cos 45 degrees; the original's is 10), and how fast it
+// turns: the share of the way to its target's direction per ms.
+#define HOMING_SEEK_COS  0.70710678f
+#define HOMING_TURN_RATE 0.006f
+// MissileBallistics: an unpowered missile's speed lost to the air (share per ms), its fall (speed per ms), the time
+// (ms) after which one that hit nothing goes (the original's missile went after 10 s)
+#define MISSILE_DRAG     0.0005f
+#define MISSILE_GRAVITY  0.003f
+#define MISSILE_LIFETIME 30000
+#define MISSILE_BELOW    100  // and how far below the water's level one that hit nothing goes
+
 #define BOMB_DAMAGE_RADIUS 20
 #define GUN_DAMAGE_RADIUS  5
 
@@ -65,6 +76,8 @@ struct SMOProps {
             float next_seek_time;
             SObjectCore *target;
             int in_frustum_count;
+            float reach;  // MissileBallistics: the engine burns out this far from startpos
+            int burnt;    // MissileBallistics: the engine burnt out; nothing steers it
 
         } hm;
         struct {

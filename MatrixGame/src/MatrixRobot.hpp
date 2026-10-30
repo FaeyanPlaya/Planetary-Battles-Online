@@ -324,6 +324,10 @@ public:
     float m_RadarRadius;
     float m_LightProtect;  // 0 .. 1   (0 - no protection, 1 - full protection)
     float m_BombProtect;   // 0 .. 1   (0 - no protection, 1 - full protection)
+    bool m_HasRally = false;       // RallyPoint: on leaving its base the robot drives to m_RallyPoint
+    D3DXVECTOR2 m_RallyPoint{0, 0};
+    float m_SelfRepair = 0;  // HelpFromAbove: hit points repaired a second, in percent of the most
+    bool m_AutoBoom = true;  // AutoBoom: a person's robot sets its bomb off as it dies (the AutoBoom command turns it)
     float m_AimProtect;    // 0 .. 1   (0 - no protection, 1 - full protection)
 
     float m_GroupSpeed;  // скорость робота в группе

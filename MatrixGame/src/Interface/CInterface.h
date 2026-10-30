@@ -366,6 +366,8 @@ public:
     bool OnMouseLBDown();
     bool OnMouseRBDown();
     void LogicTakt(int ms);
+    // The cursor over the minimap's picture, not over one of the minimap's buttons (MinimapCursor).
+    static bool CursorOnMinimap();
 
     void CreateElementRamka(CIFaceElement *element, DWORD color);
     void SlideFocusedInterfaceRight();
@@ -385,8 +387,9 @@ public:
     bool CorrectCoordinates(int screen_width, int screen_height, int &posx, int &posy, int width, int height,
                             const std::wstring &name);
     void AddHintReplacements(const std::wstring &element_name);
-    // TurretControl: the hint markup of a selected turret's button (or of the way out of a turret), else empty.
-    std::wstring TurretHint(const std::wstring &element);
+    // Mods' hint markup for a button, else empty: a selected turret's buttons or the way out of a turret
+    // (TurretControl), the bomb order with the selection's auto detonation (AutoBoom).
+    std::wstring ModHint(const std::wstring &element);
     bool CheckShowHintLogic(const std::wstring &element_name);
     // Asks to leave or enter a robot (drive commands); RobotLeft and RobotEntered then change the
     // interface when the command runs.

@@ -7,6 +7,7 @@
 #include "MatrixMap.hpp"
 #include "MatrixRobot.hpp"
 #include "Mods.hpp"
+#include "BattleNotice.hpp"
 #include "MatrixObjectBuilding.hpp"
 #include "MatrixFormGame.hpp"
 #include "MatrixMapStatic.hpp"
@@ -442,6 +443,22 @@ void CMatrixSideUnit::BuildCrazyBot(void) {
 void CMatrixSideUnit::LogicTakt(int ms) {
     DTRACE();
 
+    // RallyPoint: the selected base's point is marked while it is selected (what this person sees only).
+    if (Mods::switches().rally_point && this == g_MatrixMap->GetPlayerSide() && m_CurrSel == BASE_SELECTED &&
+        m_ActiveObject && m_ActiveObject->IsBuilding() && m_ActiveObject->AsBuilding()->m_HasRally &&
+        m_ActiveObject->GetSide() == m_Id) {
+        m_RallyMarkerTime -= ms;
+        if (m_RallyMarkerTime <= 0) {
+            m_RallyMarkerTime = 400;
+            random::CosmeticScope cosmetic;
+            const D3DXVECTOR2 &at = m_ActiveObject->AsBuilding()->m_Rally;
+            CMatrixEffect::CreateMoveto(D3DXVECTOR3(at.x, at.y, g_MatrixMap->GetZ(at.x, at.y)));
+        }
+    }
+    else {
+        m_RallyMarkerTime = 0;
+    }
+
     if (GetStatus() != SS_NONE && FLAG(g_Config.m_DIFlags, DI_SIDEINFO)) {
         g_MatrixMap->m_DI.T(utils::format(L"Side %d", m_Id).c_str(),
                             utils::format(L"Titan %d, Electronics %d, Plasma %d, Energy %d",
@@ -817,6 +834,10 @@ void CMatrixSideUnit::OnRButtonDown(const CPoint &) {
     }
 
     if (pObject == TRACE_STOP_NONE)
+        return;
+
+    // RallyPoint: the selected base's point.
+    if (!IS_PREORDERING && IssueRally(pObject, tpos))
         return;
 
     // The selected turret fires at the enemy unit clicked.
@@ -9219,6 +9240,64 @@ void CMatrixSideUnit::IssueTurretOrder(Commands::Type type, CMatrixMapStatic *ta
     Commands::issue(command);
 }
 
+bool CMatrixSideUnit::IssueRally(CMatrixMapStatic *clicked, const D3DXVECTOR3 &at) {
+    if (!Mods::switches().rally_point || m_CurrSel != BASE_SELECTED || !m_ActiveObject || !m_ActiveObject->IsBuilding() ||
+        !m_ActiveObject->IsBase() || m_ActiveObject->GetSide() != m_Id)
+        return false;
+    const bool clear = clicked == m_ActiveObject;
+    if (!clear && clicked != TRACE_STOP_LANDSCAPE)
+        return false;
+    Commands::Command command;
+    command.side = m_Id;
+    command.type = Commands::Type::Rally;
+    command.target = m_ActiveObject->GetSimId();
+    command.x = at.x;
+    command.y = at.y;
+    command.params = {clear ? 0 : 1};
+    Commands::issue(command);
+    BattleNotice::show(clear ? L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0441\u043d\u044f\u0442\u0430"
+                             : L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0437\u0430\u0434\u0430\u043d\u0430");
+    if (!clear) {
+        // This client's interface only: the effect's randoms come from the cosmetic stream.
+        random::CosmeticScope cosmetic;
+        CMatrixEffect::CreateMoveto(at);
+    }
+    return true;
+}
+
+bool CMatrixSideUnit::ToggleAutoBoom(void) {
+    // Off when every selected bomber has it on, else on for all of them.
+    Commands::Command command;
+    command.side = m_Id;
+    command.type = Commands::Type::AutoBoom;
+    bool all_on = true;
+    if (GetCurGroup()) {
+        for (CMatrixGroupObject *objs = GetCurGroup()->m_FirstObject; objs; objs = objs->m_NextObject) {
+            CMatrixMapStatic *o = objs->GetObject();
+            if (o && o->IsLiveRobot() && o->AsRobot()->HaveBomb()) {
+                command.units.push_back(o->GetSimId());
+                all_on = all_on && o->AsRobot()->m_AutoBoom;
+            }
+        }
+    }
+    if (command.units.empty())
+        return false;
+    command.params = {all_on ? 0 : 1};
+    Commands::issue(command);
+    return !all_on;
+}
+
+bool CMatrixSideUnit::SelectedAutoBoom(void) {
+    if (GetCurGroup()) {
+        for (CMatrixGroupObject *objs = GetCurGroup()->m_FirstObject; objs; objs = objs->m_NextObject) {
+            CMatrixMapStatic *o = objs->GetObject();
+            if (o && o->IsLiveRobot() && o->AsRobot()->HaveBomb() && !o->AsRobot()->m_AutoBoom)
+                return false;
+        }
+    }
+    return true;
+}
+
 void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
     using Commands::Type;
     // Only people command a side; once it passed to the AI (surrender, a player who left)
@@ -9246,6 +9325,25 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
             CConstructor::DesignPrice(design, res);
             for (int r = 0; r < MAX_RESOURCES; r++)
                 AddResourceAmount(ERes(r), -res[r] * count);
+            return;
+        }
+        case Type::Rally: {
+            if (!Mods::switches().rally_point || !target || !target->IsLiveBuilding() || target->GetSide() != m_Id ||
+                !target->AsBuilding()->IsBase() || command.params.size() != 1)
+                return;
+            CMatrixBuilding *base = target->AsBuilding();
+            if (command.params[0] == 0) {
+                base->m_HasRally = false;
+                return;
+            }
+            // On the map's land: an order to the water or past the edge would send the robots nowhere.
+            const int x = TruncFloat(command.x * INVERT(GLOBAL_SCALE)), y = TruncFloat(command.y * INVERT(GLOBAL_SCALE));
+            SMatrixMapUnit *unit = command.x < 0 || command.y < 0 ? NULL : g_MatrixMap->UnitGetTest(x, y);
+            if (!unit || !unit->IsLand())
+                return;
+            base->m_HasRally = true;
+            base->m_Rally = D3DXVECTOR2(command.x, command.y);
+            base->m_RallySide = m_Id;
             return;
         }
         case Type::BuildTurret: {
@@ -9303,6 +9401,15 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
             return;
         case Type::Drive:
             ExecuteDrive(command, target);
+            return;
+        case Type::AutoBoom:
+            if (!Mods::switches().auto_boom || command.params.size() != 1)
+                return;
+            for (int id : command.units) {
+                CMatrixMapStatic *o = Commands::find(id);
+                if (o && o->IsLiveRobot() && o->GetSide() == m_Id)
+                    o->AsRobot()->m_AutoBoom = command.params[0] != 0;
+            }
             return;
         case Type::TurretAttack:
         case Type::TurretDismantle:
@@ -9492,8 +9599,9 @@ void CMatrixSideUnit::PGOrderMoveTo(int no, const CPoint &tp) {
     if (m_PlayerGroup[no].m_RobotCnt <= 0)
         return;
 
-    // Order feedback is for the person at this client; other peers execute the same command silently.
-    if (IsLocalSide()) {
+    // Order feedback is for the person at this client; other peers execute the same command silently (and a robot
+    // ordered as it leaves its base, a rally point's, silently).
+    if (IsLocalSide() && !FLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE)) {
         random::CosmeticScope cosmetic;
         if (m_PlayerGroup[no].Order() == mpo_MoveTo) {
             // in progress

@@ -17,6 +17,8 @@
 #define FLAME_PUFF_TTL 2000
 
 #define LASER_WIDTH               10
+#define TURRET_LASER_GLOW         15  // the laser turret's muzzle glow (TurretLaserGlow); a robot's is 5
+#define TURRET_LASER_GLOW_AHEAD   3   // how far before the muzzle point, out of the barrel
 #define VOLCANO_FIRE_LENGHT       15
 #define VOLCANO_FIRE_WIDTH        10
 #define VOLCANO_FIRE_KONUS_RADIUS 5
@@ -184,13 +186,16 @@ inline int Weap2Index(EWeapon w) {
 class CLaser : public CMatrixEffect {
     CBillboardLine m_bl;
     CBillboard m_end;
+    D3DXVECTOR3 m_From{0, 0, 0};
+    D3DXVECTOR3 m_Dir{0, 0, 0};
+    bool m_Turret;  // the laser turret's (its glow is larger, before the barrel)
     virtual ~CLaser() {
         m_bl.Release();
         m_end.Release();
     }
 
 public:
-    CLaser(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1);
+    CLaser(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1, bool turret = false);
 
     virtual void BeforeDraw(void);
     virtual void Draw(void) const override;
@@ -198,10 +203,7 @@ public:
     virtual void Release(void) { HDelete(CLaser, this, m_Heap); };
     virtual int Priority(void) { return MAX_EFFECT_PRIORITY; };
 
-    void SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1) {
-        m_bl.SetPos(pos0, pos1);
-        m_end.m_Pos = pos0;
-    }
+    void SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1);
 };
 
 class CVolcano : public CMatrixEffect {

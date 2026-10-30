@@ -17,6 +17,7 @@
 #include "ShadowStencil.hpp"
 #include "MatrixFormGame.hpp"
 #include "MatrixObjectCannon.hpp"
+#include "Mods.hpp"
 
 #include "Effects/MatrixEffectSelection.hpp"
 #include "Effects/MatrixEffectSmokeAndFire.hpp"
@@ -1100,6 +1101,247 @@ void CMatrixFlyer::CalcCollisionDisplace(SFlyerTaktData &td) {
 //    }
 //}
 
+// PBHelpFromAbove's templates (its RobotTemplates/ForReinforcements in PBEngine's form, e.g. A,4S,P.P.P.P.O,L=90,450:
+// chassis, hull, weapons, head = points, hit points), as GiveBot blocks: hulls 1 1S 2 2S 3 4S are Моностек 6, Бирекс
+// 1, Диплоид 2, Парагон 3, Трайдент 4, Фулстек 5; chassis P W T H A 1-5; heads S D L F 1-4 (R, Репаратор: none and
+// SelfRepair); weapons G C M F O L B P E R 1-10; its hit points are the interface's (ours times 10). Flyer: its
+// FlyersTypeBest 3, the bomber (its types count from 1: 4 is our transport, 2).
+static const wchar_t *above_templates = LR"(
+90 {
+BotArmor=5
+BotChassis=5
+BotHead=3
+BotHitpoint=4500
+BotStrength=0
+BotWeapon=8
+BotWeapon=8
+BotWeapon=8
+BotWeapon=8
+BotWeapon=5
+Flyer=3
+}
+90 {
+BotArmor=5
+BotChassis=5
+BotHead=4
+BotHitpoint=8000
+BotStrength=0
+BotWeapon=2
+BotWeapon=2
+BotWeapon=2
+BotWeapon=9
+BotWeapon=5
+Flyer=3
+}
+90 {
+BotArmor=5
+BotChassis=5
+BotHead=0
+BotHitpoint=5800
+BotStrength=0
+BotWeapon=10
+BotWeapon=10
+BotWeapon=10
+BotWeapon=10
+BotWeapon=5
+Flyer=3
+SelfRepair=3
+}
+75 {
+BotArmor=5
+BotChassis=4
+BotHead=3
+BotHitpoint=3500
+BotStrength=0
+BotWeapon=8
+BotWeapon=8
+BotWeapon=8
+BotWeapon=8
+BotWeapon=5
+Flyer=3
+}
+75 {
+BotArmor=5
+BotChassis=4
+BotHead=4
+BotHitpoint=6000
+BotStrength=0
+BotWeapon=2
+BotWeapon=2
+BotWeapon=2
+BotWeapon=9
+BotWeapon=5
+Flyer=3
+}
+75 {
+BotArmor=5
+BotChassis=4
+BotHead=0
+BotHitpoint=4800
+BotStrength=0
+BotWeapon=10
+BotWeapon=10
+BotWeapon=10
+BotWeapon=10
+BotWeapon=5
+Flyer=3
+SelfRepair=3
+}
+65 {
+BotArmor=5
+BotChassis=3
+BotHead=4
+BotHitpoint=4000
+BotStrength=0
+BotWeapon=2
+BotWeapon=2
+BotWeapon=2
+BotWeapon=2
+BotWeapon=5
+}
+60 {
+BotArmor=4
+BotChassis=5
+BotHead=4
+BotHitpoint=4000
+BotStrength=0
+BotWeapon=8
+BotWeapon=8
+BotWeapon=9
+}
+60 {
+BotArmor=4
+BotChassis=5
+BotHead=4
+BotHitpoint=4000
+BotStrength=0
+BotWeapon=3
+BotWeapon=3
+BotWeapon=3
+}
+60 {
+BotArmor=4
+BotChassis=5
+BotHead=0
+BotHitpoint=4000
+BotStrength=0
+BotWeapon=10
+BotWeapon=10
+BotWeapon=10
+SelfRepair=3
+}
+50 {
+BotArmor=4
+BotChassis=4
+BotHead=4
+BotHitpoint=3500
+BotStrength=0
+BotWeapon=8
+BotWeapon=8
+BotWeapon=9
+}
+50 {
+BotArmor=4
+BotChassis=4
+BotHead=4
+BotHitpoint=3500
+BotStrength=0
+BotWeapon=3
+BotWeapon=3
+BotWeapon=3
+}
+50 {
+BotArmor=4
+BotChassis=4
+BotHead=0
+BotHitpoint=3500
+BotStrength=0
+BotWeapon=10
+BotWeapon=10
+BotWeapon=10
+SelfRepair=3
+}
+40 {
+BotArmor=3
+BotChassis=4
+BotHead=4
+BotHitpoint=3300
+BotStrength=0
+BotWeapon=8
+BotWeapon=8
+BotWeapon=7
+}
+40 {
+BotArmor=3
+BotChassis=5
+BotHead=4
+BotHitpoint=3300
+BotStrength=0
+BotWeapon=3
+BotWeapon=9
+BotWeapon=7
+}
+40 {
+BotArmor=3
+BotChassis=4
+BotHead=4
+BotHitpoint=3300
+BotStrength=0
+BotWeapon=4
+BotWeapon=4
+BotWeapon=7
+}
+30 {
+BotArmor=3
+BotChassis=4
+BotHead=3
+BotHitpoint=2800
+BotStrength=0
+BotWeapon=8
+BotWeapon=8
+BotWeapon=5
+}
+30 {
+BotArmor=3
+BotChassis=5
+BotHead=3
+BotHitpoint=2800
+BotStrength=0
+BotWeapon=3
+BotWeapon=3
+BotWeapon=5
+}
+30 {
+BotArmor=3
+BotChassis=4
+BotHead=3
+BotHitpoint=2800
+BotStrength=0
+BotWeapon=6
+BotWeapon=6
+BotWeapon=5
+}
+)";
+
+CBlockPar *ReinforcementTemplates() {
+    CBlockPar *orders = g_MatrixData->BlockGet(PAR_SOURCE_FLYER_ORDERS);
+    CBlockPar *data = orders->BlockGet(PAR_SOURCE_FLYER_ORDERS_GIVE_BOT);
+    if (!Mods::switches().help_from_above)
+        return data;
+    CBlockPar *above = orders->BlockGetNE(L"GiveBotAbove");
+    if (!above) {
+        above = orders->BlockAdd(L"GiveBotAbove");
+        above->LoadFromText(above_templates);  // (it clears the block first)
+        for (const wchar_t *name : {L"Flyer", L"Hitpoint", L"Distance", L"Height", L"LandHeight"})
+            above->ParAdd(name, data->ParGet(name));
+    }
+    return above;
+}
+
+int ReinforcementPoints() {
+    return Mods::switches().help_from_above ? 150 : 100;
+}
+
 void CMatrixFlyer::ApplyOrder(
     const D3DXVECTOR2 &pos,
     int side,
@@ -1115,8 +1357,9 @@ void CMatrixFlyer::ApplyOrder(
     m_TrajectoryTargetAngle = ang;
 
     CBlockPar *bp = NULL;
+    CBlockPar *botpar = NULL;
     if (order == FO_GIVE_BOT) {
-        bp = g_MatrixData->BlockGet(PAR_SOURCE_FLYER_ORDERS)->BlockGet(PAR_SOURCE_FLYER_ORDERS_GIVE_BOT);
+        bp = ReinforcementTemplates();
 
         float dist = (float)bp->ParGet(L"Distance").GetDouble() + FSRND(150);
         float height = (float)bp->ParGet(L"Height").GetDouble();
@@ -1145,7 +1388,7 @@ void CMatrixFlyer::ApplyOrder(
         SSpecialBot bot;
         ZeroMemory(&bot, sizeof(SSpecialBot));
 
-        CBlockPar *botpar = bp->BlockGet(botpar_i);
+        botpar = bp->BlockGet(botpar_i);
 
         bot.m_Chassis.m_nKind = (ERobotUnitKind)botpar->ParGet(L"BotChassis").GetInt();
         bot.m_Armor.m_Unit.m_nKind = (ERobotUnitKind)botpar->ParGet(L"BotArmor").GetInt();
@@ -1183,6 +1426,7 @@ void CMatrixFlyer::ApplyOrder(
         core->Release();
 
         r->InitMaxHitpoint((float)botpar->ParGet(L"BotHitpoint").GetDouble());
+        r->m_SelfRepair = (float)botpar->ParGetNE(L"SelfRepair").GetDouble();
 
         SETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
         CMatrixSideUnit *su = g_MatrixMap->GetSideById(GetSide());
@@ -1193,7 +1437,8 @@ void CMatrixFlyer::ApplyOrder(
     }
 
     m_TrajectoryPos = 0;
-    m_FlyerKind = (EFlyerKind)bp->ParGet(L"Flyer").GetInt();
+    // HelpFromAbove: a template may name its own flyer.
+    m_FlyerKind = (EFlyerKind)(botpar && botpar->ParCount(L"Flyer") ? botpar : bp)->ParGet(L"Flyer").GetInt();
     InitMaxHitpoint((float)bp->ParGet(L"Hitpoint").GetDouble());
     m_TrajectoryLen = m_Trajectory->CalcLength();
     m_TrajectoryLenRev = 1.0f / m_TrajectoryLen;

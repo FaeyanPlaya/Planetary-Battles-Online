@@ -42,6 +42,11 @@ enum class Type : int {
     // The built turrets `units` are dismantled: their places free, half their price back times their hit points'
     // share (TurretControl switch).
     TurretDismantle,
+    // The robots `units` set their bombs off as they die (params: 1) or not (0) (AutoBoom switch).
+    AutoBoom,
+    // The base `target` sends the robots it builds to the point x, y (params: 1) or to a free place near it as the
+    // original did (params: 0) (RallyPoint switch).
+    Rally,
 };
 
 enum class DriveAction : int { Input = 0, Enter = 1, Leave = 2, Explode = 3 };

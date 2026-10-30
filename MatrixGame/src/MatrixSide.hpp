@@ -517,6 +517,7 @@ public:
     std::wstring m_PlayerName;
     EPlayerActions m_CurrentAction;
     int m_nCurrRobotPos;
+    int m_RallyMarkerTime = 0;  // RallyPoint: ms to the next marker over the selected base's point
     ESelection m_CurrSel;
 
 private:
@@ -702,6 +703,14 @@ public:
     void IssueGroupOrder(Commands::Type type, const D3DXVECTOR3 &pos, CMatrixMapStatic *target, int param = 0);
     // Interface: a turret-attack (target or null) or turret-dismantle command for the selected turret.
     void IssueTurretOrder(Commands::Type type, CMatrixMapStatic *target);
+    // Interface (AutoBoom): turns auto detonation off for the selected bombers when all have it, else on, as a
+    // command. Returns whether it turns on; false also when no bomber is selected.
+    bool ToggleAutoBoom(void);
+    // RallyPoint: with a base selected, a right click on the ground sets its rally point at the cursor's, on the base
+    // itself clears it. True when the click was this.
+    bool IssueRally(CMatrixMapStatic *clicked, const D3DXVECTOR3 &at);
+    // Whether every selected bomber sets its bomb off as it dies (true without bombers).
+    bool SelectedAutoBoom(void);
     // Runs a command of this side (orders, construction, reinforcements).
     void ExecuteCommand(const Commands::Command &command);
     void PGOrderStop(int no);

@@ -30,8 +30,24 @@ struct Switches {
     bool repair_plant = false;  // RepairPlant: a repair factory repairs its side's robots in its capture area
     // Battle: Управление турелями
     bool turret_control = false;  // TurretControl: a side's turrets are selected, ordered, driven and dismantled
+    // Battle: Автоподрыв
+    bool auto_boom = false;  // AutoBoom: a person's robot sets its bomb off as it dies, unless turned off for it
+    // Battle: Самонаведение ракет
+    bool homing_missiles = false;  // HomingMissiles: a missile keeps to its shooter's target and turns hard to it
+    // Battle: Баллистика ракет
+    bool missile_ballistics = false;  // MissileBallistics: the engine burns out at the weapon's reach, then the
+                                      // missile falls; it hurts at any distance and bursts only on hitting
+    // Battle: Помощь с небес
+    bool help_from_above = false;  // HelpFromAbove: stronger reinforcements (ReinforcementTemplates, 150 points)
+    // Battle: Точка сбора
+    bool rally_point = false;  // RallyPoint: a base sends the robots it builds to its rally point (a right click)
+    // Battle: Баланс КР2
+    bool sr2_balance = false;  // SR2Balance: Space Rangers 2's values of some weapons and modules (ApplyBalance)
     // Personal (each person's own; never what the battle computes): Исправления интерфейса
     bool drive_aim_far = false;  // DriveAimFar: a driven robot aims at the sky and at water past the map's edge
+    bool turret_laser_glow = false;  // TurretLaserGlow: the laser turret's muzzle glow shows before its barrel
+    bool dialog_esc = false;         // DialogEsc: Esc closes the dialogs before and after the battle as Enter does
+    bool minimap_cursor = false;     // MinimapCursor: the pointing cross over the minimap instead of the arrow
     // Personal: Дальняя прорисовка
     bool far_view = false;  // FarView: the view, effects and shadows reach farther (far_view_scale)
     bool operator==(const Switches &) const = default;

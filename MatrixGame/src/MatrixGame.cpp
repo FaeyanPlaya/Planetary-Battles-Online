@@ -580,6 +580,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
             throw std::runtime_error("The battle needs mods this PC does not have: " + missing);
         if (!skipped.empty()) lgr.warning("Personal mods not installed: {}")(skipped);
         SetViewScale(Mods::view_scale());  // the far view
+        g_Config.ApplyBalance();
         lgr.notice("Battle mods: {}; personal mods: {}")(Mods::join(BattleRules::mods()), Mods::join(personal));
     }
 #endif

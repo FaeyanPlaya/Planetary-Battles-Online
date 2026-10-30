@@ -630,6 +630,8 @@ public:
 
     void SetDefaults(void);
     void ReadParams(void);
+    // The Баланс КР2 mod (SR2Balance) over the data's values, or the data's without it: after the mods are applied.
+    void ApplyBalance(void);
     void ApplySettings(SRobotsSettings *set);
 
     void ApplyGammaRamp(void);

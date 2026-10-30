@@ -178,6 +178,11 @@ public:
     D3DXVECTOR2 m_Pos;
     int m_Angle;
 
+    // RallyPoint: where the robots this base builds go (the side that set it: a captured base forgets it).
+    bool m_HasRally = false;
+    D3DXVECTOR2 m_Rally{0, 0};
+    int m_RallySide = 0;
+
     int m_Side;  // 1-8
     EBuildingType m_Kind;
     EBuildingTurrets m_TurretsMax;

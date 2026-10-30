@@ -13,6 +13,7 @@
 #include "MatrixEffectShleif.hpp"
 #include "MatrixEffectPointLight.hpp"
 #include "MatrixEffectExplosion.hpp"
+#include "../Mods.hpp"
 
 void UnloadObject(CVectorObjectAnim *o, CHeap *heap);
 
@@ -44,6 +45,11 @@ CMatrixEffectMovingObject::CMatrixEffectMovingObject(const SMOProps &props, DWOR
     }
     if (props.handler == MO_Gun_Takt || props.handler == MO_Gun_cannon_Takt) {
         m_Props.common.gun.maxdist = props.common.gun.maxdist;
+    }
+    if (props.handler == MO_Homing_Missile_Takt) {
+        // HomingMissiles: the shooter's target, its reference now the missile's.
+        m_Props.common.hm.target = props.common.hm.target;
+        m_Props.common.hm.reach = props.common.hm.reach;
     }
 
     if (m_Props.handler)
@@ -135,6 +141,7 @@ struct HMData {
     D3DXVECTOR3 to_tgt;
     // CMatrixMapStatic *target;
     float maxcos;
+    float mincos;  // the seek cone
     SMOProps *props;
     bool found;
 };
@@ -174,7 +181,7 @@ static bool HMEnum(
 
     SObjectCore *oc = ms->GetCore(DEBUG_CALL_INFO);
 
-    if ((cc > 0.98480775301220806f) && ((cc > hmd->maxcos) || selectnew || (oc == hmd->props->common.hm.target))) {
+    if ((cc > hmd->mincos) && ((cc > hmd->maxcos) || selectnew || (oc == hmd->props->common.hm.target))) {
         CMatrixMapStatic *t = g_MatrixMap->Trace(NULL, hmd->props->curpos, *p + (*p - hmd->props->curpos) * 0.1f,
                                                  TRACE_ALL, hmd->props->skip);
         if ((t == TRACE_STOP_NONE) || (t == ms)) {
@@ -206,12 +213,42 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
     DTRACE();
 
     float dtime = 0.1f * float(takt);
+    const Mods::Switches &mods = Mods::switches();
+
+    // MissileBallistics: the engine burns out as far from where the missile was fired as its weapon reaches.
+    if (mods.missile_ballistics && !props.common.hm.burnt) {
+        auto flown = props.curpos - props.startpos;
+        if (D3DXVec3LengthSq(&flown) >= props.common.hm.reach * props.common.hm.reach) {
+            props.common.hm.burnt = 1;
+            if (props.common.hm.target) {
+                props.common.hm.target->Release();
+                props.common.hm.target = NULL;
+            }
+        }
+    }
+    const bool burnt = props.common.hm.burnt != 0;
+    const bool homing = mods.homing_missiles && !burnt;
 
     // calc target
 
     HMData data;
 
     D3DXVec3Normalize(&data.dir, &props.velocity);
+    // HomingMissiles: the target is kept while it lives and is ahead.
+    if (homing && props.common.hm.target) {
+        bool keep = props.common.hm.target->m_Object != NULL;
+        if (keep) {
+            auto to = props.common.hm.target->m_GeoCenter - props.curpos;
+            keep = D3DXVec3Dot(&data.dir, &to) > 0;
+        }
+        if (keep) {
+            props.target = props.common.hm.target->m_GeoCenter;
+        }
+        else {
+            props.common.hm.target->Release();
+            props.common.hm.target = NULL;
+        }
+    }
     D3DXVECTOR3 seekcenter;
     if (props.common.hm.target) {
         auto tmp = props.target - props.curpos;
@@ -226,6 +263,7 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
             vmax(seekcenter.x + HOMING_RADIUS, seekcenter.y + HOMING_RADIUS);
 
     data.to_tgt = data.dir;
+    data.mincos = homing ? HOMING_SEEK_COS : 0.98480775301220806f;
 
     if (props.time > props.common.hm.next_seek_time) {
         props.common.hm.next_seek_time = HM_SEEK_TIME_PERIOD + props.time;
@@ -233,6 +271,9 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
     else {
         goto skip_obj_seek;
     }
+    // Burnt out nothing is sought; a homing missile seeks only without a target.
+    if (burnt || (homing && props.common.hm.target))
+        goto skip_obj_seek;
 
     data.props = &props;
     data.found = false;
@@ -251,7 +292,28 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
 
 skip_obj_seek:
 
-    props.velocity += data.to_tgt * 0.1f * dtime;
+    if (burnt) {
+        // MissileBallistics: unpowered, slowed by the air and pulled down.
+        float keep = 1.0f - MISSILE_DRAG * float(takt);
+        props.velocity *= keep > 0 ? keep : 0;
+        props.velocity.z -= MISSILE_GRAVITY * float(takt);
+    }
+    else if (homing) {
+        // HomingMissiles: turns to its target every takt (the original only nudged its course as it sought), and
+        // speeds up as the original.
+        D3DXVECTOR3 to = data.dir;
+        if (props.common.hm.target) {
+            auto tmp = props.target - props.curpos;
+            D3DXVec3Normalize(&to, &tmp);
+        }
+        float turn = HOMING_TURN_RATE * float(takt);
+        D3DXVECTOR3 dir = data.dir + (to - data.dir) * (turn < 1 ? turn : 1);
+        D3DXVec3Normalize(&dir, &dir);
+        props.velocity = dir * (D3DXVec3Length(&props.velocity) + 0.1f * dtime);
+    }
+    else {
+        props.velocity += data.to_tgt * 0.1f * dtime;
+    }
 
     float vel = D3DXVec3Length(&props.velocity);
     float k = float(1.0 / vel);
@@ -270,7 +332,8 @@ skip_obj_seek:
         --props.common.hm.in_frustum_count;
     }
 
-    if (props.common.hm.in_frustum_count > 0) {
+    // MissileBallistics: burnt out it leaves no trail.
+    if (props.common.hm.in_frustum_count > 0 && !burnt) {
         float t, dt;
         if (props.time > props.common.hm.next_fire_time) {
             t = 0;
@@ -310,7 +373,9 @@ skip_obj_seek:
 
     auto tmp = props.curpos - props.target;
     float distance = D3DXVec3LengthSq(&tmp);
-    if (hit || distance < MISSILE_IMPACT_RADIUS_SQ) {
+    // MissileBallistics: no burst in the air at the point it was fired at; only near a target it holds.
+    bool close_by = distance < MISSILE_IMPACT_RADIUS_SQ && (!mods.missile_ballistics || props.common.hm.target != NULL);
+    if (hit || close_by) {
         if (hito == TRACE_STOP_NONE && props.common.hm.target != NULL && props.common.hm.target->m_Object != NULL) {
             hito = props.common.hm.target->m_Object;
         }
@@ -344,7 +409,10 @@ skip_obj_seek:
             props.common.hm.target = NULL;
         }
     }
-    else if (props.time > 10000) {
+    // MissileBallistics: one fallen past the map's edge (nothing there to hit) goes below the water's level, which
+    // covers any ground lower.
+    else if (props.time > (mods.missile_ballistics ? MISSILE_LIFETIME : 10000) ||
+             (burnt && props.curpos.z < WATER_LEVEL - MISSILE_BELOW)) {
         // time to die...
         props.endoflife = true;
         if (props.endhandler) {

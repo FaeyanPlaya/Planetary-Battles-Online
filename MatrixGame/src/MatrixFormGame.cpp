@@ -4,6 +4,7 @@
 // Refer to the LICENSE file included
 
 #include "MatrixFormGame.hpp"
+#include "BattleNotice.hpp"
 #include "BattleStats.hpp"
 #include "SettingsWindow.hpp"
 #include "NewBattle.hpp"
@@ -378,6 +379,8 @@ void CFormMatrixGame::Takt(int step) {
     if (SoundBridge::recover()) CSound::Clear();
     // Keep music queued even while display changes or a lost device skip the rest of the frame.
     SoundBridge::update_music();
+    // The battle's notices expire in every kind of battle (the network loop also calls it).
+    BattleNotice::update();
 
     if (Display::apply_pending(FLAG(g_MatrixMap->m_Flags, MMFLAG_VIDEO_RESOURCES_READY),
             [] { g_MatrixMap->ReleasePoolDefaultResources(); },
@@ -927,8 +930,12 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
             return;
         }
 
-        if (FLAG(g_MatrixMap->m_Flags, MMFLAG_DIALOG_MODE))
+        if (FLAG(g_MatrixMap->m_Flags, MMFLAG_DIALOG_MODE)) {
+            // DialogEsc: the dialogs before and after the battle close as Enter does (the original ignored Esc).
+            if (Mods::switches().dialog_esc && g_MatrixMap->m_DialogModeName)
+                g_IFaceList->PressHintButton(HINT_OK);
             return;
+        }
 
         if (g_MatrixMap->GetPlayerSide()->GetArcadedObject()) {
             g_IFaceList->LiveRobot();

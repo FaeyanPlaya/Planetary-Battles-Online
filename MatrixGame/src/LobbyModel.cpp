@@ -57,9 +57,10 @@ std::wstring el(double scale, const std::wstring &text, const wchar_t *font, uin
             if (ch == L'\u0451') ch = L'\u0435';
             else if (ch == L'\u0401') ch = L'\u0415';
     auto element = text_element(shown, sized_font(scale, font).c_str(), color, p(x), p(y), p(width), align);
-    const std::wstring one_line = L"|_HEIGHT:" + std::to_wstring(SettingsModel::Layout::row_height - 1) + L"|";
-    if (const auto at = element.find(one_line); at != std::wstring::npos)
-        element.replace(at, one_line.size(), L"|_HEIGHT:" + std::to_wstring(p(height)) + L"|");
+    // The settings' box height, whatever it is, becomes this one (a description takes two lines).
+    const std::wstring key = L"|_HEIGHT:";
+    if (const auto at = element.find(key); at != std::wstring::npos)
+        element.replace(at, element.find(L'|', at + 1) - at, key + std::to_wstring(p(height)));
     return element;
 }
 std::wstring el(const Screen &s, const std::wstring &text, const wchar_t *font, uint32_t color, int x, int y, int width,

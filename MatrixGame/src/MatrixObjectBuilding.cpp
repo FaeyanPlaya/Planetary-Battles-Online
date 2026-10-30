@@ -1282,12 +1282,13 @@ void CMatrixBuilding::Maintenance(void) {
 
     float angle = FSRND(M_PI);
 
-    CBlockPar *bp = g_MatrixData->BlockGet(PAR_SOURCE_FLYER_ORDERS)->BlockGet(PAR_SOURCE_FLYER_ORDERS_GIVE_BOT);
+    CBlockPar *bp = ReinforcementTemplates();
+    const int points = ReinforcementPoints();
 
     int score = 0;
 
     int pli = 0;
-    for (; score < 100;) {
+    for (; score < points;) {
         if (pli >= listcnt)
             break;
 
@@ -1305,12 +1306,12 @@ void CMatrixBuilding::Maintenance(void) {
         for (; cnt > 0; --cnt) {
             botpar_i = g_MatrixMap->Rnd(0, bp->BlockCount() - 1);
             sc = bp->BlockGetName(botpar_i).GetInt();
-            if (score + sc > 130)
+            if (score + sc > points + 30)
                 continue;
             break;
         }
         score += sc;
-        if (sc > 130)
+        if (sc > points + 30)
             break;
 
         CPoint bpos(Float2Int((m_Pos.x + m_Core->m_Matrix._21 * 50) * INVERT(GLOBAL_SCALE_MOVE)) -

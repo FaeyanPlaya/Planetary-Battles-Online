@@ -396,6 +396,11 @@ void CMatrixRobotAI::LogicTakt(int ms) {
         return;
     }
 
+    if (m_SelfRepair > 0 && m_HitPoint < m_HitPointMax) {
+        m_HitPoint = std::min(m_HitPointMax, m_HitPoint + m_HitPointMax * m_SelfRepair * float(ms) * 0.00001f);
+        m_PB.Modify(m_HitPoint * m_MaxHitPointInversed);
+    }
+
     DCP();
 
     if (m_MiniMapFlashTime > 0) {
@@ -792,6 +797,18 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                 base->Close();
                 SetBase(NULL);
                 DCP();
+
+                if (m_HasRally) {
+                    m_HasRally = false;
+                    if (g_MatrixMap->IsHumanSide(m_Side)) {
+                        CMatrixSideUnit *side = g_MatrixMap->GetSideById(m_Side);
+                        SETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
+                        side->PGOrderMoveTo(side->RobotToLogicGroup(this),
+                                            CPoint(Float2Int(m_RallyPoint.x / GLOBAL_SCALE_MOVE) - ROBOT_MOVECELLS_PER_SIZE / 2,
+                                                   Float2Int(m_RallyPoint.y / GLOBAL_SCALE_MOVE) - ROBOT_MOVECELLS_PER_SIZE / 2));
+                        RESETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
+                    }
+                }
             }
         }
         else {
@@ -1992,7 +2009,8 @@ bool CMatrixRobotAI::Damage(
         for (int nC = 0; nC < m_WeaponsCnt; ++nC) {
             if (m_Weapons[nC].IsEffectPresent() && m_Weapons[nC].GetWeaponType() == WEAPON_BIGBOOM) {
                 if (g_MatrixMap->IsHumanSide(GetSide())) {
-                    //                    BigBoom(nC);
+                    if (Mods::switches().auto_boom && m_AutoBoom)
+                        BigBoom(nC);
                 }
                 else {
                     float danager = 0.0f;
@@ -2244,6 +2262,19 @@ void CMatrixRobotAI::RobotSpawn(CMatrixBuilding *pBase) {
             m_Team = 0;
 
             SETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
+
+            if (Mods::switches().rally_point && pBase->m_HasRally && pBase->m_RallySide == pBase->m_Side) {
+                // RallyPoint: to the base's point once out of the base, and stay (no free place near the base is
+                // taken).
+                m_HasRally = true;
+                m_RallyPoint = pBase->m_Rally;
+                RESETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
+                if (m_Side != 0)
+                    g_MatrixMap->GetSideById(m_Side)->IncStatValue(STAT_ROBOT_BUILD);
+                m_CurrState = ROBOT_IN_SPAWN;
+                pBase->Open();
+                return;
+            }
 
             side->AssignPlace(this, g_MatrixMap->GetRegion(CPoint(int(pBase->m_Pos.x / GLOBAL_SCALE_MOVE),
                                                                   int(pBase->m_Pos.y / GLOBAL_SCALE_MOVE))));

@@ -10,6 +10,8 @@
 #include "MatrixConfig.hpp"
 #include "MatrixGameDll.hpp"
 #include "MatrixGame.h"
+#include "Mods.hpp"
+#include <stupid_logger.hpp>
 
 struct SKeyCodes {
     const wchar *name;
@@ -1105,6 +1107,30 @@ void CMatrixConfig::ApplyGammaRamp(void) {
 
     g_D3DD->SetGammaRamp(0, D3DSGR_CALIBRATE, &newramp);
     // g_D3DD->SetGammaRamp(1, D3DSGR_CALIBRATE, &newramp);
+}
+
+void CMatrixConfig::ApplyBalance(void) {
+    // The blocker head's hit points are read from the data where a robot is made: kept there, the data's own value
+    // restored without the mod (the data stays loaded from battle to battle; ReadParams restores the rest).
+    CBlockPar *blocker = g_MatrixData->BlockGet(PAR_SOURCE_CHARS)->BlockGet(L"Heads")->BlockGetNE(L"S");
+    static std::wstring blocker_hp;
+    if (blocker && blocker_hp.empty())
+        blocker_hp = blocker->ParGetNE(L"HIT_POINT_ADD");
+    if (blocker)
+        blocker->ParSetAdd(L"HIT_POINT_ADD", Mods::switches().sr2_balance ? std::wstring(L"300") : blocker_hp);
+    if (!Mods::switches().sr2_balance)
+        return;
+    m_WeaponCooldown[Weap2Index(WEAPON_VOLCANO)] = 70;
+    m_WeaponCooldown[Weap2Index(WEAPON_GUN)] = 500;
+    m_WeaponCooldown[Weap2Index(WEAPON_HOMING_MISSILE)] = 1000;
+    m_WeaponCooldown[Weap2Index(WEAPON_REPAIR)] = 27;
+    m_Overheat[WEAPON_GUN_HEAT] = 200;
+    m_Overheat[WEAPON_HOMING_MISSILE_HEAT] = 500;
+    m_CannonDamages[Weap2Index(WEAPON_BOMB)].damage = 300;
+    m_CannonDamages[Weap2Index(WEAPON_BOMB)].friend_damage = 300;
+    m_Price[HEAD4_PLASM] = 40;
+    m_Price[WEAPON3_ELECTRONICS] = 10;
+    lgr.notice("Balance: Space Rangers 2 values (SR2Balance)")();
 }
 
 CMatrixConfig g_Config;
