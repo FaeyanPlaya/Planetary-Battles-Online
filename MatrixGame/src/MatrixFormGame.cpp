@@ -1363,7 +1363,8 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
             }
         }
 
-        if (vk >= VK_0 && vk <= VK_9 && !ps->IsArcadeMode() && !ps->m_ConstructPanel->IsActive()) {
+        const bool select_all = vk == VK_F2 && Mods::switches().select_all;
+        if (((vk >= VK_0 && vk <= VK_9) || select_all) && !ps->IsArcadeMode() && !ps->m_ConstructPanel->IsActive()) {
             if (CMultiSelection::m_GameSelection) {
                 CMultiSelection::m_GameSelection->End(false);
             }
@@ -1375,7 +1376,25 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
 
             g_IFaceList->ResetOrderingMode();
 
-            if (Input::isVKeyPressed(VK_CONTROL)) {
+            if (select_all) {
+                bool prev_unselected = false;
+                for (CMatrixMapStatic *o = CMatrixMapStatic::GetFirstLogic(); o; o = o->GetNextLogic()) {
+                    if (o->GetSide() == PLAYER_SIDE && o->IsLiveRobot()) {
+                        if (!prev_unselected) {
+                            prev_unselected = true;
+                            ps->SelectedGroupUnselect();
+                            ps->GetCurSelGroup()->RemoveAll();
+                        }
+                        ps->GetCurSelGroup()->AddObject(o, -4);
+                    }
+                }
+                const int robots = ps->GetCurSelGroup()->GetRobotsCnt();
+                if (robots) {
+                    ps->CreateGroupFromCurrent();
+                    ps->Select(robots > 1 ? GROUP : ROBOT, NULL);
+                }
+            }
+            else if (Input::isVKeyPressed(VK_CONTROL)) {
                 ps->AssignBuildingGroup(vk);
                 CMatrixMapStatic *o = CMatrixMapStatic::GetFirstLogic();
                 while (o) {

@@ -49,6 +49,7 @@ struct Switches {
     bool dialog_esc = false;         // DialogEsc: Esc closes the dialogs before and after the battle as Enter does
     bool minimap_cursor = false;     // MinimapCursor: the pointing cross over the minimap instead of the arrow
     bool building_groups = false;    // BuildingGroups: Ctrl+digit keeps the selected building or turret, a digit selects it
+    bool select_all = false;         // SelectAll: F2 selects all the person's robots on the map
     // Personal: Дальняя прорисовка
     bool far_view = false;  // FarView: the view, effects and shadows reach farther (far_view_scale)
     bool operator==(const Switches &) const = default;

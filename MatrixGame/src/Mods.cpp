@@ -43,6 +43,7 @@ constexpr SwitchName personal_switches[] = {
     {"dialogesc", &Switches::dialog_esc},
     {"minimapcursor", &Switches::minimap_cursor},
     {"buildinggroups", &Switches::building_groups},
+    {"selectall", &Switches::select_all},
     {"farview", &Switches::far_view},
 };
 
@@ -154,7 +155,7 @@ std::vector<Mod> builtin_mods() {
              L"\u043f\u0440\u0438\u0446\u0435\u043b \u043d\u0430\u0434 \u043c\u0438\u043d\u0438\u043a\u0430\u0440\u0442\u043e\u0439",
              L"A driven robot aims at the sky and at water past the map's edge; the laser turret's muzzle glows; "
              L"Esc closes the dialogs before and after the battle; a cross over the minimap",
-             Kind::Personal, {"driveaimfar", "turretlaserglow", "dialogesc", "minimapcursor", "buildinggroups"}),
+             Kind::Personal, {"driveaimfar", "turretlaserglow", "dialogesc", "minimapcursor", "buildinggroups", "selectall"}),
         // LiftSight: robots on a base's lift see the enemies in reach and are seen (the original ignored them there).
         // CaptureLift: a capturer rides the lift down when something else closed it (it stood in the air).
         // DriveReachReset: a robot its driver left loses the reach bonus too (the original kept it).
