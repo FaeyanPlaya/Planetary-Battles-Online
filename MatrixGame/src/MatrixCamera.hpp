@@ -172,9 +172,13 @@ class CMatrixCamera : public CMain {
     D3DXVECTOR2 m_XY_Strategy;
     float m_Ang_Strategy;
 
-    // In a turret (TurretControl): the view's own turn, by the turn keys; the turret's head follows the cursor.
+    // In a turret (TurretControl): the view's own turn, by the turn keys and the mouse with the wheel held (W and S tilt
+    // it); the turret's head follows the cursor.
     float m_TurretAngZ = 0;
     const CMatrixMapStatic *m_TurretView = nullptr;  // the turret it was set for
+    bool m_RearView = false;  // ManualExtras: in a robot, looking back (X); off out of it
+    bool m_FirstPerson = false;  // FirstPerson: looking from the robot or turret driven; off out of it
+    float m_FirstPersonBlend = 0;  // its way in: 0 entering, 1 held to the robot or turret
 
     SAutoFlyData *m_AFD;
 
@@ -225,9 +229,15 @@ public:
     //inline void    RotateZ( float da)          { m_AngleZ += da; }
     //inline void    RotateX(float angle)        { m_AngleX += angle; }
 
+    void ToggleRearView() { m_RearView = !m_RearView; }
+    bool RearView() const { return m_RearView; }
+
     void RotateByMouse(int dx, int dy) {
         if (m_ModeIndex == CAMERA_STRATEGY) {
             m_Ang_Strategy += g_Config.m_CamParams[m_ModeIndex].m_CamRotSpeedZ * dx * 10;
+        }
+        else if (m_TurretView) {
+            m_TurretAngZ += g_Config.m_CamParams[m_ModeIndex].m_CamRotSpeedZ * dx * 10;
         }
         m_AngleParam[m_ModeIndex] -= g_Config.m_CamParams[m_ModeIndex].m_CamRotSpeedX * dy * 5;
         if (m_AngleParam[m_ModeIndex] > 1.0f)
@@ -262,23 +272,12 @@ public:
     void RotUp(void) { SETFLAG(m_Flags, CAM_ACTION_ROT_UP); }
     void RotDown(void) { SETFLAG(m_Flags, CAM_ACTION_ROT_DOWN); }
 
-    void ZoomOutStep(void) {
-        m_DistParam[m_ModeIndex] += g_Config.m_CamParams[m_ModeIndex].m_CamMouseWheelStep * 4.5f;  // 1.5f;
-        if (m_DistParam[m_ModeIndex] > 4.0f)
-            m_DistParam[m_ModeIndex] = 4.0f;
-        if (m_DistParam[m_ModeIndex] < 0.25f)
-            m_DistParam[m_ModeIndex] = 0.25f;
-        // if (m_DistParam[m_ModeIndex] < 0.0f)  m_DistParam[m_ModeIndex] = 0.0f;
-    }
-
-    void ZoomInStep(void) {
-        m_DistParam[m_ModeIndex] -= g_Config.m_CamParams[m_ModeIndex].m_CamMouseWheelStep * 4.5f;  // 1.5f;
-        if (m_DistParam[m_ModeIndex] > 4.0f)
-            m_DistParam[m_ModeIndex] = 4.0f;
-        if (m_DistParam[m_ModeIndex] < 0.25f)
-            m_DistParam[m_ModeIndex] = 0.25f;
-        // if (m_DistParam[m_ModeIndex] < 0.0f)  m_DistParam[m_ModeIndex] = 0.0f;
-    }
+    void ZoomOutStep(void);
+    void ZoomInStep(void);
+    // The farthest the wheel takes the distance parameter in this mode: 4, twice as far with ZoomFar.
+    float MaxDistParam(int index) const;
+    // FirstPerson: looking from the robot or turret driven (the wheel all the way in once more).
+    bool FirstPerson() const { return m_FirstPerson; }
 
     void RotUpStep(void) {
         m_AngleParam[m_ModeIndex] += g_Config.m_CamParams[m_ModeIndex].m_CamMouseWheelStep;

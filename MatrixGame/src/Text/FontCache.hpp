@@ -10,7 +10,8 @@ namespace Text {
 
 // Owns the fixed UI font set for one device; the loader also supports asset-free tests.
 // With a maker, sized fonts are also made on first use: Font.Heavy<px> (the menu's Verdana, drawn heavier: see
-// heavy_stroke) and Font.Title<px> (the Rangers face), for a screen drawn larger (Font.Heavy23).
+// heavy_stroke) and Font.Title<px> (the Rangers face), for a screen drawn larger (Font.Heavy23); Font.Arrows<px>,
+// Arial drawn as heavy, for the arrows Verdana lacks.
 class FontCache {
 public:
     using Loader = LPD3DXFONT (*)(IDirect3DDevice9 *, std::wstring_view, size_t);

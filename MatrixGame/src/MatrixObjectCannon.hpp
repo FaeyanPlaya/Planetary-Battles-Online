@@ -248,6 +248,8 @@ public:
     CMatrixMapStatic *OrderTarget() const { return m_OrderCore ? m_OrderCore->m_Object : nullptr; }
     // The manual control bonus: the weapons reach farther while a person is in the turret.
     void SetDriveBonus(bool on);
+    // The person's fire ends: the button let go, or the turret left (its own logic would go on firing past).
+    void DriveFireEnd();
     // Dismantles the turret: its place frees at once, the turret sinks into the ground and is deleted.
     void Dismantle();
     // This client's selection: the ring, and the health bar in the panel.

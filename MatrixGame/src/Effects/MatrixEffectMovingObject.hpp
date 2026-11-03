@@ -17,10 +17,15 @@
 #define MISSILE_IMPACT_RADIUS_SQ (MISSILE_IMPACT_RADIUS * MISSILE_IMPACT_RADIUS)
 #define HM_SEEK_TIME_PERIOD      50
 
-// HomingMissiles: the cone a missile seeks a new target in (cos 45 degrees; the original's is 10), and how fast it
-// turns: the share of the way to its target's direction per ms.
+// HomingMissiles: the cone a missile seeks a target in (cos 45 degrees; the original's is 10), how long after the
+// launch it flies straight (ms; Universe's PBHomingMissiles: 500 a robot's, 200 a turret's), and how fast it then
+// turns: the share of the way to its target's direction per ms (0.65 of the first version's 0.006: Universe's
+// homing speed, the middle of a robot's 0.5 and a turret's 0.8, taking 1 as the first version).
 #define HOMING_SEEK_COS  0.70710678f
-#define HOMING_TURN_RATE 0.006f
+#define HOMING_SEEK_REACHES 1  // the sphere ahead it seeks in: a radius of this many of its weapon's reaches, so its
+                               // diameter is two (the original's radius: HOMING_RADIUS)
+#define HOMING_DELAY     400
+#define HOMING_TURN_RATE 0.0039f
 // MissileBallistics: an unpowered missile's speed lost to the air (share per ms), its fall (speed per ms), the time
 // (ms) after which one that hit nothing goes (the original's missile went after 10 s)
 #define MISSILE_DRAG     0.0005f

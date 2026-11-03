@@ -19,6 +19,9 @@
 #include "DeviceRecovery.hpp"
 #include "WindowDisplay.hpp"
 #include "BattleRules.hpp"
+#include "MapPacks.hpp"
+#include "CFile.hpp"
+#include "Mods.hpp"
 
 #include <stupid_logger.hpp>
 
@@ -1114,6 +1117,11 @@ int CMatrixMap::PrepareMap(CStorage &stor, const std::wstring &mapname) {
         m_Reflection = (CTextureManaged *)g_Cache->Get(CacheClass::TextureManaged, skbp->ParGet(L"Reflection").c_str());
 
         if (g_Config.m_SkyBox != 0) {
+            // NewSky: PBNewSky's sides of this sky (at 2048, their rectangles too), each one whose texture is there.
+            std::map<std::wstring, std::wstring> sides;
+            if (Mods::switches().new_sky)
+                if (const auto folder = MapPacks::new_sky_folder(); !folder.empty())
+                    sides = MapPacks::new_sky(folder, propval->GetAsWStr(ic));
             for (int idx = 0; idx < 4; ++idx) {
                 if (idx == 0)
                     skyname = L"Fore";
@@ -1125,7 +1133,18 @@ int CMatrixMap::PrepareMap(CStorage &stor, const std::wstring &mapname) {
                     skyname = L"Right";
                 // else if (idx == 4) skyname = L"Up";
 
-                std::wstring texname(skbp->ParGet(skyname).GetStrPar(0, L","));
+                ParamParser side = skbp->ParGet(skyname);
+                if (const auto found = sides.find(skyname); found != sides.end()) {
+                    std::wstring file, name = ParamParser(found->second).GetStrPar(0, L",");
+                    if (g_Config.m_SkyBox == 2)
+                        name += L"_high";
+                    if (Base::CFile::FileExist(file, name.c_str(), CacheExtsTex))
+                        side = found->second;
+                    else
+                        lgr.warning("PBNewSky lacks {}: the game's")(utils::from_wstring(name));
+                }
+
+                std::wstring texname(side.GetStrPar(0, L","));
 
                 if (g_Config.m_SkyBox == 2)
                     texname += L"_high";
@@ -1135,10 +1154,10 @@ int CMatrixMap::PrepareMap(CStorage &stor, const std::wstring &mapname) {
                 tex->MipmapOff();
                 tex->Prepare();
 
-                m_SkyTex[idx].u0 = float(skbp->ParGet(skyname).GetStrPar(1, L",").GetInt()) / float(tex->GetSizeX());
-                m_SkyTex[idx].v0 = float(skbp->ParGet(skyname).GetStrPar(2, L",").GetInt()) / float(tex->GetSizeY());
-                m_SkyTex[idx].u1 = float(skbp->ParGet(skyname).GetStrPar(3, L",").GetInt()) / float(tex->GetSizeX());
-                m_SkyTex[idx].v1 = float(skbp->ParGet(skyname).GetStrPar(4, L",").GetInt()) / float(tex->GetSizeY());
+                m_SkyTex[idx].u0 = float(side.GetStrPar(1, L",").GetInt()) / float(tex->GetSizeX());
+                m_SkyTex[idx].v0 = float(side.GetStrPar(2, L",").GetInt()) / float(tex->GetSizeY());
+                m_SkyTex[idx].u1 = float(side.GetStrPar(3, L",").GetInt()) / float(tex->GetSizeX());
+                m_SkyTex[idx].v1 = float(side.GetStrPar(4, L",").GetInt()) / float(tex->GetSizeY());
             }
         }
     }

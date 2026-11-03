@@ -133,6 +133,7 @@ struct SMatrixRobotUnit {
             int m_LinkMatrix;
             D3DXMATRIX m_IMatrix;
             DWORD m_Invert;
+            int m_Slot;  // a weapon's slot in the constructor, 1-5 (ManualExtras turns slots off)
         } s1;
         struct _s2 {
             _s2() {};
@@ -303,6 +304,21 @@ public:
 
     virtual bool Pick(const D3DXVECTOR3 &orig, const D3DXVECTOR3 &dir, float *outt) const;
     bool PickFull(const D3DXVECTOR3 &orig, const D3DXVECTOR3 &dir, float *outt) const;
+
+    // ChassisMotion (drawing only, never the battle's): wheels and tracks are drawn as each side of the chassis moves,
+    // its half at its own frame of the playing animation, back when that side goes back (turning: one side forward,
+    // the other back). The battle's frame (bounds, picking) plays as the original's.
+    struct ChassisSides {
+        float frames[2] = {0, 0};  // frames gone by the side +X and the side -X of the chassis
+        float step[2] = {0, 0};    // of them by the last call (back: below 0)
+        float x = 0, y = 0;        // where the robot was, and its heading
+        D3DXVECTOR2 forward = {0, 1};
+        int time = -1;  // then; -1: not followed
+    } m_ChassisSides;
+    // Follows the robot's motion since the last call; false when the chassis is drawn as the original's.
+    bool ChassisSidesTakt();
+    // The object frame a side (0: +X, 1: -X) is drawn at.
+    int ChassisSideFrame(int side) const;
 
     virtual void BeforeDraw(void);
     virtual void Draw(void);

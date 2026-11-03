@@ -11,148 +11,9 @@
 #include "MatrixGameDll.hpp"
 #include "MatrixGame.h"
 #include "Mods.hpp"
+#include "KeyBindings.hpp"
 #include <stupid_logger.hpp>
 
-struct SKeyCodes {
-    const wchar *name;
-    int code;
-};
-
-static SKeyCodes keycodes[] = {{L"KEY_LMB", VK_LBUTTON},
-                               {L"KEY_RMB", VK_RBUTTON},
-
-                               {L"KEY_ESC", VK_ESCAPE},
-                               {L"KEY_F1", 0x70},
-                               {L"KEY_F2", 0x71},
-                               {L"KEY_F3", 0x72},
-                               {L"KEY_F4", 0x73},
-                               {L"KEY_F5", 0x74},
-                               {L"KEY_F6", 0x75},
-                               {L"KEY_F7", 0x76},
-                               {L"KEY_F8", 0x77},
-                               {L"KEY_F9", 0x78},
-                               {L"KEY_F10", 0x79},
-                               {L"KEY_F11", 0x7A},
-                               {L"KEY_F12", 0x7B},
-
-                               {L"KEY_PAUSE", VK_PAUSE},
-
-                               {L"KEY_SLOCK", VK_SCROLL},
-                               {L"KEY_CLOCK", VK_CAPITAL},
-                               {L"KEY_NLOCK", VK_NUMLOCK},
-
-                               {L"KEY_TILDA", -1},             // ?
-                               {L"KEY_RSLASH", -1},            // ?
-                               {L"KEY_LSLASH", VK_OEM_5},      // ?
-                               {L"KEY_COMMA", VK_OEM_COMMA},   // ?
-                               {L"KEY_COLON", VK_OEM_PERIOD},  // ?
-                               {L"KEY_SEMICOLON", -1},         // ?
-                               {L"KEY_APOSTROF", -1},          // ?
-                               {L"KEY_LBRACKET", VK_OEM_4},    // ?
-                               {L"KEY_RBRACKET", VK_OEM_6},    // ?
-                               {L"KEY_MINUS", VK_OEM_MINUS},   // ?
-                               {L"KEY_EQUAL", VK_OEM_PLUS},    // ?
-
-                               {L"KEY_PADSLASH", VK_DIVIDE},
-                               {L"KEY_PADSTAR", VK_MULTIPLY},
-                               {L"KEY_PADMINUS", VK_SUBTRACT},
-                               {L"KEY_PADPLUS", VK_ADD},
-                               {L"KEY_PADENTER", -1},  // ?
-                               {L"KEY_PADDEL", VK_SEPARATOR},
-                               {L"KEY_PAD0", VK_NUMPAD0},
-                               {L"KEY_PAD1", VK_NUMPAD1},
-                               {L"KEY_PAD2", VK_NUMPAD2},
-                               {L"KEY_PAD3", VK_NUMPAD3},
-                               {L"KEY_PAD4", VK_NUMPAD4},
-                               {L"KEY_PAD5", VK_NUMPAD5},
-                               {L"KEY_PAD6", VK_NUMPAD6},
-                               {L"KEY_PAD7", VK_NUMPAD7},
-                               {L"KEY_PAD8", VK_NUMPAD8},
-                               {L"KEY_PAD9", VK_NUMPAD9},
-
-                               {L"KEY_1", 0x31},
-                               {L"KEY_2", 0x32},
-                               {L"KEY_3", 0x33},
-                               {L"KEY_4", 0x34},
-                               {L"KEY_5", 0x35},
-                               {L"KEY_6", 0x36},
-                               {L"KEY_7", 0x37},
-                               {L"KEY_8", 0x38},
-                               {L"KEY_9", 0x39},
-                               {L"KEY_0", 0x30},
-
-                               {L"KEY_LEFT", VK_LEFT},
-                               {L"KEY_RIGHT", VK_RIGHT},
-                               {L"KEY_UP", VK_UP},
-                               {L"KEY_DOWN", VK_DOWN},
-
-                               {L"KEY_BACKSPACE", VK_BACK},
-                               {L"KEY_TAB", VK_TAB},
-                               {L"KEY_ENTER", VK_RETURN},
-                               {L"KEY_SPACE", VK_SPACE},
-
-                               {L"KEY_INSERT", VK_INSERT},
-                               {L"KEY_DELETE", VK_DELETE},
-                               {L"KEY_HOME", VK_HOME},
-                               {L"KEY_END", VK_END},
-                               {L"KEY_PGUP", VK_PRIOR},
-                               {L"KEY_PGDN", VK_NEXT},
-
-                               {L"KEY_SHIFT", VK_SHIFT},
-                               {L"KEY_LSHIFT", VK_LSHIFT},
-                               {L"KEY_RSHIFT", VK_RSHIFT},
-                               {L"KEY_ALT", VK_MENU},
-                               {L"KEY_LALT", VK_LMENU},
-                               {L"KEY_RALT", VK_RMENU},
-                               {L"KEY_CTRL", VK_CONTROL},
-                               {L"KEY_LCTRL", VK_LCONTROL},
-                               {L"KEY_RCTRL", VK_RCONTROL},
-
-                               {L"KEY_LWIN", VK_LWIN},
-                               {L"KEY_RWIN", VK_RWIN},
-                               {L"KEY_MENU", VK_APPS},
-
-                               {L"KEY_Q", 0x51},
-                               {L"KEY_W", 0x57},
-                               {L"KEY_E", 0x45},
-                               {L"KEY_R", 0x52},
-                               {L"KEY_T", 0x54},
-                               {L"KEY_Y", 0x59},
-                               {L"KEY_U", 0x55},
-                               {L"KEY_I", 0x49},
-                               {L"KEY_O", 0x4F},
-                               {L"KEY_P", 0x50},
-
-                               {L"KEY_A", 0x41},
-                               {L"KEY_S", 0x53},
-                               {L"KEY_D", 0x44},
-                               {L"KEY_F", 0x46},
-                               {L"KEY_G", 0x47},
-                               {L"KEY_H", 0x48},
-                               {L"KEY_J", 0x4A},
-                               {L"KEY_K", 0x4B},
-                               {L"KEY_L", 0x4C},
-
-                               {L"KEY_Z", 0x5A},
-                               {L"KEY_X", 0x58},
-                               {L"KEY_C", 0x43},
-                               {L"KEY_V", 0x56},
-                               {L"KEY_B", 0x42},
-                               {L"KEY_N", 0x4E},
-                               {L"KEY_M", 0x4D},
-
-                               {NULL, -1}};
-
-static int KeyName2KeyCode(const std::wstring &name) {
-    int i = 0;
-    while (keycodes[i].name != NULL) {
-        if (keycodes[i].name == name)
-            return keycodes[i].code;
-        ++i;
-    }
-
-    return -1;
-}
 
 void CMatrixConfig::ApplySettings(SRobotsSettings *set) {
     m_IzvratMS = set->m_IzvratMS;
@@ -247,72 +108,7 @@ void CMatrixConfig::SetDefaults(void) {
     m_CamInRobotForward0 = 10.0f;
     m_CamInRobotForward1 = 30.0f;
 
-    m_KeyActions[KA_ROTATE_LEFT] = VK_HOME;
-    m_KeyActions[KA_ROTATE_RIGHT] = VK_END;
-    m_KeyActions[KA_ROTATE_UP] = VK_PRIOR;
-    m_KeyActions[KA_ROTATE_DOWN] = VK_NEXT;
-
-    m_KeyActions[KA_SCROLL_UP_ALT] = VK_UP;        // 0x57;
-    m_KeyActions[KA_SCROLL_DOWN_ALT] = VK_DOWN;    // 0x53;
-    m_KeyActions[KA_SCROLL_LEFT_ALT] = VK_LEFT;    // 0x41;
-    m_KeyActions[KA_SCROLL_RIGHT_ALT] = VK_RIGHT;  // 0x44;
-
-    m_KeyActions[KA_SCROLL_UP] = VK_UP;
-    m_KeyActions[KA_SCROLL_DOWN] = VK_DOWN;
-    m_KeyActions[KA_SCROLL_LEFT] = VK_LEFT;
-    m_KeyActions[KA_SCROLL_RIGHT] = VK_RIGHT;
-
-    m_KeyActions[KA_UNIT_FORWARD] = 0x57; // W
-    m_KeyActions[KA_UNIT_BACKWARD] = 0x53; // S
-    m_KeyActions[KA_UNIT_LEFT] = 0x41; // A
-    m_KeyActions[KA_UNIT_RIGHT] = 0x44; // D
-
-    m_KeyActions[KA_UNIT_FORWARD_ALT] = VK_UP;
-    m_KeyActions[KA_UNIT_BACKWARD_ALT] = VK_DOWN;
-    m_KeyActions[KA_UNIT_LEFT_ALT] = VK_LEFT;
-    m_KeyActions[KA_UNIT_RIGHT_ALT] = VK_RIGHT;
-
-    m_KeyActions[KA_FIRE] = VK_LBUTTON;
-    m_KeyActions[KA_AUTO] = VK_RBUTTON;
-
-    m_KeyActions[KA_SHIFT] = VK_SHIFT;
-    m_KeyActions[KA_CTRL] = VK_CONTROL;
-
-    m_KeyActions[KA_ROTATE_LEFT_ALT] = VK_OEM_4;  // [{ key
-    m_KeyActions[KA_ROTATE_RIGHT_ALT] = VK_OEM_6; // ]} key
-
-    m_KeyActions[KA_MINIMAP_ZOOMIN] = VK_OEM_PLUS;   // + key
-    m_KeyActions[KA_MINIMAP_ZOOMOUT] = VK_OEM_MINUS; // - key
-
-    m_KeyActions[KA_CAM_SETDEFAULT] = VK_OEM_5; // \| key
-
-    m_KeyActions[KA_AUTOORDER_CAPTURE] = 0x43;  // C
-    m_KeyActions[KA_AUTOORDER_ATTACK] = 0x55;   // U
-    m_KeyActions[KA_AUTOORDER_DEFEND] = 0x44;   // D
-
-    m_KeyActions[KA_ORDER_MOVE] = 0x4D;     // M
-    m_KeyActions[KA_ORDER_STOP] = 0x53;     // S
-    m_KeyActions[KA_ORDER_CAPTURE] = 0x4B;  // K
-    m_KeyActions[KA_ORDER_PATROL] = 0x50;   // P
-    m_KeyActions[KA_ORDER_EXPLODE] = 0x45;  // E
-    m_KeyActions[KA_ORDER_REPAIR] = 0x52;   // R
-    m_KeyActions[KA_ORDER_ATTACK] = 0x41;   // A
-    m_KeyActions[KA_ORDER_CANCEL] = 0x58;   // X
-    m_KeyActions[KA_ORDER_ROBOT_SWITCH1] = VK_OEM_COMMA;   // , key
-    m_KeyActions[KA_ORDER_ROBOT_SWITCH2] = VK_OEM_PERIOD;  // . key
-
-    m_KeyActions[KA_UNIT_BOOM] = 0x45;           // E
-    m_KeyActions[KA_UNIT_ENTER] = VK_RETURN;     // (! if not dialog mode)
-    m_KeyActions[KA_UNIT_ENTER_ALT] = VK_SPACE;  // (! if not dialog mode)
-
-    m_KeyActions[KA_BUILD_ROBOT] = 0x42;   // B
-    m_KeyActions[KA_BUILD_TURRET] = 0x54;  // T
-    m_KeyActions[KA_BUILD_HELP] = 0x48;    // H
-
-    m_KeyActions[KA_TURRET_CANNON] = 0x43; // C
-    m_KeyActions[KA_TURRET_GUN] = 0x47;    // G
-    m_KeyActions[KA_TURRET_LASER] = 0x4C;  // L
-    m_KeyActions[KA_TURRET_ROCKET] = 0x52; // R
+    KeyBindings::defaults(m_KeyActions);
 
     m_CaptureTimeErase = 750;
     m_CaptureTimePaint = 500;
@@ -439,7 +235,7 @@ void CMatrixConfig::ReadParams(void) {
             if (akn < 0 || akn >= KA_LAST) {
                 continue;
             }
-            int kk = KeyName2KeyCode(ak->ParGet(i));
+            int kk = KeyBindings::code(ak->ParGet(i));
 
             m_KeyActions[akn] = kk;
         }

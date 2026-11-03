@@ -13,6 +13,7 @@
 #include <vector>
 
 class CMatrixMapStatic;
+class CMatrixCannon;
 
 typedef void (*SELECT_ENUM)(CMatrixMapStatic *ms, uintptr_t param);
 
@@ -22,6 +23,7 @@ typedef void (*SELECT_ENUM)(CMatrixMapStatic *ms, uintptr_t param);
 #define MS_FLAG_ROBOTS    SETBIT(1)
 #define MS_FLAG_BUILDINGS SETBIT(2)
 #define MS_FLAG_PENDING_UPDATE SETBIT(3)
+#define MS_FLAG_TURRETS   SETBIT(4)  // TurretControl
 
 #define MULTISEL_FVF (D3DFVF_XYZRHW | D3DFVF_TEX1)
 struct SMultiSelVertex {
@@ -66,6 +68,7 @@ class CMultiSelection : public CMain {
     void RemoveSelItems() {
         RESETFLAG(m_Flags, MS_FLAG_BUILDINGS);
         RESETFLAG(m_Flags, MS_FLAG_ROBOTS);
+        RESETFLAG(m_Flags, MS_FLAG_TURRETS);
 
         m_SelItems.clear();
     }
@@ -135,6 +138,8 @@ public:
     void Update(const Base::CPoint &pos, DWORD mask, SELECT_ENUM callback, DWORD param);
     bool UpdatePending(DWORD mask, SELECT_ENUM callback, DWORD param);
     void End(bool add_to_selection = true);
+    // TurretControl: the built turrets in the frame (there are no robots or buildings in it then).
+    std::vector<CMatrixCannon *> Turrets() const;
 
     static void AddTime(int ms) { m_Time += ms; }
 

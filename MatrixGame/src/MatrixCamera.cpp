@@ -10,9 +10,18 @@
 #include "MatrixFlyer.hpp"
 #include "MatrixRobot.hpp"
 #include "MatrixObjectCannon.hpp"
+#include "Mods.hpp"
 #include <input.hpp>
 
 #include "Effects/MatrixEffectBigBoom.hpp"
+
+// FirstPerson: the eye at least this high over the ground (where Universe's PBFirstPerson had it: too low, the
+// owner found); its look from up (angle param 0; 90 deg is level) to down.
+#define FIRST_PERSON_HEIGHT   10.0f
+#define FIRST_PERSON_AHEAD    0.6f  // of the robot's radius: about its front edge
+#define FIRST_PERSON_ANG_UP   GRAD2RAD(100)
+#define FIRST_PERSON_ANG_DOWN GRAD2RAD(45)
+#define FIRST_PERSON_BLEND_MS 400.0f  // the way in, after which the view is held to the robot or turret
 
 float MAX_VIEW_DISTANCE = 4000.0f;
 static float view_distance = 4000.0f;  // the original's setting
@@ -662,6 +671,35 @@ CMatrixCamera::~CMatrixCamera(void) {
     }
 }
 
+float CMatrixCamera::MaxDistParam(int index) const {
+    if (!Mods::switches().zoom_far)
+        return 4.0f;
+    // Twice the distance at 4: min + p * (max - min) = 2 * (min + 4 * (max - min)).
+    const SCamParam &cp = g_Config.m_CamParams[index];
+    const float span = cp.m_CamDistMax - cp.m_CamDistMin;
+    return span > 0.001f ? 8.0f + cp.m_CamDistMin / span : 8.0f;
+}
+
+void CMatrixCamera::ZoomOutStep(void) {
+    if (m_FirstPerson) {
+        m_FirstPerson = false;  // a step out leaves the robot's or turret's own view
+        return;
+    }
+    m_DistParam[m_ModeIndex] += g_Config.m_CamParams[m_ModeIndex].m_CamMouseWheelStep * 4.5f;  // 1.5f;
+    m_DistParam[m_ModeIndex] = std::clamp(m_DistParam[m_ModeIndex], 0.25f, MaxDistParam(m_ModeIndex));
+}
+
+void CMatrixCamera::ZoomInStep(void) {
+    if (m_ModeIndex == CAMERA_INROBOT && Mods::switches().first_person && m_DistParam[m_ModeIndex] <= 0.25f) {
+        if (!m_FirstPerson)
+            m_FirstPersonBlend = 0;
+        m_FirstPerson = true;  // all the way in already
+        return;
+    }
+    m_DistParam[m_ModeIndex] -= g_Config.m_CamParams[m_ModeIndex].m_CamMouseWheelStep * 4.5f;  // 1.5f;
+    m_DistParam[m_ModeIndex] = std::clamp(m_DistParam[m_ModeIndex], 0.25f, MaxDistParam(m_ModeIndex));
+}
+
 void CMatrixCamera::CalcSkyMatrix(D3DXMATRIX &m) {
     D3DXMATRIX mz, mx;
     D3DXMatrixRotationY(&mz, -m_AngleZ + g_MatrixMap->m_SkyAngle);
@@ -859,18 +897,43 @@ void CMatrixCamera::CalcLinkPoint(D3DXVECTOR3 &lp, float &angz) {
             DCP();
             CMatrixRobotAI *bot = arcade_object->AsRobot();
 
-            lp.x = bot->m_PosX;
-            lp.y = bot->m_PosY;
-            lp.z = bot->Z_From_Pos() + g_Config.m_CamParams[CAMERA_INROBOT].m_CamHeight;
+            const D3DXVECTOR3 &heading = bot->DriveHeading();  // not the chassis turned aside for a strafe
+            if (m_FirstPerson) {
+                // Ahead of the robot (behind it looking back), level as Universe's (not leaning on a slope).
+                // Nothing here may touch the robot's bounds cache or matrices: the battle's logic is paced by them
+                // (a desync otherwise).
+                D3DXVECTOR3 way(heading.x, heading.y, 0);
+                D3DXVec3Normalize(&way, &way);
+                if (m_RearView)
+                    way = -way;
+                // At its front edge (not into what it stands against) and as high as its top over the ground under
+                // it now: its bounds' height, both from what the battle keeps (read only). Not its centre's height over
+                // that ground: the centre is refreshed every 100 ms, the ground follows the robot, so on a slope the
+                // eye jumped at each refresh.
+                const float ground = bot->Z_From_Pos();
+                const float tall = bot->m_CalcBoundMax.z - bot->m_CalcBoundMin.z;
+                const float high = std::max(FIRST_PERSON_HEIGHT, tall > 0 && tall < 1000 ? tall : 0.0f);
+                const D3DXVECTOR3 eye = way * (FIRST_PERSON_AHEAD * bot->GetRadius()) + D3DXVECTOR3(0, 0, high);
+                lp = D3DXVECTOR3(bot->m_PosX, bot->m_PosY, ground) + eye;
+            }
+            else {
+                lp.x = bot->m_PosX;
+                lp.y = bot->m_PosY;
+                lp.z = bot->Z_From_Pos() + g_Config.m_CamParams[CAMERA_INROBOT].m_CamHeight;
 
-            float bot_speed = (bot->m_Speed / bot->GetMaxSpeed());
-            lp += bot->m_Forward * LERPFLOAT(bot_speed, g_Config.m_CamInRobotForward0, g_Config.m_CamInRobotForward1);
+                float bot_speed = (bot->m_Speed / bot->GetMaxSpeed());
+                lp += heading * LERPFLOAT(bot_speed, g_Config.m_CamInRobotForward0, g_Config.m_CamInRobotForward1);
+            }
 
-            angz = (float)(atan2(-bot->m_Forward.x, bot->m_Forward.y) + M_PI_MUL(1));
+            angz = (float)(atan2(-heading.x, heading.y) + M_PI_MUL(1));
+            if (m_RearView)
+                angz += float(M_PI_MUL(1));
         }
         else if (arcade_object->IsCannon()) {
             const D3DXVECTOR3 centre = arcade_object->GetGeoCenter();
             lp = D3DXVECTOR3(centre.x, centre.y, centre.z + g_Config.m_CamParams[CAMERA_INROBOT].m_CamHeight);
+            if (m_FirstPerson)
+                lp.z = centre.z + 0.4f * arcade_object->GetRadius();  // in its head (the turret is not drawn then)
             angz = m_TurretAngZ;
         }
     }
@@ -960,9 +1023,24 @@ void CMatrixCamera::Takt(float ms) {
         if (Input::isKeyPressed(KA_UNIT_RIGHT) || Input::isKeyPressed(KA_UNIT_RIGHT_ALT))
             ++turn;
         m_TurretAngZ += float(turn) * turret_view_turn_speed * ms;
+        int tilt = 0;  // W looks down, S up (the owner's choice)
+        if (Input::isKeyPressed(KA_UNIT_FORWARD) || Input::isKeyPressed(KA_UNIT_FORWARD_ALT))
+            ++tilt;
+        if (Input::isKeyPressed(KA_UNIT_BACKWARD) || Input::isKeyPressed(KA_UNIT_BACKWARD_ALT))
+            --tilt;
+        float &param = m_AngleParam[m_ModeIndex];
+        param = std::clamp(param + float(tilt) * g_Config.m_CamParams[m_ModeIndex].m_CamRotSpeedX * ms, 0.0f, 1.0f);
     }
     else {
         m_TurretView = nullptr;
+    }
+    if (!g_MatrixMap->GetPlayerSide()->IsRobotMode() || !Mods::switches().manual_extras)
+        m_RearView = false;
+    if (index != CAMERA_INROBOT || !Mods::switches().first_person || !g_MatrixMap->GetPlayerSide()->GetArcadedObject())
+        m_FirstPerson = false;
+    if (m_FirstPerson) {
+        newdist = 0;  // the eye at the link point
+        newangx = LERPFLOAT(m_AngleParam[m_ModeIndex], FIRST_PERSON_ANG_UP, FIRST_PERSON_ANG_DOWN);
     }
 
     DCP();
@@ -1013,6 +1091,16 @@ void CMatrixCamera::Takt(float ms) {
         m_Dist = newdist;
         m_AngleX = newangx;
     }
+    if (m_FirstPerson) {
+        // Into the robot or turret smoothly (a growing share of the way left each frame on top of the lag), then held
+        // to it, not following it.
+        m_FirstPersonBlend = std::min(1.0f, m_FirstPersonBlend + float(ms) / FIRST_PERSON_BLEND_MS);
+        const float k = m_FirstPersonBlend;
+        m_LinkPoint += (newlp - m_LinkPoint) * k;
+        m_AngleZ += float(AngleNorm(AngleDist(m_AngleZ, newangz))) * k;
+        m_Dist += (newdist - m_Dist) * k;
+        m_AngleX += float(AngleDist(m_AngleX, newangx)) * k;
+    }
 
     if (FLAG(m_Flags, CAM_ACTION_MOVE_LEFT | CAM_ACTION_MOVE_RIGHT | CAM_ACTION_MOVE_UP | CAM_ACTION_MOVE_DOWN)) {
         DCP();
@@ -1023,7 +1111,9 @@ void CMatrixCamera::Takt(float ms) {
             D3DXVECTOR2 dir(GetFrustPlaneB().norm.x, GetFrustPlaneB().norm.y);
             D3DXVec2Normalize(&dir, &dir);
 
-            dir *= g_Config.m_CamMoveSpeed * ms;
+            // CameraShift: twice as fast while Shift is held (by the keys or the screen's edge).
+            const bool fast = Mods::switches().camera_shift && Input::isKeyPressed(KA_SHIFT);
+            dir *= g_Config.m_CamMoveSpeed * ms * (fast ? 2.0f : 1.0f);
 
             D3DXVECTOR2 lDir(dir.y, -dir.x);
             D3DXVECTOR2 rDir(-dir.y, dir.x);

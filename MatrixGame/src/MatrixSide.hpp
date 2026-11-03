@@ -428,6 +428,8 @@ private:
     D3DXVECTOR3 m_DriveSentAim{0, 0, 0};
     int m_DriveSentTime = 0;
     int m_DriveLeaving = 0;
+    // Interface (ManualExtras): the weapon slots this person turned off in the robot they drive (DRIVE_SLOT_OFF bits).
+    int m_DriveSlotsOff = 0;
     // Interface: the mouse turned the robot (the mouse camera, middle button): -1 left, 1 right, until then.
     int m_MouseTurn = 0;
     int m_MouseTurnUntil = 0;
@@ -517,6 +519,8 @@ public:
     std::wstring m_PlayerName;
     EPlayerActions m_CurrentAction;
     int m_nCurrRobotPos;
+    std::vector<CMatrixCannon *> m_SelTurrets;  // TurretControl: the selected turrets; m_ActiveObject, the one whose
+                                                // panel shows, is m_SelTurrets[m_CurSelNum]
     int m_BuildingGroups[10] = {};  // BuildingGroups: the sim id each digit keeps (this PC's only, like robots' numbers)
     int m_RallyMarkerTime = 0;  // RallyPoint: ms to the next marker over the selected base's point
     ESelection m_CurrSel;
@@ -597,6 +601,11 @@ public:
     void RequestDrive(Commands::DriveAction action, CMatrixMapStatic *robot);
     // Interface, every frame in a robot: issues the held keys and the aim when they change.
     void SampleDrive();
+    // Interface (ManualExtras): turns the driven robot's weapon in constructor slot `slot` (1-5) off or on.
+    void ToggleDriveSlot(int slot);
+    int DriveSlotsOff() const { return m_DriveSlotsOff; }
+    // Whether this person turned off the slot of the robot's weapon of this kind (the bomb kept from F).
+    bool DriveKindOff(const CMatrixRobotAI *robot, ERobotUnitKind kind) const;
     // Where a cursor ray from `eye` aims when the trace found nothing (sky, water past the map's edge): the water's
     // surface when the ray goes down to it, else a far point along it (the DriveAimFar switch).
     static D3DXVECTOR3 DriveFarAim(const D3DXVECTOR3 &eye, const D3DXVECTOR3 &dir);
@@ -702,8 +711,15 @@ public:
     bool IsLocalSide(void) const;
     // Interface: an order for the current selection, as a command.
     void IssueGroupOrder(Commands::Type type, const D3DXVECTOR3 &pos, CMatrixMapStatic *target, int param = 0);
-    // Interface: a turret-attack (target or null) or turret-dismantle command for the selected turret.
+    // Interface: a turret-attack (target or null) or turret-dismantle command for the selected turrets.
     void IssueTurretOrder(Commands::Type type, CMatrixMapStatic *target);
+    // TurretControl: selects these turrets (a frame, a click), the first one's panel; `add` (Shift) adds them to the
+    // turrets selected, taking out the ones already there.
+    void SelectTurrets(const std::vector<CMatrixCannon *> &turrets, bool add);
+    // TurretControl: a selected turret goes (destroyed, dismantled, captured); the next one gets the panel.
+    void ForgetTurret(CMatrixCannon *turret);
+    // TurretControl: the panel of the selected turret number `i` (its icon clicked), the others stay selected.
+    void SetCurTurret(int i);
     // Interface (AutoBoom): turns auto detonation off for the selected bombers when all have it, else on, as a
     // command. Returns whether it turns on; false also when no bomber is selected.
     bool ToggleAutoBoom(void);

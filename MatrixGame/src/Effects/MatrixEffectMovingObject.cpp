@@ -258,9 +258,9 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
     else {
         data.maxcos = 0;
     }
-    seekcenter = (props.curpos + data.dir * HOMING_RADIUS);
-    D3DXVECTOR2 vmin(seekcenter.x - HOMING_RADIUS, seekcenter.y - HOMING_RADIUS),
-            vmax(seekcenter.x + HOMING_RADIUS, seekcenter.y + HOMING_RADIUS);
+    const float seek_radius =
+            homing && props.common.hm.reach > 0 ? HOMING_SEEK_REACHES * props.common.hm.reach : HOMING_RADIUS;
+    seekcenter = (props.curpos + data.dir * seek_radius);
 
     data.to_tgt = data.dir;
     data.mincos = homing ? HOMING_SEEK_COS : 0.98480775301220806f;
@@ -271,14 +271,14 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
     else {
         goto skip_obj_seek;
     }
-    // Burnt out nothing is sought; a homing missile seeks only without a target.
-    if (burnt || (homing && props.common.hm.target))
+    // Burnt out nothing is sought; a homing missile seeks only without a target, and not before HOMING_DELAY.
+    if (burnt || (homing && (props.common.hm.target || props.time < HOMING_DELAY)))
         goto skip_obj_seek;
 
     data.props = &props;
     data.found = false;
 
-    g_MatrixMap->FindObjects(seekcenter, HOMING_RADIUS, 1, TRACE_BUILDING | TRACE_ROBOT | TRACE_CANNON | TRACE_FLYER,
+    g_MatrixMap->FindObjects(seekcenter, seek_radius, 1, TRACE_BUILDING | TRACE_ROBOT | TRACE_CANNON | TRACE_FLYER,
                              props.skip, HMEnum, (uintptr_t)&data);
 
     if (data.found == false) {
@@ -299,14 +299,14 @@ skip_obj_seek:
         props.velocity.z -= MISSILE_GRAVITY * float(takt);
     }
     else if (homing) {
-        // HomingMissiles: turns to its target every takt (the original only nudged its course as it sought), and
-        // speeds up as the original.
+        // HomingMissiles: after HOMING_DELAY turns to its target every takt (the original only nudged its course as
+        // it sought), and speeds up as the original.
         D3DXVECTOR3 to = data.dir;
         if (props.common.hm.target) {
             auto tmp = props.target - props.curpos;
             D3DXVec3Normalize(&to, &tmp);
         }
-        float turn = HOMING_TURN_RATE * float(takt);
+        float turn = props.time < HOMING_DELAY ? 0 : HOMING_TURN_RATE * float(takt);
         D3DXVECTOR3 dir = data.dir + (to - data.dir) * (turn < 1 ? turn : 1);
         D3DXVec3Normalize(&dir, &dir);
         props.velocity = dir * (D3DXVec3Length(&props.velocity) + 0.1f * dtime);

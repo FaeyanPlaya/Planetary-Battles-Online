@@ -3,6 +3,7 @@
 #include "SettingsModel.hpp"
 #include "StandaloneRuntime.hpp"
 #include "Mods.hpp"
+#include "MapPacks.hpp"
 
 #include "MatrixMap.hpp"
 #include "MatrixSoundManager.hpp"
@@ -12,6 +13,8 @@
 #include "WindowDisplay.hpp"
 #include "input.hpp"
 #include "MenuKeyLatch.hpp"
+#include "KeyBindings.hpp"
+#include "MatrixConfig.hpp"
 
 #include <stupid_logger.hpp>
 
@@ -95,7 +98,7 @@ void rebuild() {
 
 SettingsModel::Hit hit(int x, int y) {
     const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
-    return SettingsModel::hit(x - hint->m_PosX, y - hint->m_PosY);
+    return SettingsModel::hit(x - hint->m_PosX, y - hint->m_PosY, model->mods_page());
 }
 
 std::vector<SettingsModel::Resolution> adapter_modes() {
@@ -107,6 +110,51 @@ std::vector<SettingsModel::Resolution> adapter_modes() {
             modes.push_back({static_cast<int>(mode.Width), static_cast<int>(mode.Height)});
     }
     return modes;
+}
+
+// Personal mods whose files this PC lacks, looked for each time the window opens (NewSky: PBNewSky in the game).
+std::vector<std::string> unavailable() {
+    if (MapPacks::new_sky_folder().empty()) return {"newsky"};
+    return {};
+}
+
+// The person's keys as the game has them now: in a battle the config's, before one their file over the game's.
+KeyBindings::Keys current_keys() {
+    if (!g_MatrixMap) return KeyBindings::load(KeyBindings::file, KeyBindings::base());
+    KeyBindings::Keys keys;
+    std::copy(g_Config.m_KeyActions, g_Config.m_KeyActions + KA_LAST, keys.begin());
+    return keys;
+}
+
+// Saves the keys page's edits (when there are) and gives them to the game; false with the error logged.
+bool save_keys(const SettingsModel::Window &window) {
+    if (!window.keys_changed()) return true;
+    std::string error;
+    if (!KeyBindings::save(KeyBindings::file, window.keys(), KeyBindings::base(), error)) {
+        lgr.error("Cannot save CFG/keys.txt: {}")(error);
+        return false;
+    }
+    std::copy(window.keys().begin(), window.keys().end(), g_Config.m_KeyActions);
+    lgr.notice("Keys saved to CFG/keys.txt");
+    return true;
+}
+
+// The keys page's keys (true: consumed). Waiting for a key, any key is the action's (Esc cancels).
+bool keys_page_key(uint8_t vk) {
+    if (model->capturing()) {
+        model->key_press(vk);
+        return true;
+    }
+    switch (vk) {
+        case VK_UP: model->key_move(-1); return true;
+        case VK_DOWN: model->key_move(1); return true;
+        case VK_PRIOR: model->key_move(-SettingsModel::Window::key_rows_shown); return true;
+        case VK_NEXT: model->key_move(SettingsModel::Window::key_rows_shown); return true;
+        case VK_RETURN: model->key_activate(); return true;
+        case VK_DELETE: model->key_default(); return true;
+        case VK_ESCAPE: model->close_keys(); return true;
+        default: return false;
+    }
 }
 
 SettingsModel::Language language() {
@@ -145,7 +193,8 @@ void open() {
     const auto size = Display::current_size();
     values.display.width = size.width;
     values.display.height = size.height;
-    model.emplace(values, adapter_modes(), language(), Mods::default_personal(Mods::installed()));
+    model.emplace(values, adapter_modes(), language(), Mods::default_personal(Mods::installed()), unavailable(),
+                  current_keys(), KeyBindings::base());
     resume();
 }
 
@@ -170,6 +219,11 @@ void close(bool apply) {
             rebuild();
             return;
         }
+        if (!save_keys(*model)) {
+            model->set_error(true);
+            rebuild();
+            return;
+        }
         StandaloneSettings::apply_runtime(values);
         lgr.notice("Settings saved to CFG/standalone.txt{}")(
                 StandaloneSettings::restart_pending(values) ? "; some changes apply after restart" : "");
@@ -181,6 +235,13 @@ void close(bool apply) {
 bool keyboard(uint8_t vk, bool down) {
     if (!active()) return false;
     if (!down) return true;
+    if (model->keys_page()) {
+        if (keys_page_key(vk)) {
+            CSound::Play(S_BCLICK);
+            rebuild();
+        }
+        return true;
+    }
     bool update = false;
     switch (vk) {
         case VK_UP:
@@ -195,8 +256,21 @@ bool keyboard(uint8_t vk, bool down) {
         case VK_RIGHT:
             update = model->change(model->selected(), vk == VK_LEFT ? -1 : 1);
             break;
-        case VK_RETURN: close(true); return true;
-        case VK_ESCAPE: close(false); return true;
+        case VK_RETURN:
+            if (SettingsModel::opener(model->selected())) {  // opens its page
+                update = model->change(model->selected(), 1);
+                break;
+            }
+            close(true);
+            return true;
+        case VK_ESCAPE:
+            if (model->mods_page()) {  // back to the main page
+                model->close_mods();
+                update = true;
+                break;
+            }
+            close(false);
+            return true;
         default: return true;  // The battle stays paused; other keys are ignored while the dialog is open.
     }
     if (update) {
@@ -208,18 +282,43 @@ bool keyboard(uint8_t vk, bool down) {
 
 void mouse_move(int x, int y) {
     if (!active()) return;
+    if (model->keys_page()) {
+        const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
+        const int row = model->key_hit(x - hint->m_PosX, y - hint->m_PosY);
+        if (row >= 0 && !model->capturing() && model->key_select(row)) rebuild();
+        return;
+    }
     const auto target = hit(x, y);
     if (target.row >= 0 && model->select(target.row)) rebuild();
 }
 
 bool mouse_down(int x, int y) {
     if (!active()) return false;
+    if (model->keys_page()) {
+        const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
+        const int row = model->key_hit(x - hint->m_PosX, y - hint->m_PosY);
+        if (row < 0) return false;  // the hint buttons
+        model->key_select(row);
+        model->key_activate();
+        CSound::Play(S_BCLICK);
+        rebuild();
+        return true;
+    }
     const auto target = hit(x, y);
     if (target.row < 0) return false;  // The hint buttons and the rest of the screen keep their handling.
     model->select(target.row);
     model->change(target.row, target.direction);
     CSound::Play(S_BCLICK);
     rebuild();
+    return true;
+}
+
+bool mouse_wheel(int notches) {
+    if (!active()) return false;
+    if (model->keys_page() && !model->capturing()) {
+        model->key_scroll(-notches);  // away from the person: up
+        rebuild();
+    }
     return true;
 }
 
@@ -320,7 +419,8 @@ void open_startup(StandaloneSettings::Values &values) {
     const auto size = Display::current_size();
     shown.display.width = size.width;
     shown.display.height = size.height;
-    model.emplace(shown, adapter_modes(), language(), Mods::default_personal(Mods::installed()));
+    model.emplace(shown, adapter_modes(), language(), Mods::default_personal(Mods::installed()), unavailable(),
+                  current_keys(), KeyBindings::base());
     startup_values = &values;
     startup_keys = {Input::isVKeyPressed(VK_RETURN) || (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0,
                     Input::isVKeyPressed(VK_ESCAPE) || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0};
@@ -340,6 +440,11 @@ void startup_close(bool apply) {
             startup_rebuild();
             return;
         }
+        if (!save_keys(*model)) {
+            model->set_error(true);
+            startup_rebuild();
+            return;
+        }
         Display::request(values.display.mode, values.display.fullscreen);
         Display::request_size(values.display.width, values.display.height);
         *startup_values = std::move(values);
@@ -354,14 +459,31 @@ void startup_close(bool apply) {
 bool startup_keyboard(uint8_t vk, bool down) {
     if (!startup_active()) return false;
     if (!startup_keys.accept(vk, down)) return true;
+    if (model->keys_page()) {
+        if (down && keys_page_key(vk)) startup_rebuild();
+        return true;
+    }
     bool update = false;
     switch (vk) {
         case VK_UP: model->move(-1); update = true; break;
         case VK_DOWN: model->move(1); update = true; break;
         case VK_LEFT:
         case VK_RIGHT: update = model->change(model->selected(), vk == VK_LEFT ? -1 : 1); break;
-        case VK_RETURN: startup_close(true); return true;
-        case VK_ESCAPE: startup_close(false); return true;
+        case VK_RETURN:
+            if (SettingsModel::opener(model->selected())) {
+                update = model->change(model->selected(), 1);
+                break;
+            }
+            startup_close(true);
+            return true;
+        case VK_ESCAPE:
+            if (model->mods_page()) {
+                model->close_mods();
+                update = true;
+                break;
+            }
+            startup_close(false);
+            return true;
         default: return true;
     }
     if (update) startup_rebuild();
@@ -370,7 +492,12 @@ bool startup_keyboard(uint8_t vk, bool down) {
 
 void startup_mouse_move(int x, int y) {
     if (!startup_active()) return;
-    const auto target = SettingsModel::hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY);
+    if (model->keys_page()) {
+        const int row = model->key_hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY);
+        if (row >= 0 && !model->capturing() && model->key_select(row)) startup_rebuild();
+        return;
+    }
+    const auto target = SettingsModel::hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY, model->mods_page());
     if (target.row >= 0 && model->select(target.row)) startup_rebuild();
 }
 
@@ -382,11 +509,29 @@ bool startup_mouse_down(int x, int y) {
         startup_close(button > 0);
         return true;
     }
-    const auto target = SettingsModel::hit(x, y);
+    if (model->keys_page()) {
+        const int row = model->key_hit(x, y);
+        if (row >= 0) {
+            model->key_select(row);
+            model->key_activate();
+            startup_rebuild();
+        }
+        return true;
+    }
+    const auto target = SettingsModel::hit(x, y, model->mods_page());
     if (target.row < 0) return true;
     model->select(target.row);
     model->change(target.row, target.direction);
     startup_rebuild();
+    return true;
+}
+
+bool startup_mouse_wheel(int notches) {
+    if (!startup_active()) return false;
+    if (model->keys_page() && !model->capturing()) {
+        model->key_scroll(-notches);
+        startup_rebuild();
+    }
     return true;
 }
 

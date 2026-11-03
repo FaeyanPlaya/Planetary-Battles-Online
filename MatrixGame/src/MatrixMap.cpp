@@ -1073,7 +1073,8 @@ static const SAtlasRegion s_SideRegions[] = {
         {L"base_2", false, 272, 310, 304, 338},  // "not enough resources" sign
         {L"base_5", true, 0, 0, 512, 512},  // robot part pictures
         {L"base_6", true, 0, 0, 512, 512},
-        {L"interface3", true, 0, 0, 450, 234},  // building portraits
+        {L"interface3", true, 0, 0, 149, 117},  // building portraits; the repair plant's (0,117)-(149,234) stays as
+        {L"interface3", true, 149, 0, 450, 234},  // drawn for every side (owner's choice: it does not match side 1's either)
         {L"base_4", true, 264, 183, 414, 221},  // resource frames of the base panel...
         {L"base_4", false, 270, 189, 297, 216},  // ...not the icons inside
         {L"base_4", false, 307, 189, 334, 216},
@@ -2306,6 +2307,27 @@ void CMatrixMap::DrawSky(void) {
         verts[3].tv = v1;
 
         CInstDraw::AddVerts(verts, m_SkyTex[tex].tex);
+
+        if (m_Camera.FirstPerson()) {
+            // FirstPerson looks over the walls' tops (the sky has no top, the overhead camera never saw it): each
+            // wall's top row drawn on to the zenith.
+            const int walls[4] = {SKY_FORE, SKY_RITE, SKY_LEFT, SKY_BACK};
+            const D3DXVECTOR3 tops[4][2] = {{D3DXVECTOR3(-1, 1, 1), D3DXVECTOR3(1, 1, 1)},
+                                            {D3DXVECTOR3(1, 1, 1), D3DXVECTOR3(1, 1, -1)},
+                                            {D3DXVECTOR3(-1, 1, -1), D3DXVECTOR3(-1, 1, 1)},
+                                            {D3DXVECTOR3(1, 1, -1), D3DXVECTOR3(-1, 1, -1)}};
+            for (int i = 0; i < 4; ++i) {
+                const auto &t = m_SkyTex[walls[i]];
+                verts[0].p = tops[i][0];
+                verts[0].tu = t.u0;
+                verts[1].p = tops[i][1];
+                verts[1].tu = t.u1;
+                verts[2].p = verts[3].p = D3DXVECTOR3(0, 1, 0);
+                verts[2].tu = verts[3].tu = (t.u0 + t.u1) * 0.5f;
+                verts[0].tv = verts[1].tv = verts[2].tv = verts[3].tv = t.v0;
+                CInstDraw::AddVerts(verts, t.tex);
+            }
+        }
 
         CInstDraw::ActualDraw();
 

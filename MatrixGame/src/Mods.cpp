@@ -35,6 +35,7 @@ constexpr SwitchName battle_switches[] = {
     {"sr2balance", &Switches::sr2_balance},
     {"helpfromabove", &Switches::help_from_above},
     {"rallypoint", &Switches::rally_point},
+    {"manualextras", &Switches::manual_extras},
 };
 // Every switch a personal mod may turn on: what this person sees and how their input becomes commands.
 constexpr SwitchName personal_switches[] = {
@@ -45,7 +46,12 @@ constexpr SwitchName personal_switches[] = {
     {"buildinggroups", &Switches::building_groups},
     {"selectall", &Switches::select_all},
     {"constructorkeys", &Switches::constructor_keys},
+    {"zoomfar", &Switches::zoom_far},
+    {"camerashift", &Switches::camera_shift},
+    {"chassismotion", &Switches::chassis_motion},
     {"farview", &Switches::far_view},
+    {"firstperson", &Switches::first_person},
+    {"newsky", &Switches::new_sky},
 };
 
 std::string lower_ascii(std::string_view text) {
@@ -124,6 +130,12 @@ std::vector<Mod> builtin_mods() {
              L"\u0422\u0443\u043c\u0430\u043d \u0432\u0434\u0432\u043e\u0435 \u0434\u0430\u043b\u044c\u0448\u0435, \u044d\u0444\u0444\u0435\u043a\u0442\u044b \u0438 \u0442\u0435\u043d\u0438 "
              L"\u0432\u0438\u0434\u043d\u044b \u0434\u0430\u043b\u044c\u0448\u0435",
              L"Fog twice as far; effects and shadows seen farther", Kind::Personal, {"farview"}),
+        // FirstPerson (as Universe's PBFirstPerson, which gets there by its camera's numbers): in a robot or a turret
+        //   the wheel zoomed all the way in once more looks from it: from above the robot's hull (drawn) along its
+        //   heading, or from the turret's head (not drawn); a step out goes back. Drawing only.
+        made("firstperson", L"Вид от первого лица", L"First person view",
+             L"В роботе или турели колесо до упора к себе: вид от первого лица",
+             L"In a robot or turret the wheel all the way in: first person view", Kind::Personal, {"firstperson"}),
         // CaptureNoTimeout: the 10 s limit of a robot with a base (for a new robot stuck on its lift) no longer kills
         //   a robot whose capture is held up (the original killed it and closed the base).
         // StopInPlace: Stop halts each robot where it stands (the original sent the group on to free places round
@@ -133,12 +145,12 @@ std::vector<Mod> builtin_mods() {
              L"\u043f\u043e \u043a\u043e\u043c\u0430\u043d\u0434\u0435 \u0421\u0442\u043e\u043f \u0440\u043e\u0431\u043e\u0442\u044b \u0432\u0441\u0442\u0430\u044e\u0442 \u043d\u0430 \u043c\u0435\u0441\u0442\u0435",
              L"A base's capturer does not die after 10 s; Stop halts robots where they stand", Kind::Battle,
              {"capturenotimeout", "stopinplace"}),
-        // HomingMissiles: a missile (a robot's or a missile turret's) takes its shooter's target as fired (none for
-        //   a driven one) and keeps it while it is ahead; else it seeks the enemy most ahead within 45 degrees (the
-        //   original: 10 degrees, and only nudged its course). It turns to it at up to HOMING_TURN_RATE.
+        // HomingMissiles: a missile (a robot's or a missile turret's) flies straight for HOMING_DELAY, then seeks the
+        //   enemy most ahead within 45 degrees (the original: 10 degrees, and only nudged its course) and keeps it while
+        //   it is ahead. It turns to it at HOMING_TURN_RATE.
         made("homing", L"Самонаведение ракет", L"Homing missiles",
-             L"Ракета держит цель стрелка и круто доворачивает; без цели ищет врага в конусе",
-             L"A missile keeps to its shooter's target and turns hard; without one it seeks in a wide cone",
+             L"Через 0,4 с после пуска ракета ищет врага в конусе 45° и мягко доворачивает",
+             L"0.4 s after launch a missile seeks an enemy within 45 degrees and turns to it smoothly",
              Kind::Battle, {"homingmissiles"}),
         // DriveAimFar: over the sky or water past the map's edge the cursor's trace finds nothing and the original
         //   kept the robot aiming at the last point it found; the robot now aims along the cursor's ray.
@@ -148,15 +160,37 @@ std::vector<Mod> builtin_mods() {
         //   does; the original ignored it there.
         // MinimapCursor: over the minimap's picture (not its buttons) the cursor is the blue cross a Move order shows
         //   instead of the arrow; the game has no cursor picture of its own for it.
+        // ZoomFar: the wheel takes the camera out to twice the original's farthest distance.
+        // CameraShift: while Shift is held the camera moves over the map (the arrows, the screen's edge) twice as fast.
+        // ChassisMotion: wheels and tracks are drawn turning as each side of the chassis goes: back when backing, one
+        //   side forward and the other back when turning in place; only the drawing, the battle's frame stays.
         made("interface", L"\u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430", L"Interface fixes",
              L"\u0412 \u0440\u0443\u0447\u043d\u043e\u043c \u0443\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0438 \u0440\u043e\u0431\u043e\u0442 \u0446\u0435\u043b\u0438\u0442\u0441\u044f \u0432 \u043d\u0435\u0431\u043e \u0438 \u0432 \u0432\u043e\u0434\u0443 "
              L"\u0437\u0430 \u043a\u0440\u0430\u0435\u043c \u043a\u0430\u0440\u0442\u044b; \u0441\u0432\u0435\u0442\u0438\u0442\u0441\u044f \u0441\u0442\u0432\u043e\u043b "
              L"\u043b\u0430\u0437\u0435\u0440\u043d\u043e\u0439 \u0442\u0443\u0440\u0435\u043b\u0438; "
              L"Esc \u0437\u0430\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u043e\u043a\u043d\u0430 \u0434\u043e \u0438 \u043f\u043e\u0441\u043b\u0435 \u0431\u043e\u044f; "
-             L"\u043f\u0440\u0438\u0446\u0435\u043b \u043d\u0430\u0434 \u043c\u0438\u043d\u0438\u043a\u0430\u0440\u0442\u043e\u0439",
+             L"\u043f\u0440\u0438\u0446\u0435\u043b \u043d\u0430\u0434 \u043c\u0438\u043d\u0438\u043a\u0430\u0440\u0442\u043e\u0439; "
+             L"камера колесом отдаляется вдвое дальше; с Shift камера движется вдвое быстрее; "
+             L"колёса и гусеницы крутятся по ходу: назад на заднем ходу, в разные стороны на повороте",
              L"A driven robot aims at the sky and at water past the map's edge; the laser turret's muzzle glows; "
-             L"Esc closes the dialogs before and after the battle; a cross over the minimap",
-             Kind::Personal, {"driveaimfar", "turretlaserglow", "dialogesc", "minimapcursor", "buildinggroups", "selectall", "constructorkeys"}),
+             L"Esc closes the dialogs before and after the battle; a cross over the minimap; the wheel zooms out twice as far; "
+             L"Shift moves the camera twice as fast; wheels and tracks turn as they go: back when backing, "
+             L"each side its own way when turning",
+             Kind::Personal, {"driveaimfar", "turretlaserglow", "dialogesc", "minimapcursor", "buildinggroups", "selectall",
+                              "constructorkeys", "zoomfar", "camerashift", "chassismotion"}),
+        // ManualExtras (as Universe's PBEngine): in a driven robot Q and E go sideways (hovercraft and antigravity
+        //   at their PBEngine share of the speed), the bomb goes off on F instead of E, X turns the view back and
+        //   forth, and 1-5 turn the weapon in that constructor slot off and on (it holds its fire).
+        made("manual", L"Ручное управление+", L"Manual control+",
+             L"В роботе Q и E: стрейф, F: бомба, X: вид назад, 1-5: выключить или включить орудие",
+             L"In a robot Q and E: strafe, F: bomb, X: rear view, 1-5: weapon slot off or on", Kind::Battle,
+             {"manualextras"}),
+        // NewSky: the game's own skies at 2048 (the game's are 1024) from Universe's PBNewSky (by Klaxons), read in
+        //   place where the game has it (MapPacks::new_sky_folder); nothing of it is shipped. Without it: the game's.
+        made("newsky", L"Небо высокого разрешения", L"High resolution sky",
+             L"Небо игры в 2048 из мода PBNewSky для Universe (Klaxons), если он есть в игре",
+             L"The game's skies at 2048 from Universe's PBNewSky (by Klaxons), when the game has it", Kind::Personal,
+             {"newsky"}),
         // LiftSight: robots on a base's lift see the enemies in reach and are seen (the original ignored them there).
         // CaptureLift: a capturer rides the lift down when something else closed it (it stood in the air).
         // DriveReachReset: a robot its driver left loses the reach bonus too (the original kept it).

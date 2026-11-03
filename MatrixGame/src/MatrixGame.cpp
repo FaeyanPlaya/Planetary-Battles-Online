@@ -15,6 +15,7 @@
 #include "MapCatalog.hpp"
 #include "MapShare.hpp"
 #include "Mods.hpp"
+#include "KeyBindings.hpp"
 #include "MapPacks.hpp"
 #include "SettingsWindow.hpp"
 #include "SettingsModel.hpp"
@@ -507,6 +508,14 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
 
     g_Config.SetDefaults();
     g_Config.ReadParams();
+    // The person's keys (the settings' keys page) over the game's.
+    KeyBindings::set_base(g_Config.m_KeyActions);
+    {
+        std::vector<std::string> invalid;
+        const auto keys = KeyBindings::load(KeyBindings::file, KeyBindings::base(), &invalid);
+        std::copy(keys.begin(), keys.end(), g_Config.m_KeyActions);
+        for (const auto &id : invalid) lgr.warning("CFG/keys.txt: {} left out")(id);
+    }
 
     g_Config.ApplySettings(&settings);
 #ifdef BUILD_EXE
@@ -679,6 +688,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
     }
 
     g_ConfigHistory = HNew(g_MatrixHeap) CHistory;
+    g_ConfigHistory->Load(L"CFG\\designs.txt");  // this person's, beside the EXE as standalone.txt
     CInterface *pInterface = NULL;
 
     g_LoadProgress->SetCurLPPos(10);

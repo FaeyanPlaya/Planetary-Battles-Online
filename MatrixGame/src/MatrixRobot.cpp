@@ -956,13 +956,40 @@ void CMatrixRobotAI::LogicTakt(int ms) {
     // The person driving this robot: the keys they hold (drive commands bring them to every peer).
     if (driver) {
         const int keys = driver->DriveKeys();
-        if (keys & Commands::DRIVE_LEFT)
-        {
-            RotateRobotLeft();
+        const int strafe = Mods::switches().manual_extras  // 1 right, -1 left
+                                   ? int((keys & Commands::DRIVE_STRAFE_RIGHT) != 0) -
+                                             int((keys & Commands::DRIVE_STRAFE_LEFT) != 0)
+                                   : 0;
+        // ManualExtras: a chassis that turns to go sideways leaves its heading on a strafe; A and D turn the heading
+        // then, and with no key to go it turns back to it.
+        if (!Mods::switches().manual_extras || !StrafesFacing())
+            m_DriveSplit = false;
+        else if (strafe && !m_DriveSplit) {
+            m_DriveHeading = D3DXVECTOR3(m_Forward.x, m_Forward.y, 0);
+            D3DXVec3Normalize(&m_DriveHeading, &m_DriveHeading);
+            m_DriveSplit = true;
         }
-        if (keys & Commands::DRIVE_RIGHT)
-        {
-            RotateRobotRight();
+        if (m_DriveSplit) {
+            const int turn = int((keys & Commands::DRIVE_RIGHT) != 0) - int((keys & Commands::DRIVE_LEFT) != 0);
+            if (turn) {
+                D3DXMATRIX rot_mat;
+                D3DXMatrixRotationZ(&rot_mat, float(turn) * m_maxRotationSpeed * m_SyncMul);
+                D3DXVec3TransformNormal(&m_DriveHeading, &m_DriveHeading, &rot_mat);
+                D3DXVec3Normalize(&m_DriveHeading, &m_DriveHeading);
+            }
+            if (!strafe && !(keys & (Commands::DRIVE_FORWARD | Commands::DRIVE_BACKWARD)) &&
+                RotateRobot(D3DXVECTOR3(m_PosX, m_PosY, 0) + m_DriveHeading))
+                m_DriveSplit = false;
+        }
+        else {
+            if (keys & Commands::DRIVE_LEFT)
+            {
+                RotateRobotLeft();
+            }
+            if (keys & Commands::DRIVE_RIGHT)
+            {
+                RotateRobotRight();
+            }
         }
         if (keys & Commands::DRIVE_FIRE)
         {
@@ -977,7 +1004,9 @@ void CMatrixRobotAI::LogicTakt(int ms) {
         }
         // Going forward or back: the move order below then follows the held key (the interface gave it
         // on a key press before).
-        if ((keys & Commands::DRIVE_FORWARD) && !FindOrderLikeThat(ROT_MOVE_TO)) {
+        // ManualExtras: sideways alone goes as forward does (the move order below then follows the keys).
+        const bool sideways = strafe && !(keys & Commands::DRIVE_BACKWARD);
+        if (((keys & Commands::DRIVE_FORWARD) || sideways) && !FindOrderLikeThat(ROT_MOVE_TO)) {
             D3DXVECTOR3 vel = m_Forward * GetMaxSpeed();
             MoveTo(Float2Int((m_PosX + vel.x) / GLOBAL_SCALE_MOVE), Float2Int((m_PosY + vel.y) / GLOBAL_SCALE_MOVE));
         }
@@ -1030,7 +1059,61 @@ void CMatrixRobotAI::LogicTakt(int ms) {
             case ROT_MOVE_TO_BACK: {
                 DCP();
                 if (driver) {
-                    if (driver->DriveKeys() & Commands::DRIVE_FORWARD)
+                    const int keys = driver->DriveKeys();
+                    const int strafe = Mods::switches().manual_extras  // 1 right, -1 left
+                                               ? int((keys & Commands::DRIVE_STRAFE_RIGHT) != 0) -
+                                                         int((keys & Commands::DRIVE_STRAFE_LEFT) != 0)
+                                               : 0;
+                    if (m_DriveSplit) {
+                        // ManualExtras, a chassis that turns to go sideways: the way from the heading (aslant with
+                        // forward or back held); it turns to face it (its back to it when it goes back), then goes,
+                        // or with forward or back held goes the way it faces while it turns (the owner's choice: a
+                        // curve, as at its own turning speed).
+                        const D3DXVECTOR3 &heading = m_DriveHeading;
+                        const D3DXVECTOR3 left(heading.y, -heading.x, 0);
+                        const float ahead = (keys & Commands::DRIVE_FORWARD)    ? 1.0f
+                                            : (keys & Commands::DRIVE_BACKWARD) ? -1.0f
+                                                                                : 0.0f;
+                        D3DXVECTOR3 way = heading * ahead - left * float(strafe);
+                        if (D3DXVec3LengthSq(&way) < 0.01f) {
+                            StopMoving();
+                            MapPosCalc();
+                            break;
+                        }
+                        D3DXVec3Normalize(&way, &way);
+                        const bool back = D3DXVec3Dot(&way, &heading) < -0.01f;
+                        const D3DXVECTOR3 face = back ? -way : way, pos(m_PosX, m_PosY, 0);
+                        D3DXVECTOR3 forward(m_Forward.x, m_Forward.y, 0);
+                        D3DXVec3Normalize(&forward, &forward);
+                        if (ahead == 0 && D3DXVec3Dot(&forward, &face) < STRAFE_FACING_COS) {
+                            LowLevelMove(ms, pos + face * m_maxSpeed, true, true, false, false, nullptr, 0.0f);
+                        }
+                        else {
+                            if (back)
+                                RotateRobot(pos + face);  // going back, Seek does not turn it; forward, it does
+                            // Far: within a step Seek goes straight to the point, not the way the chassis faces.
+                            LowLevelMove(ms, pos + way * (m_maxSpeed * 100), true, true, false, back);
+                            D3DXVECTOR3 now(m_Forward.x, m_Forward.y, 0);
+                            D3DXVec3Normalize(&now, &now);
+                            if (!strafe && D3DXVec3Dot(&now, &face) > 0.9999f)
+                                m_DriveSplit = false;  // back on the heading
+                        }
+                    }
+                    else if (strafe) {
+                        // ManualExtras, hovercraft and antigravity: sideways (with forward or back held, aslant), not
+                        // turning.
+                        D3DXVECTOR3 forward(m_Forward.x, m_Forward.y, 0);
+                        D3DXVec3Normalize(&forward, &forward);
+                        const D3DXVECTOR3 left(forward.y, -forward.x, 0);  // as RotateRobotLeft turns
+                        const float ahead = (keys & Commands::DRIVE_FORWARD)    ? 1.0f
+                                            : (keys & Commands::DRIVE_BACKWARD) ? -1.0f
+                                                                                : 0.0f;
+                        D3DXVECTOR3 along = forward * ahead - left * float(strafe);
+                        D3DXVec3Normalize(&along, &along);
+                        const D3DXVECTOR3 dest = D3DXVECTOR3(m_PosX, m_PosY, 0) + along * m_maxSpeed;
+                        LowLevelMove(ms, dest, true, true, false, false, &along, StrafeSpeedShare());
+                    }
+                    else if (keys & Commands::DRIVE_FORWARD)
                     {
                         D3DXVECTOR3 dest(m_PosX, m_PosY, 0);
                         dest += m_Forward * m_maxSpeed;
@@ -1183,7 +1266,13 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                 }
                 for (int nC = 0; nC < m_WeaponsCnt; ++nC) {
                     if (m_Weapons[nC].IsEffectPresent()) {
-                        if (m_Weapons[nC].GetWeaponType() == WEAPON_REPAIR) {
+                        // ManualExtras: a slot its driver turned off holds its fire.
+                        const int slot = m_Weapons[nC].m_Unit ? m_Weapons[nC].m_Unit->u1.s1.m_Slot : 0;
+                        if (driver && Mods::switches().manual_extras && slot >= 1 && slot <= MAX_WEAPON_CNT &&
+                            (driver->DriveKeys() & (Commands::DRIVE_SLOT_OFF << (slot - 1)))) {
+                            m_Weapons[nC].FireEnd();
+                        }
+                        else if (m_Weapons[nC].GetWeaponType() == WEAPON_REPAIR) {
                             if (type == 2)
                                 m_Weapons[nC].FireBegin(m_Velocity * (1.0f / LOGIC_TAKT_PERIOD), this);
                             else
@@ -2459,10 +2548,26 @@ bool CMatrixRobotAI::RotateRobot(const D3DXVECTOR3 &dest, float *rotateangle) {
     return false;
 }
 
-bool CMatrixRobotAI::Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path, bool back) {
+bool CMatrixRobotAI::StrafesFacing() const {
+    return m_Unit[0].u1.s1.m_Kind != RUK_CHASSIS_HOVERCRAFT && m_Unit[0].u1.s1.m_Kind != RUK_CHASSIS_ANTIGRAVITY;
+}
+
+float CMatrixRobotAI::StrafeSpeedShare() const {
+    switch (m_Unit[0].u1.s1.m_Kind) {
+        case RUK_CHASSIS_HOVERCRAFT:
+            return 0.50f / 0.65f;
+        case RUK_CHASSIS_ANTIGRAVITY:
+            return 0.55f / 0.70f;
+        default:
+            return 1.0f;
+    }
+}
+
+bool CMatrixRobotAI::Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path, bool back, const D3DXVECTOR3 *along,
+                          float speed_k) {
     float rangle = 0.0;
     rotate = true;
-    if (m_CurrState != ROBOT_BASE_MOVEOUT && !back) {
+    if (m_CurrState != ROBOT_BASE_MOVEOUT && !back && !along) {
         if (RotateRobot(dest, &rangle)) {
             rotate = false;
             rangle = 0.0f;
@@ -2475,8 +2580,12 @@ bool CMatrixRobotAI::Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path, 
     forward.z = 0;
     D3DXVec3Normalize(&forward, &forward);
 
+    // The share of the way that goes forward, for the slope below.
+    const float ahead = along ? D3DXVec3Dot(along, &forward) : 1.0f;
     if (back)
         forward = -forward;
+    if (along)
+        forward = *along;
 
     D3DXVECTOR3 destDir = dest - D3DXVECTOR3(m_PosX, m_PosY, 0);
     float destLength = D3DXVec3Length(&destDir);
@@ -2488,7 +2597,7 @@ bool CMatrixRobotAI::Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path, 
     if (m_GroupSpeed <= 0.001f)
         m_GroupSpeed = m_maxSpeed;
 
-    float k = FLAG(m_ObjectState, ROBOT_FLAG_ONWATER) ? m_SpeedWaterCorr : 1.0f;
+    float k = (FLAG(m_ObjectState, ROBOT_FLAG_ONWATER) ? m_SpeedWaterCorr : 1.0f) * speed_k;
 
     float slope;
     if (back) {
@@ -2498,7 +2607,7 @@ bool CMatrixRobotAI::Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path, 
     }
     else {
         auto tmp = D3DXVECTOR3(0, 0, 1);
-        slope = D3DXVec3Dot(&tmp, (D3DXVECTOR3 *)&m_Core->m_Matrix._21);
+        slope = D3DXVec3Dot(&tmp, (D3DXVECTOR3 *)&m_Core->m_Matrix._21) * ahead;
     }
 
     if (slope >= 0) {
@@ -2634,9 +2743,9 @@ bool CMatrixRobotAI::Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path, 
 //}
 
 void CMatrixRobotAI::LowLevelMove(int ms, const D3DXVECTOR3 &dest, bool robot_coll, bool obst_coll, bool end_path,
-                                  bool back) {
+                                  bool back, const D3DXVECTOR3 *along, float speed_k) {
     bool rotate = false;
-    bool vel = Seek(dest, rotate, end_path, back);
+    bool vel = Seek(dest, rotate, end_path, back, along, speed_k);
 
     m_Cols = 0;
     D3DXVECTOR3 r(0, 0, 0), o(0, 0, 0), result_coll(0, 0, 0), tmp_vel(0, 0, 0);

@@ -79,78 +79,7 @@ struct SStringPair {
     std::wstring val;
 };
 
-enum EKeyAction : int {
-    KA_SCROLL_LEFT,
-    KA_SCROLL_RIGHT,
-    KA_SCROLL_UP,
-    KA_SCROLL_DOWN,
-
-    KA_SCROLL_LEFT_ALT,
-    KA_SCROLL_RIGHT_ALT,
-    KA_SCROLL_UP_ALT,
-    KA_SCROLL_DOWN_ALT,
-
-    KA_ROTATE_LEFT,
-    KA_ROTATE_RIGHT,
-    KA_ROTATE_UP,
-    KA_ROTATE_DOWN,
-
-    KA_UNIT_FORWARD,
-    KA_UNIT_BACKWARD,
-    KA_UNIT_LEFT,
-    KA_UNIT_RIGHT,
-
-    KA_UNIT_FORWARD_ALT,
-    KA_UNIT_BACKWARD_ALT,
-    KA_UNIT_LEFT_ALT,
-    KA_UNIT_RIGHT_ALT,
-
-    KA_FIRE,
-    KA_AUTO,
-
-    KA_SHIFT,
-    KA_CTRL,
-
-    KA_ROTATE_LEFT_ALT,   // zak
-    KA_ROTATE_RIGHT_ALT,  // zak
-
-    KA_MINIMAP_ZOOMIN,   // sub
-    KA_MINIMAP_ZOOMOUT,  // sub
-
-    KA_CAM_SETDEFAULT,  // zak
-
-    KA_AUTOORDER_CAPTURE,  // sub
-    KA_AUTOORDER_ATTACK,   // sub
-    KA_AUTOORDER_DEFEND,   // sub
-
-    KA_ORDER_MOVE,           // sub
-    KA_ORDER_STOP,           // sub
-    KA_ORDER_CAPTURE,        // sub
-    KA_ORDER_PATROL,         // sub
-    KA_ORDER_EXPLODE,        // sub
-    KA_ORDER_REPAIR,         // sub
-    KA_ORDER_ATTACK,         // sub
-    KA_ORDER_ROBOT_SWITCH1,  // sub
-    KA_ORDER_ROBOT_SWITCH2,  // sub
-
-    KA_ORDER_CANCEL,  // sub
-
-    KA_UNIT_BOOM,       // sub
-    KA_UNIT_ENTER,      // sub (! if not dialog mode)
-    KA_UNIT_ENTER_ALT,  // sub (! if not dialog mode)
-
-    KA_BUILD_ROBOT,   // sub
-    KA_BUILD_TURRET,  // sub
-    KA_BUILD_HELP,    // sub
-
-    KA_TURRET_CANNON,
-    KA_TURRET_GUN,
-    KA_TURRET_LASER,
-    KA_TURRET_ROCKET,
-
-    //..........................
-    KA_LAST
-};
+#include "KeyActions.hpp"
 
 struct SWeaponDamage {
     int damage;

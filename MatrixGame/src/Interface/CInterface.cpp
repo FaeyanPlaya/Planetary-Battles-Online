@@ -1152,6 +1152,22 @@ bool CInterface::OnMouseLBDown() {
                     if (pObjectsList->m_nId == PERSONAL_ICON_ID) {
                         pObjectsList->OnMouseLBDown();
                     }
+                    else if (IS_GROUP_ICON(pObjectsList->m_nId) &&
+                             g_MatrixMap->GetPlayerSide()->m_CurrSel == TURRET_SELECTED) {
+                        // TurretControl: as a group's robot: that turret's panel, again: only it, Shift: it out.
+                        CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
+                        const int n = pObjectsList->m_nId - GROUP_ICONS_ID;
+                        if (n < int(ps->m_SelTurrets.size())) {
+                            CMatrixCannon *turret = ps->m_SelTurrets[n];
+                            if (Input::isKeyPressed(KA_SHIFT))
+                                ps->SelectTurrets({turret}, true);
+                            else if (ps->m_ActiveObject == turret)
+                                ps->SelectTurrets({turret}, false);
+                            else
+                                ps->SetCurTurret(n);
+                        }
+                        return TRUE;
+                    }
                     else if (IS_GROUP_ICON(pObjectsList->m_nId)) {
                         CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
 
@@ -1519,9 +1535,17 @@ void CInterface::Init(void) {
                 // elements////////////////////////////////////////////////////////////////////////////////////
                 if (pElement->m_strName == IF_NAME_LABEL) {
                     if (sel_turret) {
-                        const std::wstring turret_name = g_MatrixData->BlockGet(IF_LABELS_BLOCKPAR)
-                                                                 ->BlockGet(L"Turrets")
-                                                                 ->ParGet(std::format(L"Tur{}_Name", sel_turret->m_Num));
+                        std::wstring turret_name = g_MatrixData->BlockGet(IF_LABELS_BLOCKPAR)
+                                                           ->BlockGet(L"Turrets")
+                                                           ->ParGet(std::format(L"Tur{}_Name", sel_turret->m_Num));
+                        // Several selected: how many ("Турели" when they are of several kinds).
+                        const auto &several = player_side->m_SelTurrets;
+                        if (!player_side->IsTurretMode() && several.size() > 1) {
+                            const bool one_kind = std::ranges::all_of(
+                                    several, [&](CMatrixCannon *t) { return t->m_Num == sel_turret->m_Num; });
+                            turret_name = std::format(L"{} ×{}", one_kind ? turret_name : L"Турели",
+                                                      several.size());
+                        }
                         if (name != turret_name) {
                             name = turret_name;
                             new_name = true;
@@ -1615,7 +1639,7 @@ void CInterface::Init(void) {
                 // Invisible by default
                 // elements///////////////////////////////////////////////////////////////////////////////
                 if (pElement->m_Type == IFACE_DYNAMIC_STATIC && IS_GROUP_ICON(pElement->m_nId)) {
-                    pElement->SetVisibility(true);
+                    pElement->SetVisibility(!player_side->IsTurretMode());
                 }
                 else if (pElement->m_nId == PERSONAL_ICON_ID) {
                     pElement->SetVisibility(true);
@@ -1881,16 +1905,33 @@ void CInterface::Init(void) {
                 // out of the turret the person is in.
                 if (sel_turret) {
                     sel_turret->CreateProgressBarClone(m_xPos + 68, m_yPos + 179, 68, PBC_CLONE2);
+                    // Several selected: a group's frames, health bars and the current one's marker.
+                    const auto &several = player_side->m_SelTurrets;
+                    if (!player_side->IsTurretMode() && several.size() > 1) {
+                        if (pElement->m_nId == GROUP_SELECTOR_ID) {
+                            pElement->SetVisibility(true);
+                        }
+                        else if (pElement->m_Type == IFACE_DYNAMIC_STATIC && IS_SELECTION(pElement->m_nId)) {
+                            const size_t n = pElement->m_nId - GROUP_SELECTION_ID;
+                            if (n < several.size()) {
+                                pElement->SetVisibility(true);
+                                several[n]->CreateProgressBarClone(pElement->m_xPos + m_xPos,
+                                                                   pElement->m_yPos + m_yPos + 36, 46, PBC_CLONE1);
+                            }
+                        }
+                    }
                     if (player_side->IsTurretMode()) {
                         if (pElement->m_strName == IF_LEAVE_ROBOT || pElement->m_strName == IF_MANUAL_BG)
                             pElement->SetVisibility(true);
                     }
                     else if (!ordering) {
                         if (pElement->m_strName == IF_ORDER_FIRE || pElement->m_strName == IF_ORDER_STOP ||
-                            pElement->m_strName == IF_ORDER_CANCEL || pElement->m_strName == IF_MANUAL_BG) {
+                            pElement->m_strName == IF_ORDER_CANCEL ||
+                            (pElement->m_strName == IF_MANUAL_BG && several.size() < 2)) {
                             pElement->SetVisibility(true);
                         }
-                        else if (pElement->m_strName == IF_ENTER_ROBOT && BattleRules::manual_control()) {
+                        else if (pElement->m_strName == IF_ENTER_ROBOT && BattleRules::manual_control() &&
+                                 several.size() < 2) {  // several: the icons' place (Space goes into the current one)
                             pElement->SetVisibility(true);
                         }
                         else if (IS_ORDER_GLOW(pElement->m_nId)) {
@@ -3735,6 +3776,28 @@ void CIFaceList::LogicTakt(int ms) {
     }
 }
 
+int CIFaceList::WeaponPanelPos(const CMatrixRobot *bot, int unit) const {
+    int hull = 0;
+    for (int i = 0; i < MR_MAXUNIT; i++)
+        if (bot->m_Unit[i].m_Type == MRT_ARMOR) hull = int(bot->m_Unit[i].u1.s1.m_Kind);
+    if (hull < 1 || hull > 6) return -1;
+    for (int pos = 0; pos < MAX_WEAPON_CNT; pos++)
+        if (m_Pilons[pos + (hull - 1) * 5] == bot->m_Unit[unit].u1.s1.m_LinkMatrix) return pos;
+    return -1;
+}
+
+int CIFaceList::SlotForKey(const CMatrixRobot *bot, int key) const {
+    constexpr int panel_of_key[MAX_WEAPON_CNT] = {2, 3, 0, 1, 4};
+    if (key < 1 || key > MAX_WEAPON_CNT) return 0;
+    for (int i = 0; i < bot->m_UnitCnt; ++i) {
+        if (bot->m_Unit[i].m_Type != MRT_WEAPON) continue;
+        const int pos = WeaponPanelPos(bot, i);
+        if (pos == panel_of_key[key - 1] || (pos < 0 && bot->m_Unit[i].u1.s1.m_Slot == key))
+            return bot->m_Unit[i].u1.s1.m_Slot;
+    }
+    return 0;
+}
+
 void CIFaceList::CreateWeaponDynamicStatics() {
     DTRACE();
     DeleteWeaponDynamicStatics();
@@ -3818,11 +3881,21 @@ void CIFaceList::CreateWeaponDynamicStatics() {
                             name = std::wstring(IF_WEAPON_MINOMET_ON);
                             break;
                     }
-
+                    const CIFaceImage *image = interfaces->FindImageByName(name);
+                    if (!image)
+                        continue;
                     CIFaceStatic *s = interfaces->CreateStaticFromImage(float(g_IFaceList->m_DWeaponX[pos]),
                                                                         float(g_IFaceList->m_DWeaponY[pos]), 0.0000001f,
-                                                                        *interfaces->FindImageByName(name));
+                                                                        *image);
                     s->m_nId = DYNAMIC_WEAPON_ON_ID;
+                    // ManualExtras: a slot turned off shows its weapon darkened (the game has no "off" pictures).
+                    const int slot = bot->m_Unit[i].u1.s1.m_Slot;
+                    if (player_side->IsRobotMode() && slot >= 1 && slot <= MAX_WEAPON_CNT &&
+                        (player_side->DriveSlotsOff() & (Commands::DRIVE_SLOT_OFF << (slot - 1)))) {
+                        s->m_StateImages[IFACE_DISABLED] = s->m_StateImages[IFACE_NORMAL];  // placed as it is
+                        s->SetState(IFACE_DISABLED);
+                        s->m_DimDisabled = true;
+                    }
 
                     s = interfaces->CreateStaticFromImage(float(g_IFaceList->m_DWeaponX[pos]),
                                                           float(g_IFaceList->m_DWeaponY[pos]), 0.000001f,
@@ -4126,15 +4199,14 @@ void CIFaceList::EnterRobot(bool pos) {
         if (pos) {
             o = ps->GetCurGroup()->GetObjectByN(ps->GetCurSelNum());
         }
-        // A robot is entered by a command (every peer then drives it alike); a flyer only alone, at once.
+        // A robot is entered by a command (every peer then drives it alike). A flyer (a reinforcement's carrier,
+        // the robot under it) is not: the original drove it on this client alone, and the game fell over.
         if (o && o->IsLiveRobot()) {
             ps->RequestDrive(Commands::DriveAction::Enter, o);
             return;
         }
-        if (Commands::interface_locked())
-            return;
-        ps->SetArcadedObject(o);
-        RobotEntered();
+        if (o)
+            CSound::Play(S_CANTBE, SL_INTERFACE);
     }
 }
 
@@ -4553,6 +4625,10 @@ void CIFaceList::DeleteGroupIcons() {
         }
         interfaces = interfaces->m_NextInterface;
     }
+    // TurretControl: the turrets' pictures go after their icons.
+    for (CTextureManaged *tex : m_TurretIcons)
+        g_Cache->Destroy(tex);
+    m_TurretIcons.clear();
 }
 
 void CIFaceList::CreatePersonal() {
@@ -4686,6 +4762,45 @@ void CIFaceList::CreateTurretPersonal(CMatrixCannon *turret) {
         }
         interfaces->SortElementsByZ();
         HDelete(CIFaceImage, image, g_MatrixHeap);
+        break;
+    }
+}
+
+void CIFaceList::CreateTurretIcons() {
+    DeleteGroupIcons();
+    const auto &turrets = g_MatrixMap->GetPlayerSide()->m_SelTurrets;
+    if (turrets.size() < 2)
+        return;
+    for (CInterface *interfaces = m_First; interfaces; interfaces = interfaces->m_NextInterface) {
+        if (interfaces->m_strName != IF_MAIN)
+            continue;
+        for (size_t i = 0; i < turrets.size() && i < 9; ++i) {
+            SRenderTexture rt[1];
+            rt[0].ts = TEXSIZE_64;
+            if (!turrets[i]->RenderToTexture(rt, 1))
+                continue;
+            m_TurretIcons.push_back(rt[0].tex);
+            // In a group's robot icon's place (CreateGroupIcons), square in the middle of its 47 by 36.
+            CIFaceImage image;
+            image.m_Image = rt[0].tex;
+            image.m_Height = 36;
+            image.m_Width = 36;
+            image.m_NextImage = NULL;
+            image.m_PrevImage = NULL;
+            image.m_strName = L"";
+            image.m_Type = IFACE_IMAGE;
+            image.m_TexHeight = 64;
+            image.m_TexWidth = 64;
+            image.m_xTexPos = 0;
+            image.m_yTexPos = 0;
+            CIFaceStatic *s = interfaces->CreateStaticFromImage(float(225 + 48 * (i % 3) + 5), float(49 * (1 + i / 3)),
+                                                                0, image, true);
+            if (s) {
+                s->SetVisibility(true);
+                s->m_nId = GROUP_ICONS_ID + int(i);
+            }
+        }
+        interfaces->SortElementsByZ();
         break;
     }
 }

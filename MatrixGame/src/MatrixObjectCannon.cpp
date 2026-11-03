@@ -530,6 +530,8 @@ void CMatrixCannon::BeforeDraw(void) {
 }
 
 void CMatrixCannon::Draw(void) {
+    if (g_MatrixMap->m_Camera.FirstPerson() && g_MatrixMap->GetPlayerSide()->GetArcadedObject() == this)
+        return;  // looked from (FirstPerson)
     // g_D3DD->SetRenderState( D3DRS_NORMALIZENORMALS,  TRUE );
     uintptr_t coltex = (uintptr_t)g_MatrixMap->GetSideColorTexture(m_Side)->Tex();
 
@@ -574,6 +576,8 @@ void CMatrixCannon::Draw(void) {
 
 void CMatrixCannon::DrawShadowStencil(void) {
     DTRACE();
+    if (g_MatrixMap->m_Camera.FirstPerson() && g_MatrixMap->GetPlayerSide()->GetArcadedObject() == this)
+        return;  // looked from (FirstPerson): its shadow's volume would close the view
 
     if (m_ShadowType != SHADOW_STENCIL)
         return;
@@ -1735,19 +1739,24 @@ void CMatrixCannon::DriveTakt(int takt, const CMatrixSideUnit &driver) {
 
     // The barrel fires where it points, aimed or not, while the button is held.
     if (keys & Commands::DRIVE_FIRE) {
-        m_NullTargetTime = CANNON_NULL_TARGET_TIME;  // firing: the turret's own logic ends it when the person leaves
+        m_NullTargetTime = CANNON_NULL_TARGET_TIME;  // firing (DriveFireEnd ends it)
         for (int i = 0; i < m_WeaponCnt; ++i)
             if (m_Weapons[i])
                 m_Weapons[i]->FireBegin(D3DXVECTOR3(0, 0, 0), this);
     }
-    else if (m_NullTargetTime > 0) {
-        m_NullTargetTime = 0;
-        for (int i = 0; i < m_WeaponCnt; ++i)
-            if (m_Weapons[i])
-                m_Weapons[i]->FireEnd();
-        EndFireAnimation();
-    }
+    else
+        DriveFireEnd();
     WeaponsTakt(takt);
+}
+
+void CMatrixCannon::DriveFireEnd() {
+    if (m_NullTargetTime <= 0)
+        return;
+    m_NullTargetTime = 0;
+    for (int i = 0; i < m_WeaponCnt; ++i)
+        if (m_Weapons[i])
+            m_Weapons[i]->FireEnd();
+    EndFireAnimation();
 }
 
 void CMatrixCannon::Dismantle() {
@@ -1805,6 +1814,6 @@ void CMatrixCannon::LeaveSelection() {
     UnSelect();
     DeleteProgressBarClone(PBC_CLONE2);
     CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
-    if (ps && ps->m_CurrSel == TURRET_SELECTED && ps->m_ActiveObject == this)
-        ps->Select(NOTHING, NULL);
+    if (ps && ps->m_CurrSel == TURRET_SELECTED)
+        ps->ForgetTurret(this);
 }

@@ -27,6 +27,8 @@ void close(bool apply);
 bool keyboard(uint8_t vk, bool down);
 void mouse_move(int x, int y);
 bool mouse_down(int x, int y);
+// The wheel (notches, away from the person positive): scrolls the keys page; never the camera while the window is open.
+bool mouse_wheel(int notches);
 
 // Battle menu integration: enables the menu's settings entry and handles its click area.
 void customize_menu(std::wstring &menu_template);
@@ -50,6 +52,7 @@ void startup_close(bool apply);
 bool startup_keyboard(uint8_t vk, bool down);
 void startup_mouse_move(int x, int y);
 bool startup_mouse_down(int x, int y);
+bool startup_mouse_wheel(int notches);
 void startup_reset_input();
 
 }  // namespace SettingsWindow

@@ -39,6 +39,8 @@ struct Switches {
                                       // missile falls; it hurts at any distance and bursts only on hitting
     // Battle: Помощь с небес
     bool help_from_above = false;  // HelpFromAbove: stronger reinforcements (ReinforcementTemplates, 150 points)
+    // Battle: Ручное управление+
+    bool manual_extras = false;  // ManualExtras: in a robot Q/E go sideways, F sets the bomb off, X looks back, 1-5 slots
     // Battle: Точка сбора
     bool rally_point = false;  // RallyPoint: a base sends the robots it builds to its rally point (a right click)
     // Battle: Баланс КР2
@@ -51,8 +53,15 @@ struct Switches {
     bool building_groups = false;    // BuildingGroups: Ctrl+digit keeps the selected building or turret, a digit selects it
     bool select_all = false;         // SelectAll: F2 selects all the person's robots on the map
     bool constructor_keys = false;   // ConstructorKeys: in the constructor up/down: how many, left/right: the design, Enter: build
+    bool zoom_far = false;           // ZoomFar: the wheel takes the camera twice as far out
+    bool camera_shift = false;       // CameraShift: the camera moves over the map twice as fast while Shift is held
+    bool chassis_motion = false;     // ChassisMotion: wheels and tracks drawn as each side moves (back, turning)
     // Personal: Дальняя прорисовка
     bool far_view = false;  // FarView: the view, effects and shadows reach farther (far_view_scale)
+    // Personal: Вид от первого лица
+    bool first_person = false;  // FirstPerson: the wheel all the way in, in a robot or turret, looks from it
+    // Personal: Небо высокого разрешения
+    bool new_sky = false;  // NewSky: the game's skies at 2048 from Universe's PBNewSky, when the game has it
     bool operator==(const Switches &) const = default;
 };
 const Switches &switches();

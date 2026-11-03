@@ -288,6 +288,7 @@ public:
 
     DWORD m_IfListFlags;
     CTextureManaged *m_TurretPicture = nullptr;  // the selected turret's picture (CreateTurretPersonal)
+    std::vector<CTextureManaged *> m_TurretIcons;  // the selected turrets' small pictures (CreateTurretIcons)
     DWORD m_OrderCancelTime = 0;                 // when ocan last cancelled an order (GetTickCount)
     Focus m_InFocus;
     CInterface *m_First, *m_Last;
@@ -329,6 +330,12 @@ public:
     float GetMainY() { return m_MainY; }
 
     void CreateWeaponDynamicStatics();
+    // Where the panel shows a robot's weapon (m_DWeaponX/Y: 0, 1 the lower pair, 2, 3 the upper, 4 the extra one;
+    // -1: not shown, its hull's pilons not having its link).
+    int WeaponPanelPos(const CMatrixRobot *bot, int unit) const;
+    // ManualExtras: the slot a weapon key (1-5) turns: 1, 2 the upper pair as the panel shows them, 3, 4 the lower,
+    // 5 the extra one; a weapon the panel does not show keeps its slot's number. 0: none.
+    int SlotForKey(const CMatrixRobot *bot, int key) const;
     void DeleteWeaponDynamicStatics();
 
     void CreateGroupSelection(CInterface *iface);
@@ -348,6 +355,8 @@ public:
     void CreatePersonal();
     // TurretControl: the turret's picture in the panel, as a selected robot's (drawn when it is selected).
     void CreateTurretPersonal(CMatrixCannon *turret);
+    // TurretControl: several turrets selected: their icons where a group's robots are (up to 9).
+    void CreateTurretIcons();
     void DeletePersonal();
 
     void ResetOrderingMode();

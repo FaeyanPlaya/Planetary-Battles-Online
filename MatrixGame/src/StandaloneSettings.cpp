@@ -26,7 +26,7 @@ constexpr std::array keys{L"RandomGenerator", L"ResolutionWidth", L"ResolutionHe
                           L"Skybox",          L"RobotShadows",    L"CameraSpeed",      L"DelayedDamage",
                           L"Map",             L"GroupCounts",      L"BattleBonus",      L"PlaceContainment",
                           L"ZeroXTrace",      L"MusicVolume",      L"Mods",             L"PersonalMods",
-                          L"FarViewScale"};
+                          L"FarViewScale",    L"SavedDesigns"};
 
 std::optional<std::wstring> single(const Base::CBlockPar &options, const wchar_t *key) {
     if (options.ParCount(key) != 1) return std::nullopt;
@@ -152,6 +152,7 @@ std::wstring value_text(const Values &values, std::wstring_view key) {
     if (key == L"ZeroXTrace") return utils::to_wstring(name(values.zero_x_trace));
     if (key == L"MusicVolume") return std::to_wstring(values.music_volume);
     if (key == L"FarViewScale") return std::to_wstring(values.far_view_scale);
+    if (key == L"SavedDesigns") return std::to_wstring(values.saved_designs);
     if (key == L"Mods" || key == L"PersonalMods") {
         const auto &mods = key == L"Mods" ? values.mods : values.personal_mods;
         if (!mods) return L"Default";
@@ -327,6 +328,8 @@ Selection resolve(const Base::CBlockPar &options) {
     read(options, L"PersonalMods", values.personal_mods, mod_list, selection);
     read(options, L"FarViewScale", values.far_view_scale,
          [](const std::wstring &value) { return percent(value, 150, 300); }, selection);
+    read(options, L"SavedDesigns", values.saved_designs,
+         [](const std::wstring &value) { return percent(value, 1, 50); }, selection);
     return selection;
 }
 

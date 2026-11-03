@@ -22,26 +22,6 @@
 #include "MatrixEffectMovingObject.hpp"
 #include "MatrixEffectExplosion.hpp"
 
-// HomingMissiles: the target a missile takes as it is fired: what its shooter fires at (none when it is driven).
-static SObjectCore *ShooterTarget(CMatrixMapStatic *owner) {
-    if (owner == NULL)
-        return NULL;
-    if (owner->IsRobot()) {
-        CMatrixRobotAI *robot = owner->AsRobot();
-        CMatrixMapStatic *target = robot->IsDriven() ? NULL : robot->GetEnv()->m_Target;
-        return target && target->IsLive() ? target->GetCore(DEBUG_CALL_INFO) : NULL;
-    }
-    if (owner->IsCannon()) {
-        CMatrixCannon *cannon = owner->AsCannon();
-        SObjectCore *target = cannon->IsDriven() ? NULL : cannon->m_TargetCore;
-        if (target == NULL || target->m_Object == NULL)
-            return NULL;
-        target->RefInc();
-        return target;
-    }
-    return NULL;
-}
-
 void CMatrixEffectWeapon::WeaponHit(CMatrixMapStatic *hiti, const D3DXVECTOR3 &pos, uintptr_t user, DWORD flags) {
     DTRACE();
 
@@ -382,11 +362,6 @@ void CMatrixEffectWeapon::Fire(void) {
             mo.object = LoadObject(OBJECT_PATH_ROCKET, m_Heap);
             mo.handler = MO_Homing_Missile_Takt;
             mo.common.hm.reach = m_WeaponDist * m_WeaponCoefficient;
-            if (Mods::switches().homing_missiles) {
-                mo.common.hm.target = ShooterTarget(GetOwner());
-                if (mo.common.hm.target)
-                    mo.target = mo.common.hm.target->m_GeoCenter;
-            }
 
             mo.side = m_SideStorage;
             // mo.attacker = m_Owner;

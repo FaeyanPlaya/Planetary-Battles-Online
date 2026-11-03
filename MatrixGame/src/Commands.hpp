@@ -52,6 +52,8 @@ enum class Type : int {
 enum class DriveAction : int { Input = 0, Enter = 1, Leave = 2, Explode = 3 };
 // AIMING: the cursor is over the battle, not the interface (the hull follows the aim).
 constexpr int DRIVE_FORWARD = 1, DRIVE_BACKWARD = 2, DRIVE_LEFT = 4, DRIVE_RIGHT = 8, DRIVE_FIRE = 16, DRIVE_AIMING = 32;
+// ManualExtras: going sideways, and the weapon slots turned off (DRIVE_SLOT_OFF << (slot - 1), constructor slots 1-5).
+constexpr int DRIVE_STRAFE_LEFT = 64, DRIVE_STRAFE_RIGHT = 128, DRIVE_SLOT_OFF = 256;
 
 // Units value meaning "every live robot and flyer of the side" (scripts and bots).
 constexpr int ALL_UNITS = -1;

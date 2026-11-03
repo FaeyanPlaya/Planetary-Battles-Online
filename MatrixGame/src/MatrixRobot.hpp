@@ -35,6 +35,7 @@ class CMatrixEffectSelection;
 #define MAX_HULL_ANGLE         GRAD2RAD(360)
 #define BARREL_TO_SHOT_ANGLE   GRAD2RAD(15)
 #define HULL_TO_ENEMY_ANGLE    GRAD2RAD(45)
+#define STRAFE_FACING_COS      0.98480775f  // cos 10 deg: a chassis turning to go sideways goes once this near
 #define MAX_ORDERS             5
 #define ROBOT_FOV              GRAD2RAD(180)
 #define GATHER_PERIOD          100
@@ -305,6 +306,10 @@ class CMatrixRobotAI : public CMatrixRobot
     DWORD m_nLastCollideFrame;
     DWORD m_PrevTurnSign;
     DWORD m_HullRotCnt;
+    // ManualExtras: while a chassis that turns to go sideways is off its driver's heading (a strafe, then the turn
+    // back), the heading (the camera's and A/D's) is kept here.
+    bool m_DriveSplit = false;
+    D3DXVECTOR3 m_DriveHeading{0, 1, 0};
     CMatrixEffectSelection *m_Selection;
 
     int m_LastDelayDamageSide;
@@ -415,6 +420,8 @@ public:
     // The side whose person drives this robot directly ("entered" it), or null.
     CMatrixSideUnit *Driver() const;
     bool IsDriven() const { return Driver() != nullptr; }
+    // The way its driver looks: the chassis' own but while it turned aside for a strafe (ManualExtras).
+    const D3DXVECTOR3 &DriveHeading() const { return m_DriveSplit ? m_DriveHeading : m_Forward; }
     void UnSelect();
     bool IsSelected();
     bool CreateSelection();
@@ -475,8 +482,9 @@ public:
     void MoveToRndBuilding();
 
     void CalcRobotMass();  // вычисляет массу, скорость, силу робота
+    // ManualExtras: `along`, a direction to go in without turning (sideways), at `speed_k` of the speed.
     bool Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path,
-              bool back = false);                   // поиск вектора смещения робота
+              bool back = false, const D3DXVECTOR3 *along = nullptr, float speed_k = 1.0f);  // поиск вектора смещения робота
     void RotateHull(const D3DXVECTOR3 &direction);  // поворот башни
     bool RotateRobot(const D3DXVECTOR3 &dest, float *rotateangle = NULL);  // поворот робота
     void Decelerate();                                                     // замедление
@@ -536,7 +544,11 @@ public:
     bool FindWeapon(EWeapon type);
 
     void LowLevelMove(int ms, const D3DXVECTOR3 &dest, bool robot_coll, bool obst_coll, bool end_path = true,
-                      bool back = false);
+                      bool back = false, const D3DXVECTOR3 *along = nullptr, float speed_k = 1.0f);
+    // ManualExtras: the share of the speed a chassis goes sideways at (Universe's PBEngine).
+    float StrafeSpeedShare() const;
+    // ManualExtras: hovercraft and antigravity go sideways as they face; the others turn there first (as Universe).
+    bool StrafesFacing() const;
     void LowLevelDecelerate(int ms, bool robot_coll, bool obst_coll);
 
     void ReleaseMe();

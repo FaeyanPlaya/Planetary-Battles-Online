@@ -48,6 +48,7 @@ struct Values {
     // This person's own mods (PersonalMods=, the same forms): what they see and how they control, in every battle.
     std::optional<std::vector<std::string>> personal_mods;
     int far_view_scale = 200;  // FarViewScale=: how far the far view reaches, percent of the original's (150-300)
+    int saved_designs = 20;    // SavedDesigns=: how many robot designs built are kept between battles (1-50)
     bool operator==(const Values &) const = default;
 };
 

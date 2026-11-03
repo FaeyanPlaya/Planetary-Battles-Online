@@ -210,6 +210,7 @@ public:
         if (!resources_ready || g_D3DD->TestCooperativeLevel() != D3D_OK) return;
         if (SettingsWindow::startup_active()) {
             if (status == B_DOWN && key == VK_LBUTTON) SettingsWindow::startup_mouse_down(x, y);
+            if (status == B_WHEEL) SettingsWindow::startup_mouse_wheel(key);
             return;
         }
         if (LobbyWindow::active()) {

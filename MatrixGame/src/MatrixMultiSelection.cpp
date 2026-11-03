@@ -8,6 +8,7 @@
 #include "MatrixRobot.hpp"
 #include "MatrixFlyer.hpp"
 #include "MatrixMapStatic.hpp"
+#include "MatrixObjectCannon.hpp"
 
 CMultiSelection *CMultiSelection::m_GameSelection;
 CMultiSelection *CMultiSelection::m_First;
@@ -253,9 +254,17 @@ void CMultiSelection::Update(
                 }
                 SETFLAG(m_Flags, MS_FLAG_ROBOTS);
             }
+            else if (o->IsCannon()) {
+                // TurretControl: turrets when there are no robots, instead of buildings.
+                if (FLAG(m_Flags, MS_FLAG_ROBOTS) || !o->AsCannon()->IsBuilt())
+                    continue;
+                if (!FLAG(m_Flags, MS_FLAG_TURRETS))
+                    RemoveSelItems();
+                SETFLAG(m_Flags, MS_FLAG_TURRETS);
+            }
             else if (o->IsBuilding()) {
-                if (FLAG(m_Flags, MS_FLAG_ROBOTS))
-                    continue;  // do not add buildings if there are some robots present
+                if (FLAG(m_Flags, MS_FLAG_ROBOTS) || FLAG(m_Flags, MS_FLAG_TURRETS))
+                    continue;  // do not add buildings if there are some robots (or turrets) present
                 SETFLAG(m_Flags, MS_FLAG_BUILDINGS);
             }
 
@@ -296,11 +305,20 @@ void CMultiSelection::End(bool add_to_selection) {
 
         for (auto item : m_SelItems)
         {
-            ps->GetCurSelGroup()->AddObject(item, -4);
+            if (!item->IsCannon())
+                ps->GetCurSelGroup()->AddObject(item, -4);
         }
     }
 
     RemoveSelItems();
+}
+
+std::vector<CMatrixCannon *> CMultiSelection::Turrets() const {
+    std::vector<CMatrixCannon *> turrets;
+    for (auto item : m_SelItems)
+        if (item->IsCannon())
+            turrets.push_back(item->AsCannon());
+    return turrets;
 }
 
 bool CMultiSelection::FindItem(const CMatrixMapStatic *o)

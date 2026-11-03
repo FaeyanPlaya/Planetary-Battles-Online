@@ -19,6 +19,8 @@
 #include "Effects/MatrixEffectSmokeAndFire.hpp"
 
 #include "CFile.hpp"
+#include "Mods.hpp"
+#include "MatrixLogic.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -137,6 +139,7 @@ void CMatrixRobot::WeaponInsert(int beforeunit, ERobotUnitType type, ERobotUnitK
     }
 
     m_Unit[beforeunit].u1.s1.m_LinkMatrix = g_MatrixMap->m_RobotWeaponMatrix[hullno - 1].list[fis_pilon - 1].id;
+    m_Unit[beforeunit].u1.s1.m_Slot = pilon;
     m_Unit[beforeunit].u1.s1.m_Invert =
             (g_MatrixMap->m_RobotWeaponMatrix[hullno - 1].list[fis_pilon - 1].access_invert & SETBIT(31)) != 0;
 
@@ -975,8 +978,82 @@ void CMatrixRobot::BeforeDraw(void) {
     }
 }
 
+bool CMatrixRobot::ChassisSidesTakt() {
+    auto &s = m_ChassisSides;
+    const int kind = m_Unit[0].u1.s1.m_Kind;
+    if (!Mods::switches().chassis_motion || (kind != RUK_CHASSIS_WHEEL && kind != RUK_CHASSIS_TRACK) ||
+        !m_Unit[0].m_Graph || m_CurrState == ROBOT_DIP) {
+        s.time = -1;
+        return false;
+    }
+    const int now = g_MatrixMap->GetTime();
+    D3DXVECTOR2 forward(m_Forward.x, m_Forward.y);
+    D3DXVec2Normalize(&forward, &forward);
+    if (s.time >= 0 && now > s.time && now - s.time <= 1000) {
+        // Each side's way along the heading: the robot's own, and the turn's (the side's offset across times the
+        // angle; a side's half of the chassis about half its radius out). Sideways (a strafe) turns no wheel.
+        const D3DXVECTOR2 way(m_PosX - s.x, m_PosY - s.y);
+        const float ahead = D3DXVec2Dot(&way, &s.forward);
+        const float turn = std::atan2(s.forward.x * forward.y - s.forward.y * forward.x, D3DXVec2Dot(&s.forward, &forward));
+        D3DXVECTOR2 across(m_Unit[0].m_Matrix._11, m_Unit[0].m_Matrix._12);
+        D3DXVec2Normalize(&across, &across);
+        // A point at +X goes ahead by turn * offset * ((z x across) . forward) as the robot turns.
+        const float spin = turn * 0.5f * GetRadius() * (forward.y * across.x - forward.x * across.y);
+        // As the original's moving animation: a frame each k * its time, k = ANIMSPEED / the speed per logic takt.
+        CVectorObjectAnim *graph = m_Unit[0].m_Graph;
+        const int anim = graph->GetAnimIndex();
+        const int time = std::max(1, graph->VO()->GetAnimFrameTime(anim, 0));
+        const float speed = kind == RUK_CHASSIS_TRACK ? ANIMSPEED_CHAISIS_TRACK : ANIMSPEED_CHAISIS_WHEEL;
+        const float frames = float(graph->VO()->GetAnimFramesCount(anim));
+        for (int i = 0; i < 2; ++i) {
+            s.step[i] = (ahead + (i ? -spin : spin)) * LOGIC_TAKT_PERIOD / (speed * time);
+            s.frames[i] = std::fmod(s.frames[i] + s.step[i], frames);
+        }
+    }
+    else {
+        s.step[0] = s.step[1] = 0;
+        if (s.time < 0)
+            s.frames[0] = s.frames[1] = float(m_Unit[0].m_Graph->GetFrame());  // from the battle's frame
+    }
+    s.x = m_PosX;
+    s.y = m_PosY;
+    s.forward = forward;
+    s.time = now;
+    return true;
+}
+
+int CMatrixRobot::ChassisSideFrame(int side) const {
+    CVectorObjectAnim *graph = m_Unit[0].m_Graph;
+    const int anim = graph->GetAnimIndex();
+    const int count = graph->VO()->GetAnimFramesCount(anim);
+    int frame = int(std::floor(m_ChassisSides.frames[side])) % count;
+    if (frame < 0)
+        frame += count;
+    return graph->VO()->GetAnimFrameIndex(anim, frame);
+}
+
 void CMatrixRobot::Draw(void) {
     uintptr_t coltex = (uintptr_t)g_MatrixMap->GetSideColorTexture(m_Side)->Tex();
+    // ChassisMotion: each half of the chassis (cut by the plane across it through its centre) at its side's frame.
+    const bool sides = !IsInterfaceDraw() && ChassisSidesTakt();
+    auto draw = [&](int i) {
+        if (i != 0 || !sides) {
+            m_Unit[i].m_Graph->Draw(coltex);
+            return;
+        }
+        const D3DXMATRIX &m = m_Unit[0].m_Matrix;
+        D3DXVECTOR3 across(m._11, m._12, m._13);
+        D3DXVec3Normalize(&across, &across);
+        const float d = -D3DXVec3Dot(&across, (const D3DXVECTOR3 *)&m._41);
+        for (int side = 0; side < 2; ++side) {
+            const float k = side ? -1.0f : 1.0f;
+            const float plane[4] = {k * across.x, k * across.y, k * across.z, k * d};
+            ASSERT_DX(g_D3DD->SetClipPlane(0, plane));
+            g_D3DD->SetRenderState(D3DRS_CLIPPLANEENABLE, D3DCLIPPLANE0);
+            m_Unit[0].m_Graph->DrawFrame(ChassisSideFrame(side), coltex);
+        }
+        g_D3DD->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    };
     // g_D3DD->SetRenderState( D3DRS_NORMALIZENORMALS,  TRUE );
 
     for (int i = 0; i < 4; i++) {
@@ -1007,11 +1084,11 @@ void CMatrixRobot::Draw(void) {
             ASSERT_DX(g_D3DD->SetTransform(D3DTS_WORLD, &(m_Unit[i].m_Matrix)));
             if (m_Unit[i].u1.s1.m_Invert) {
                 g_D3DD->SetRenderState(D3DRS_CULLMODE, D3DCULL_CW);
-                m_Unit[i].m_Graph->Draw(coltex);
+                draw(i);
                 g_D3DD->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
             }
             else {
-                m_Unit[i].m_Graph->Draw(coltex);
+                draw(i);
             }
         }
         for (int i = 0; i < m_UnitCnt; i++) {
@@ -1102,6 +1179,8 @@ void CMatrixRobot::DrawShadowStencil(void) {
         return;
 
     if (this->AsRobot() == g_MatrixMap->GetPlayerSide()->GetArcadedObject()) {
+        if (g_MatrixMap->m_Camera.FirstPerson())
+            return;  // looked from (FirstPerson): the eye may be inside its shadow's volume
         if (!g_MatrixMap->m_Camera.IsInFrustum(*(D3DXVECTOR3 *)&m_Unit[1].m_Matrix._41))
             return;
     }

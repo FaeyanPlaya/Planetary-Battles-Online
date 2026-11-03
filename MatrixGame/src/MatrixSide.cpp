@@ -938,6 +938,14 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
             m_ActiveObject->AsCannon()->UnSelect();
             m_ActiveObject->AsCannon()->DeleteProgressBarClone(PBC_CLONE2);
         }
+        for (CMatrixCannon *turret : m_SelTurrets) {
+            turret->UnSelect();
+            turret->DeleteProgressBarClone(PBC_CLONE1);
+            turret->DeleteProgressBarClone(PBC_CLONE2);
+        }
+        m_SelTurrets.clear();
+        if (g_IFaceList)
+            g_IFaceList->DeleteGroupIcons();
     }
 
     /*m_CurrentAction = NOTHING_SPECIAL;*/
@@ -1010,6 +1018,8 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
         m_nCurrRobotPos = -1;
         m_CurrSel = TURRET_SELECTED;
         pObject->AsCannon()->Select();
+        m_SelTurrets = {pObject->AsCannon()};
+        m_CurSelNum = 0;
         g_IFaceList->CreateTurretPersonal(pObject->AsCannon());
         CSound::Play(S_BUILDING_SEL, SL_SELECTION);
     }
@@ -1363,6 +1373,7 @@ void CMatrixSideUnit::SetArcadedObject(CMatrixMapStatic *o) {
     // A turret left (TurretControl): the reach bonus goes with the person.
     if (IsTurretMode()) {
         m_Arcaded->AsCannon()->SetDriveBonus(false);
+        m_Arcaded->AsCannon()->DriveFireEnd();  // its fire with the person's
         if (o == NULL || o == m_Arcaded) {
             o = NULL;
             if (local)
@@ -1463,6 +1474,13 @@ void CMatrixSideUnit::SampleDrive() {
         keys |= DRIVE_LEFT;
     if (Input::isKeyPressed(KA_UNIT_RIGHT) || Input::isKeyPressed(KA_UNIT_RIGHT_ALT))
         keys |= DRIVE_RIGHT;
+    if (Mods::switches().manual_extras && IsRobotMode()) {
+        if (Input::isKeyPressed(KA_UNIT_STRAFE_LEFT))
+            keys |= DRIVE_STRAFE_LEFT;
+        if (Input::isKeyPressed(KA_UNIT_STRAFE_RIGHT))
+            keys |= DRIVE_STRAFE_RIGHT;
+        keys |= m_DriveSlotsOff;
+    }
     if (m_MouseTurn && g_MatrixMap->GetTime() < m_MouseTurnUntil && g_MatrixMap->IsMouseCam())
         keys |= m_MouseTurn < 0 ? DRIVE_LEFT : DRIVE_RIGHT;
     else
@@ -1476,6 +1494,29 @@ void CMatrixSideUnit::SampleDrive() {
     if (Mods::switches().drive_aim_far && g_MatrixMap->m_TraceStopObj == TRACE_STOP_NONE)
         aim = DriveFarAim(g_MatrixMap->m_Camera.GetFrustumCenter(), g_MatrixMap->m_MouseDir);
     IssueDrive(keys, over_battle ? aim : m_DriveSentAim);
+}
+
+bool CMatrixSideUnit::DriveKindOff(const CMatrixRobotAI *robot, ERobotUnitKind kind) const {
+    for (int i = 0; i < robot->m_UnitCnt; ++i) {
+        const auto &unit = robot->m_Unit[i];
+        if (unit.m_Type == MRT_WEAPON && unit.u1.s1.m_Kind == kind && unit.u1.s1.m_Slot >= 1 &&
+            unit.u1.s1.m_Slot <= MAX_WEAPON_CNT && (m_DriveSlotsOff & (Commands::DRIVE_SLOT_OFF << (unit.u1.s1.m_Slot - 1))))
+            return true;
+    }
+    return false;
+}
+
+void CMatrixSideUnit::ToggleDriveSlot(int slot) {
+    if (!Mods::switches().manual_extras || !IsRobotMode() || slot < 1 || slot > MAX_WEAPON_CNT)
+        return;
+    const CMatrixRobotAI *robot = GetArcadedObject()->AsRobot();
+    for (int i = 0; i < robot->m_UnitCnt; ++i)
+        if (robot->m_Unit[i].m_Type == MRT_WEAPON && robot->m_Unit[i].u1.s1.m_Slot == slot) {
+            m_DriveSlotsOff ^= Commands::DRIVE_SLOT_OFF << (slot - 1);
+            if (g_IFaceList)
+                g_IFaceList->CreateWeaponDynamicStatics();
+            return;
+        }
 }
 
 D3DXVECTOR3 CMatrixSideUnit::DriveFarAim(const D3DXVECTOR3 &eye, const D3DXVECTOR3 &dir) {
@@ -1553,6 +1594,8 @@ void CMatrixSideUnit::ExecuteDrive(const Commands::Command &command, CMatrixMapS
                     Select(ROBOT, NULL);
                 }
             }
+            if (IsLocalSide())
+                m_DriveSlotsOff = 0;  // every weapon on in a robot entered (before its weapon icons are made)
             SetArcadedObject(robot);
             if (IsLocalSide() && g_IFaceList)
                 g_IFaceList->RobotEntered();
@@ -9230,14 +9273,69 @@ void CMatrixSideUnit::IssueGroupOrder(Commands::Type type, const D3DXVECTOR3 &po
 }
 
 void CMatrixSideUnit::IssueTurretOrder(Commands::Type type, CMatrixMapStatic *target) {
-    if (m_CurrSel != TURRET_SELECTED || !m_ActiveObject || !m_ActiveObject->IsCannon())
+    if (m_CurrSel != TURRET_SELECTED || m_SelTurrets.empty())
         return;
     Commands::Command command;
     command.side = m_Id;
     command.type = type;
     command.target = target ? target->GetSimId() : 0;
-    command.units = {m_ActiveObject->GetSimId()};
+    for (CMatrixCannon *turret : m_SelTurrets)
+        command.units.push_back(turret->GetSimId());
     Commands::issue(command);
+}
+
+void CMatrixSideUnit::SelectTurrets(const std::vector<CMatrixCannon *> &turrets, bool add) {
+    std::vector<CMatrixCannon *> chosen;
+    if (add && m_CurrSel == TURRET_SELECTED)
+        chosen = m_SelTurrets;
+    for (CMatrixCannon *turret : turrets) {
+        auto it = std::ranges::find(chosen, turret);
+        if (it == chosen.end())
+            chosen.push_back(turret);
+        else if (add)
+            chosen.erase(it);
+    }
+    if (chosen.empty()) {
+        Select(NOTHING, NULL);
+        return;
+    }
+    Select(TURRET, chosen[0]);
+    for (size_t i = 1; i < chosen.size(); ++i) {
+        chosen[i]->Select();
+        m_SelTurrets.push_back(chosen[i]);
+    }
+    if (g_IFaceList)
+        g_IFaceList->CreateTurretIcons();
+}
+
+void CMatrixSideUnit::SetCurTurret(int i) {
+    if (m_CurrSel != TURRET_SELECTED || i < 0 || i >= int(m_SelTurrets.size()) || m_ActiveObject == m_SelTurrets[i])
+        return;
+    if (m_ActiveObject && m_ActiveObject->IsCannon())
+        m_ActiveObject->AsCannon()->DeleteProgressBarClone(PBC_CLONE2);
+    m_ActiveObject = m_SelTurrets[i];
+    m_CurSelNum = i;
+    if (g_IFaceList)
+        g_IFaceList->CreateTurretPersonal(m_SelTurrets[i]);
+}
+
+void CMatrixSideUnit::ForgetTurret(CMatrixCannon *turret) {
+    auto it = std::ranges::find(m_SelTurrets, turret);
+    if (it == m_SelTurrets.end())
+        return;
+    m_SelTurrets.erase(it);
+    turret->DeleteProgressBarClone(PBC_CLONE1);
+    if (m_ActiveObject != turret) {
+        m_CurSelNum = int(std::ranges::find(m_SelTurrets, m_ActiveObject) - m_SelTurrets.begin());
+        if (g_IFaceList)
+            g_IFaceList->CreateTurretIcons();
+        return;
+    }
+    const std::vector<CMatrixCannon *> rest = m_SelTurrets;
+    if (rest.empty())
+        Select(NOTHING, NULL);
+    else
+        SelectTurrets(rest, false);
 }
 
 bool CMatrixSideUnit::IssueRally(CMatrixMapStatic *clicked, const D3DXVECTOR3 &at) {

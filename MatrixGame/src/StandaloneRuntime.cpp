@@ -9,6 +9,7 @@
 #include "Commands.hpp"
 #include "Mods.hpp"
 #include "MatrixCamera.hpp"
+#include "Interface/CHistory.h"
 
 namespace StandaloneSettings {
 namespace {
@@ -26,6 +27,7 @@ void apply_immediate(const Values &values) {
     Mods::set_personal(values.personal_mods ? *values.personal_mods : Mods::default_personal(Mods::installed()),
                        static_cast<float>(values.far_view_scale) / 100.0f);
     SetViewScale(Mods::view_scale());
+    CHistory::m_Kept = values.saved_designs;
     if (battle_rules_locked())
         return;
     BattleRules::apply_modes(battle_rules(values));

@@ -282,6 +282,61 @@ const Pack *use_for(std::wstring_view map_path) {
     return pack;
 }
 
+namespace {
+// The mod's CFG\Rus|Eng\Robots\cache.txt (as a map mod's), or empty.
+std::filesystem::path cache_of(const std::filesystem::path &folder) {
+    for (const wchar_t *language : {L"Rus", L"Eng"}) {
+        const auto cache = folder / L"CFG" / language / L"Robots" / L"cache.txt";
+        std::error_code error;
+        if (std::filesystem::is_regular_file(cache, error)) return cache;
+    }
+    return {};
+}
+bool new_sky_in(const std::filesystem::path &folder) {
+    std::error_code error;
+    return std::filesystem::is_directory(folder / L"Matrix" / L"Textures" / L"Sky", error) && !cache_of(folder).empty();
+}
+}  // namespace
+
+std::filesystem::path new_sky_folder() {
+    const std::filesystem::path beside = std::filesystem::path(Mods::folder) / L"PBNewSky";
+    if (new_sky_in(beside)) return beside;
+    if (g_game_mods.empty()) return {};
+    std::error_code error;
+    for (std::filesystem::directory_iterator it(g_game_mods, error), end; !error && it != end; it.increment(error)) {
+        std::error_code inner;
+        if (!it->is_directory(inner)) continue;
+        for (std::filesystem::directory_iterator mod(it->path(), inner), none; !inner && mod != none; mod.increment(inner))
+            if (folded(mod->path().filename().wstring()) == L"pbnewsky" && new_sky_in(mod->path())) return mod->path();
+    }
+    return {};
+}
+
+std::map<std::wstring, std::wstring> new_sky(const std::filesystem::path &folder, std::wstring_view sky) {
+    std::map<std::wstring, std::wstring> sides;
+    const auto cache = cache_of(folder);
+    if (cache.empty()) return sides;
+    try {
+        Base::CBlockPar bp;
+        bp.LoadFromTextFile(cache.wstring());
+        Base::CBlockPar *map = bp.BlockGetNE(L"Map");
+        Base::CBlockPar *textures = map ? map->BlockGetNE(L"Textures") : nullptr;
+        Base::CBlockPar *skies = textures ? textures->BlockGetNE(L"Sky") : nullptr;
+        for (int i = 0; skies && i < skies->BlockCount(); ++i) {
+            if (folded(skies->BlockGetName(i)) != folded(sky)) continue;
+            Base::CBlockPar &from = *skies->BlockGet(i);
+            for (const auto &[source, target] : {std::pair{L"Front", L"Fore"}, {L"Fore", L"Fore"}, {L"Back", L"Back"},
+                                                 {L"Left", L"Left"}, {L"Right", L"Right"}})
+                if (from.ParCount(source)) sides[target] = (folder / local(utils::trim(from.ParGet(source)))).wstring();
+            break;
+        }
+    }
+    catch (...) {
+        lgr.warning("PBNewSky: its cache.txt could not be read; the game's skies")();
+    }
+    return sides;
+}
+
 std::vector<Resource> required(const std::vector<std::wstring> &strings, bool with_gloss) {
     std::vector<Resource> out;
     const auto add = [&](std::wstring name, bool model) {

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -56,6 +57,14 @@ std::filesystem::path names_file(const Pack &pack, bool russian);
 // first) or the game holds; a reflection `exists` does not find becomes the game's own.
 void merge_textures(Base::CBlockPar &textures, Base::CBlockPar &data,
                     const std::function<bool(const std::wstring &)> &exists);
+
+// NewSky (a personal mod): Universe's PBNewSky (by Klaxons), the game's skies at 2048, read in place: the game's
+// Mods\<section>\PBNewSky, or mods\PBNewSky beside the EXE (that one first). Looked for anew on each call (it may
+// have gone since). Empty: the game has none.
+std::filesystem::path new_sky_folder();
+// The sides (Fore, Back, Left, Right) of its sky of this name (case aside) as the data's: the texture by its full path,
+// then the rectangle. Empty: it has no such sky (a map mod's own).
+std::map<std::wstring, std::wstring> new_sky(const std::filesystem::path &folder, std::wstring_view sky);
 
 // A battle on this map: its pack's files are found first and its sky and water are known; a map of no pack clears
 // that. Returns the pack, or nullptr.

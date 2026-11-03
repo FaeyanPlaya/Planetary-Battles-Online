@@ -373,6 +373,11 @@ void CFormMatrixGame::Draw(void) {
 
 void selcallback(CMatrixMapStatic *ms, uintptr_t param);
 
+// What a frame selects: robots, buildings, and turrets (TurretControl).
+static DWORD SelectionMask() {
+    return TRACE_ROBOT | TRACE_BUILDING | (Mods::switches().turret_control ? TRACE_CANNON : 0);
+}
+
 void CFormMatrixGame::Takt(int step) {
     DTRACE();
 
@@ -410,7 +415,7 @@ void CFormMatrixGame::Takt(int step) {
         SCallback cbs;
         cbs.mp = g_MatrixMap->m_Cursor.GetPos();
         cbs.calls = 0;
-        CMultiSelection::m_GameSelection->UpdatePending(TRACE_ROBOT | TRACE_BUILDING, selcallback, (uintptr_t)&cbs);
+        CMultiSelection::m_GameSelection->UpdatePending(SelectionMask(), selcallback, (uintptr_t)&cbs);
     }
 
     g_MatrixMap->Takt(step);
@@ -522,6 +527,8 @@ void CFormMatrixGame::MouseMove(int x, int y) {
 
         if (p_side->GetArcadedObject() && p_side->GetArcadedObject()->IsRobot()) {
             int dx = x - g_MatrixMap->m_Cursor.GetPosX();
+            if (g_MatrixMap->m_Camera.RearView())
+                dx = -dx;  // looking back the robot turns the other way for the same view
             if (Commands::deferred())
                 p_side->MouseTurn(dx);  // a shared battle: as A or D, through the drive commands
             else if (dx < 0)
@@ -597,6 +604,7 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
     }
 
     if (status == B_WHEEL) {
+        if (SettingsWindow::mouse_wheel(key)) return;  // the keys page scrolls, the camera stays
         while (key > 0) {
             g_MatrixMap->m_Camera.ZoomInStep();
             --key;
@@ -647,18 +655,20 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
             // A release can arrive before a frame has consumed the latest move.
             g_MatrixMap->m_Cursor.SetPos(x, y);
             CMultiSelection::m_GameSelection->Update(CPoint(x, y));
-            CMultiSelection::m_GameSelection->UpdatePending(TRACE_ROBOT | TRACE_BUILDING, selcallback,
-                                                            (uintptr_t)&cbs);
+            CMultiSelection::m_GameSelection->UpdatePending(SelectionMask(), selcallback, (uintptr_t)&cbs);
+            const std::vector<CMatrixCannon *> framed = CMultiSelection::m_GameSelection->Turrets();
             CMultiSelection::m_GameSelection->End();
             DCP();
 
-            // TurretControl: a click on a built turret of the side selects it (frames select robots and buildings).
+            // TurretControl: a click on a built turret of the side selects it, a frame with turrets and no robots
+            // selects them; with Shift they are added to the turrets selected (or taken out).
             CMatrixMapStatic *turret = g_MatrixMap->m_TraceStopObj;
             const bool turret_clicked = Mods::switches().turret_control && !ps->GetCurSelGroup()->GetObjectsCnt() &&
                                         IS_TRACE_STOP_OBJECT(turret) && turret->IsCannon() &&
                                         turret->GetSide() == ps->m_Id && turret->AsCannon()->IsBuilt();
-            if (turret_clicked) {
-                ps->Select(TURRET, turret);
+            if (turret_clicked || (!framed.empty() && !ps->GetCurSelGroup()->GetObjectsCnt())) {
+                ps->SelectTurrets(turret_clicked ? std::vector<CMatrixCannon *>{turret->AsCannon()} : framed,
+                                  isKeyPressed(KA_SHIFT));
                 ps->GroupsUnselectSoft();
                 ps->GetCurSelGroup()->RemoveAll();
                 ps->SetCurGroup(NULL);
@@ -985,11 +995,28 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
         if (ps->IsRobotMode()) {
             CMatrixRobotAI *robot = ps->GetArcadedObject()->AsRobot();
 
-            if (isKeyPressed(KA_UNIT_BOOM))
+            // ManualExtras: the bomb on F (E goes sideways), X looks back, 1-5 turn weapon slots off and on.
+            const bool extras = Mods::switches().manual_extras;
+            if (extras ? isKeyPressed(KA_UNIT_BOOM_EXTRAS) : isKeyPressed(KA_UNIT_BOOM))
             {
                 //"E" - Взорвать.
-                ps->RequestDrive(Commands::DriveAction::Explode, robot);
+                if (!(extras && ps->DriveKindOff(robot, RUK_WEAPON_BOMB)))  // a bomb turned off stays
+                    ps->RequestDrive(Commands::DriveAction::Explode, robot);
                 return;
+            }
+            if (extras && isKeyPressed(KA_UNIT_REAR_VIEW)) {
+                g_MatrixMap->m_Camera.ToggleRearView();
+                return;
+            }
+            if (extras) {
+                for (int slot = 1; slot <= 5; ++slot) {
+                    if (vk == g_Config.m_KeyActions[KA_UNIT_SLOT1 + slot - 1]) {
+                        // (As the panel shows the weapons: g_IFaceList knows where.)
+                        if (g_IFaceList)
+                            ps->ToggleDriveSlot(g_IFaceList->SlotForKey(robot, slot));
+                        return;
+                    }
+                }
             }
             if (isKeyPressed(KA_UNIT_ENTER) || isKeyPressed(KA_UNIT_ENTER_ALT))
             {
@@ -1379,7 +1406,7 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
             }
         }
 
-        const bool select_all = vk == VK_F2 && Mods::switches().select_all;
+        const bool select_all = vk == g_Config.m_KeyActions[KA_SELECT_ALL] && Mods::switches().select_all;
         if (((vk >= VK_0 && vk <= VK_9) || select_all) && !ps->IsArcadeMode() && !ps->m_ConstructPanel->IsActive()) {
             if (CMultiSelection::m_GameSelection) {
                 CMultiSelection::m_GameSelection->End(false);
