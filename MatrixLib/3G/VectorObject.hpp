@@ -663,6 +663,8 @@ public:
 
     void BeforeDraw(void);
     void Draw(DWORD user_param) { VO()->Draw(m_VOFrame, user_param, m_Skin); }
+    // Another frame of the object than the playing one (which stays as it is).
+    void DrawFrame(int voframe, DWORD user_param) { VO()->Draw(voframe, user_param, m_Skin); }
     void DrawLights(bool now, const D3DXMATRIX &objma, const D3DXMATRIX *iview);
 };
 
