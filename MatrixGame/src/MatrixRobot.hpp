@@ -35,7 +35,6 @@ class CMatrixEffectSelection;
 #define MAX_HULL_ANGLE         GRAD2RAD(360)
 #define BARREL_TO_SHOT_ANGLE   GRAD2RAD(15)
 #define HULL_TO_ENEMY_ANGLE    GRAD2RAD(45)
-#define STRAFE_FACING_COS      0.98480775f  // cos 10 deg: a chassis turning to go sideways goes once this near
 #define MAX_ORDERS             5
 #define ROBOT_FOV              GRAD2RAD(180)
 #define GATHER_PERIOD          100
@@ -286,6 +285,7 @@ class CMatrixRobotAI : public CMatrixRobot
     float m_SpeedSlopeCorrDown;  // коррекция скорости при движении с горы
     float m_SpeedSlopeCorrUp;    // коррекция скорости при движении в гору
 
+public:  // (the manual control+ mod drives the robot with these)
     float m_maxSpeed;          // максимально развиваемая скорость
     float m_maxHullSpeed;      // скорость поворота HULL'a
     float m_maxRotationSpeed;  // скорость вращения робота на месте
@@ -293,6 +293,7 @@ class CMatrixRobotAI : public CMatrixRobot
     float m_MinFireDist;
     float m_RepairDist;
     float m_SyncMul;
+private:
     int m_CtrlGroup;
     SBotWeapon m_Weapons[MAX_WEAPON_CNT];  // установленное оружие
     int m_WeaponsCnt;
@@ -306,10 +307,12 @@ class CMatrixRobotAI : public CMatrixRobot
     DWORD m_nLastCollideFrame;
     DWORD m_PrevTurnSign;
     DWORD m_HullRotCnt;
+public:
     // ManualExtras: while a chassis that turns to go sideways is off its driver's heading (a strafe, then the turn
     // back), the heading (the camera's and A/D's) is kept here.
     bool m_DriveSplit = false;
     D3DXVECTOR3 m_DriveHeading{0, 1, 0};
+private:
     CMatrixEffectSelection *m_Selection;
 
     int m_LastDelayDamageSide;
@@ -546,9 +549,7 @@ public:
     void LowLevelMove(int ms, const D3DXVECTOR3 &dest, bool robot_coll, bool obst_coll, bool end_path = true,
                       bool back = false, const D3DXVECTOR3 *along = nullptr, float speed_k = 1.0f);
     // ManualExtras: the share of the speed a chassis goes sideways at (Universe's PBEngine).
-    float StrafeSpeedShare() const;
     // ManualExtras: hovercraft and antigravity go sideways as they face; the others turn there first (as Universe).
-    bool StrafesFacing() const;
     void LowLevelDecelerate(int ms, bool robot_coll, bool obst_coll);
 
     void ReleaseMe();

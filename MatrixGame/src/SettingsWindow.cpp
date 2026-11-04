@@ -3,6 +3,9 @@
 #include "SettingsModel.hpp"
 #include "StandaloneRuntime.hpp"
 #include "Mods.hpp"
+#include "UiTheme.hpp"
+#include "ModInfoWindow.hpp"
+#include "GameArt.hpp"
 #include "MapPacks.hpp"
 
 #include "MatrixMap.hpp"
@@ -55,6 +58,33 @@ constexpr float icon_cx = 97.5f, icon_cy = 144.5f, icon_inner = 21.0f, icon_ring
 constexpr int icon_left = int(icon_cx - icon_ring), icon_top = int(icon_cy - icon_ring);
 constexpr int icon_size = int(2 * icon_ring) + 2;
 CMatrixHint *startup_hint = nullptr;                    // the window over the startup menu
+std::unique_ptr<CBitmap> mod_buttons[3];                 // the mods page's switch off, on and "i"
+
+void prepare_buttons() {
+    if (mod_buttons[0]) return;
+    const GameArt::Button which[] = {GameArt::Button::SwitchOff, GameArt::Button::SwitchOn, GameArt::Button::Info};
+    for (int i = 0; i < 3; ++i) mod_buttons[i] = GameArt::bitmap(GameArt::picture(which[i], SettingsModel::Layout::button_size));
+    CMatrixHint::SetRuntimeBitmap(SettingsModel::switch_bitmap(false), mod_buttons[0].get());
+    CMatrixHint::SetRuntimeBitmap(SettingsModel::switch_bitmap(true), mod_buttons[1].get());
+    CMatrixHint::SetRuntimeBitmap(SettingsModel::info_bitmap(), mod_buttons[2].get());
+}
+
+// A mod's window or its question open over the settings: the key is its (true).
+bool info_key(uint8_t vk) {
+    if (!ModInfoWindow::open()) return false;
+    ModInfoWindow::key(vk);
+    return true;
+}
+
+// A mod switched on that needs others: the question, then (yes) the window made anew with them on.
+void ask(void (*rebuilt)()) {
+    if (!model->asking() || ModInfoWindow::open()) return;
+    ModInfoWindow::ask(model->question(), model->language(), 1.0, [rebuilt](bool yes) {
+        if (!model) return;
+        model->answer(yes);
+        if (yes) rebuilt();
+    });
+}
 StandaloneSettings::Values *startup_values = nullptr;   // where its Apply puts the settings
 MenuKeyLatch startup_keys;
 
@@ -78,6 +108,8 @@ void cancel_handler() { close(false); }
 
 void rebuild() {
     auto &hints = g_MatrixMap->m_DialogModeHints;
+    prepare_buttons();
+    UiTheme::choose(model->values().theme);  // the theme as chosen in the window, seen at once
     CMatrixHint *hint = CMatrixHint::Build(SettingsModel::hint_template(*model), static_cast<CBlockPar *>(nullptr));
     const int x = (g_ScreenX - hint->m_Width) / 2;
     const int y = (g_ScreenY - hint->m_Height) / 2;
@@ -94,11 +126,13 @@ void rebuild() {
         g_IFaceList->CreateHintButton(x + hint->GetCopyPos(1).x, y + hint->GetCopyPos(1).y, HINT_CANCEL,
                                       cancel_handler);
     }
+    ModInfoWindow::raise();
+    ask(rebuild);
 }
 
 SettingsModel::Hit hit(int x, int y) {
     const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
-    return SettingsModel::hit(x - hint->m_PosX, y - hint->m_PosY, model->mods_page());
+    return model->hit(x - hint->m_PosX, y - hint->m_PosY);
 }
 
 std::vector<SettingsModel::Resolution> adapter_modes() {
@@ -112,17 +146,22 @@ std::vector<SettingsModel::Resolution> adapter_modes() {
     return modes;
 }
 
-// Personal mods whose files this PC lacks, looked for each time the window opens (NewSky: PBNewSky in the game).
+// The personal mods of the settings' own rows that this PC lacks: not in the mods folder (read as the game started)
+// or unable to load; NewSky also without PBNewSky in the game (looked for each time the window opens).
 std::vector<std::string> unavailable() {
-    if (MapPacks::new_sky_folder().empty()) return {"newsky"};
-    return {};
+    std::vector<std::string> result;
+    for (const char *id : {"farview", "interface", "firstperson", "newsky"}) {
+        const Mods::Mod *mod = Mods::find(Mods::installed(), id);
+        if (!mod || mod->problem != Mods::Problem::None) result.push_back(id);
+    }
+    if (MapPacks::new_sky_folder().empty() && std::ranges::find(result, "newsky") == result.end()) result.push_back("newsky");
+    return result;
 }
 
 // The person's keys as the game has them now: in a battle the config's, before one their file over the game's.
 KeyBindings::Keys current_keys() {
-    if (!g_MatrixMap) return KeyBindings::load(KeyBindings::file, KeyBindings::base());
-    KeyBindings::Keys keys;
-    std::copy(g_Config.m_KeyActions, g_Config.m_KeyActions + KA_LAST, keys.begin());
+    auto keys = KeyBindings::load(KeyBindings::file, KeyBindings::base());
+    if (g_MatrixMap) std::copy(g_Config.m_KeyActions, g_Config.m_KeyActions + KA_LAST, keys.begin());
     return keys;
 }
 
@@ -135,7 +174,21 @@ bool save_keys(const SettingsModel::Window &window) {
         return false;
     }
     std::copy(window.keys().begin(), window.keys().end(), g_Config.m_KeyActions);
+    KeyBindings::set_mod_keys(window.keys().mods);
     lgr.notice("Keys saved to CFG/keys.txt");
+    return true;
+}
+
+// Saves the mods' settings (the mods page's rows of the mods folder's mods) when changed; false with the error logged.
+bool save_mod_settings(const SettingsModel::Window &window) {
+    if (!window.mod_settings_changed()) return true;
+    std::string error;
+    if (!Mods::save_settings(Mods::settings_file, window.mod_settings(), error)) {
+        lgr.error("Cannot save CFG/mods.txt: {}")(error);
+        return false;
+    }
+    Mods::set_setting_values(window.mod_settings());
+    lgr.notice("Mods' settings saved to CFG/mods.txt");
     return true;
 }
 
@@ -159,6 +212,13 @@ bool keys_page_key(uint8_t vk) {
 
 SettingsModel::Language language() {
     return SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup"));
+}
+
+// The window's model; the installed mods first, as they give KeyBindings their keys.
+void make_model(const StandaloneSettings::Values &values) {
+    const auto &mods = Mods::installed();
+    model.emplace(values, adapter_modes(), language(), Mods::default_personal(mods), unavailable(), current_keys(),
+                  KeyBindings::base(), mods, Mods::setting_values());
 }
 
 void release_menu_highlight() {
@@ -193,8 +253,7 @@ void open() {
     const auto size = Display::current_size();
     values.display.width = size.width;
     values.display.height = size.height;
-    model.emplace(values, adapter_modes(), language(), Mods::default_personal(Mods::installed()), unavailable(),
-                  current_keys(), KeyBindings::base());
+    make_model(values);
     resume();
 }
 
@@ -219,7 +278,7 @@ void close(bool apply) {
             rebuild();
             return;
         }
-        if (!save_keys(*model)) {
+        if (!save_keys(*model) || !save_mod_settings(*model)) {
             model->set_error(true);
             rebuild();
             return;
@@ -228,13 +287,15 @@ void close(bool apply) {
         lgr.notice("Settings saved to CFG/standalone.txt{}")(
                 StandaloneSettings::restart_pending(values) ? "; some changes apply after restart" : "");
     }
+    ModInfoWindow::close();
     model.reset();
+    UiTheme::choose(StandaloneSettings::current().theme);  // the saved one (cancelled: as before)
     g_MatrixMap->EnterDialogMode(TEMPLATE_DIALOG_MENU);
 }
 
 bool keyboard(uint8_t vk, bool down) {
     if (!active()) return false;
-    if (!down) return true;
+    if (!down || info_key(vk)) return true;
     if (model->keys_page()) {
         if (keys_page_key(vk)) {
             CSound::Play(S_BCLICK);
@@ -281,7 +342,7 @@ bool keyboard(uint8_t vk, bool down) {
 }
 
 void mouse_move(int x, int y) {
-    if (!active()) return;
+    if (!active() || ModInfoWindow::open()) return;
     if (model->keys_page()) {
         const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
         const int row = model->key_hit(x - hint->m_PosX, y - hint->m_PosY);
@@ -305,7 +366,15 @@ bool mouse_down(int x, int y) {
         return true;
     }
     const auto target = hit(x, y);
+    if (ModInfoWindow::open()) {  // any click closes a mod's window; a question takes its buttons only
+        ModInfoWindow::click(x, y);
+        return true;
+    }
     if (target.row < 0) return false;  // The hint buttons and the rest of the screen keep their handling.
+    if (target.info) {
+        ModInfoWindow::show(model->info(target.row), model->language(), 1.0);
+        return true;
+    }
     model->select(target.row);
     model->change(target.row, target.direction);
     CSound::Play(S_BCLICK);
@@ -315,8 +384,13 @@ bool mouse_down(int x, int y) {
 
 bool mouse_wheel(int notches) {
     if (!active()) return false;
+    if (ModInfoWindow::open()) return true;
     if (model->keys_page() && !model->capturing()) {
         model->key_scroll(-notches);  // away from the person: up
+        rebuild();
+    }
+    else if (model->mods_page()) {
+        model->mods_scroll(-notches);
         rebuild();
     }
     return true;
@@ -393,6 +467,7 @@ void relayout() {
 }
 
 void shutdown() {
+    ModInfoWindow::close();
     release_menu_highlight();
     release_focused_icon();
     if (startup_hint) startup_hint->Release();
@@ -403,10 +478,14 @@ void shutdown() {
 
 namespace {
 void startup_rebuild() {
+    prepare_buttons();
+    UiTheme::choose(model->values().theme);
     CMatrixHint *hint = CMatrixHint::Build(SettingsModel::startup_template(*model), static_cast<CBlockPar *>(nullptr));
     hint->Show((g_ScreenX - hint->m_Width) / 2, (g_ScreenY - hint->m_Height) / 2);
     if (startup_hint) startup_hint->Release();
     startup_hint = hint;
+    ModInfoWindow::raise();
+    ask(startup_rebuild);
 }
 }  // namespace
 
@@ -419,8 +498,7 @@ void open_startup(StandaloneSettings::Values &values) {
     const auto size = Display::current_size();
     shown.display.width = size.width;
     shown.display.height = size.height;
-    model.emplace(shown, adapter_modes(), language(), Mods::default_personal(Mods::installed()), unavailable(),
-                  current_keys(), KeyBindings::base());
+    make_model(shown);
     startup_values = &values;
     startup_keys = {Input::isVKeyPressed(VK_RETURN) || (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0,
                     Input::isVKeyPressed(VK_ESCAPE) || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0};
@@ -440,7 +518,7 @@ void startup_close(bool apply) {
             startup_rebuild();
             return;
         }
-        if (!save_keys(*model)) {
+        if (!save_keys(*model) || !save_mod_settings(*model)) {
             model->set_error(true);
             startup_rebuild();
             return;
@@ -450,6 +528,8 @@ void startup_close(bool apply) {
         *startup_values = std::move(values);
         lgr.notice("Settings saved to CFG/standalone.txt from the startup menu");
     }
+    ModInfoWindow::close();
+    UiTheme::choose(startup_values->theme);  // saved above, or as before
     startup_hint->Release();
     startup_hint = nullptr;
     startup_values = nullptr;
@@ -459,6 +539,7 @@ void startup_close(bool apply) {
 bool startup_keyboard(uint8_t vk, bool down) {
     if (!startup_active()) return false;
     if (!startup_keys.accept(vk, down)) return true;
+    if (down && info_key(vk)) return true;
     if (model->keys_page()) {
         if (down && keys_page_key(vk)) startup_rebuild();
         return true;
@@ -491,18 +572,22 @@ bool startup_keyboard(uint8_t vk, bool down) {
 }
 
 void startup_mouse_move(int x, int y) {
-    if (!startup_active()) return;
+    if (!startup_active() || ModInfoWindow::open()) return;
     if (model->keys_page()) {
         const int row = model->key_hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY);
         if (row >= 0 && !model->capturing() && model->key_select(row)) startup_rebuild();
         return;
     }
-    const auto target = SettingsModel::hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY, model->mods_page());
+    const auto target = model->hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY);
     if (target.row >= 0 && model->select(target.row)) startup_rebuild();
 }
 
 bool startup_mouse_down(int x, int y) {
     if (!startup_active()) return false;
+    if (ModInfoWindow::open()) {  // any click closes a mod's window; a question takes its buttons only
+        ModInfoWindow::click(x, y);
+        return true;
+    }
     x -= startup_hint->m_PosX;
     y -= startup_hint->m_PosY;
     if (const int button = SettingsModel::startup_button(x, y)) {
@@ -518,8 +603,12 @@ bool startup_mouse_down(int x, int y) {
         }
         return true;
     }
-    const auto target = SettingsModel::hit(x, y, model->mods_page());
+    const auto target = model->hit(x, y);
     if (target.row < 0) return true;
+    if (target.info) {
+        ModInfoWindow::show(model->info(target.row), model->language(), 1.0);
+        return true;
+    }
     model->select(target.row);
     model->change(target.row, target.direction);
     startup_rebuild();
@@ -528,8 +617,13 @@ bool startup_mouse_down(int x, int y) {
 
 bool startup_mouse_wheel(int notches) {
     if (!startup_active()) return false;
+    if (ModInfoWindow::open()) return true;
     if (model->keys_page() && !model->capturing()) {
         model->key_scroll(-notches);
+        startup_rebuild();
+    }
+    else if (model->mods_page()) {
+        model->mods_scroll(-notches);
         startup_rebuild();
     }
     return true;

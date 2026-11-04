@@ -68,15 +68,18 @@ struct SWeaponRepairData {
     CBillboard m_b1;
     CBillboardLine m_bl;
     D3DXVECTOR3 m_pos0, m_pos1;
+    float m_Lift;  // the glow drawn this much toward the camera
 
     DWORD m_Flags;
     static const DWORD CAN_BE_DRAWN = SETBIT(0);
 
     void Release(void);
     void Update(SMatrixRobotUnit *unit);
+    void Set(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1);
     void Draw(bool now);
 
-    static SWeaponRepairData *Allocate(void);
+    // The Ремонтник's glow: its ends' sizes, the line's width (the weapon's: 5, 10, 10, 3).
+    static SWeaponRepairData *Allocate(float end0 = 5, float end1 = 10, float width = 10, float lift = 3);
 };
 
 struct SChassisData {
@@ -227,6 +230,27 @@ public:
     };
 
     int m_MiniMapFlashTime;
+
+    // Help from above: the Reparator's head (SelfRepairHead= of the reinforcements' data), drawn only on the hull's top as a head would
+    // be, with the Ремонтник's glow along its antennas (its matrices 10-11, 12-13); the robot has no head unit.
+    CVectorObjectAnim *m_DecorHead = nullptr;
+    bool m_DecorHeadTried = false;
+    D3DXMATRIX m_DecorHeadMatrix;
+    SWeaponRepairData *m_DecorGlow[2] = {};
+    CVOShadowStencil *m_DecorShadow = nullptr;  // as a unit's
+    // Its flight when the robot dies, as a unit's (CMatrixRobotAI::DIPTakt), but drawn only: cosmetic random, it hits
+    // nothing and ends before the robot's own pieces do (the robot is deleted with the last of them).
+    float m_DecorTTL = 0, m_DecorAge = 0;
+    D3DXVECTOR3 m_DecorPos, m_DecorVelocity, m_DecorSpin;
+    D3DXMATRIX m_DecorBase;  // its matrix at the death without the move
+    SEffectHandler m_DecorSmoke;
+    // Where it stands (RNeed's last matrices): the robot's pictures are made before it has its self-repair.
+    D3DXVECTOR3 m_DecorTop;
+    bool m_DecorTopSet = false;
+    void DecorHeadPlace(const D3DXVECTOR3 &top);
+    void DecorHeadBreak(bool onair);
+    void DecorHeadTakt(float ms);
+    void DecorSmokeEnd();
 
 public:
     CMatrixRobot(void);

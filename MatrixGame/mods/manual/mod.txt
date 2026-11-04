@@ -1,0 +1,35 @@
+# DriveAimFar: over the sky or water past the map's edge the cursor's trace finds nothing and the original
+# kept the robot aiming at the last point it found; the robot now aims along the cursor's ray.
+# TurretLaserGlow: the laser turret's muzzle glow, a robot laser's size at a point inside the thick barrel
+# (never seen), is three times as large and before the barrel.
+# DialogEsc: Esc presses OK of the dialogs before and after the battle (the result, the statistics), as Enter
+# does; the original ignored it there.
+# MinimapCursor: over the minimap's picture (not its buttons) the cursor is the blue cross a Move order shows
+# instead of the arrow; the game has no cursor picture of its own for it.
+# ZoomFar: the wheel takes the camera out to twice the original's farthest distance.
+# CameraShift: while Shift is held the camera moves over the map (the arrows, the screen's edge) twice as fast.
+# ChassisMotion: wheels and tracks are drawn turning as each side of the chassis goes: back when backing, one
+# side forward and the other back when turning in place; only the drawing, the battle's frame stays.
+# (These are the switches of Исправления интерфейса, now a mod of the mods folder: MatrixGame/mods/interface.)
+# ManualExtras (as Universe's PBEngine): in a driven robot Q and E go sideways (hovercraft and antigravity
+# at their PBEngine share of the speed), the bomb goes off on F instead of E, X turns the view back and
+# forth, and 1-5 turn the weapon in that constructor slot off and on (it holds its fire).
+Name=Ручное управление+
+NameEn=Manual control+
+Description=Новые клавиши ручного управления роботом, как в PBEngine для Universe.
+Description=- Q и E: ход вбок. Колёса и гусеницы разворачивают шасси, а воздушная подушка и антиграв скользят боком чуть медленнее.
+Description=- F: взорвать бомбу (в оригинале E).
+Description=- X: вид назад и обратно.
+Description=- 1–5: выключить или включить орудие в этом слоте конструктора (выключенное не стреляет).
+Description=- Клавиши меняются на странице «Клавиши».
+DescriptionEn=New keys for driving a robot, as Universe's PBEngine.
+DescriptionEn=- Q and E: go sideways. Wheels and tracks turn the chassis, hovercraft and antigravity slide a little slower.
+DescriptionEn=- F: set the bomb off (the original: E).
+DescriptionEn=- X: look back and forth.
+DescriptionEn=- 1-5: turn the weapon in that constructor slot off or on (off, it holds its fire).
+DescriptionEn=- The keys can be changed on the Keys page.
+Author=Planetary Battles Online, по PBEngine для Universe
+Kind=battle
+Default=on
+Dll=manual.dll
+Switches=ManualExtras

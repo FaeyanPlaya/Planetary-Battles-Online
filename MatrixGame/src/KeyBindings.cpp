@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cwctype>
+#include <cwchar>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -191,7 +192,6 @@ constexpr Action action_list[] = {
     {KA_AUTOORDER_DEFEND, "AutoDefend", L"Auto: defend", L"Авто: защита", G::Orders},
     {KA_ORDER_ROBOT_SWITCH1, "PreviousRobot", L"Previous robot", L"Прежний робот", G::Orders},
     {KA_ORDER_ROBOT_SWITCH2, "NextRobot", L"Next robot", L"Следующий робот", G::Orders},
-    {KA_SELECT_ALL, "SelectAll", L"All robots (mod)", L"Все роботы (мод)", G::Orders},
 
     {KA_BUILD_ROBOT, "BuildRobot", L"Build a robot", L"Строить робота", G::Building},
     {KA_BUILD_TURRET, "BuildTurret", L"Build a turret", L"Строить турель", G::Building},
@@ -202,9 +202,21 @@ constexpr Action action_list[] = {
     {KA_TURRET_ROCKET, "TurretRocket", L"Rocket launcher", L"Ракетница", G::Building},
 };
 
+std::vector<ModAction> g_mod_actions;
 Keys g_base = defaults();
+std::map<std::string, int> g_mod_keys;
 
 std::wstring widen(const std::string &text) { return std::wstring(text.begin(), text.end()); }
+
+// A mod's key id: <mod>.<Id>, letters, digits, _ and - only.
+bool mod_id(const std::string &id) {
+    const auto dot = id.find('.');
+    if (dot == std::string::npos || dot == 0 || dot + 1 == id.size()) return false;
+    return std::all_of(id.begin(), id.end(), [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' ||
+               c == '.';
+    });
+}
 
 }  // namespace
 
@@ -312,13 +324,18 @@ void defaults(int *keys) {
     keys[KA_UNIT_SLOT3] = 0x33;
     keys[KA_UNIT_SLOT4] = 0x34;
     keys[KA_UNIT_SLOT5] = 0x35;
-    keys[KA_SELECT_ALL] = VK_F2;
 }
 
 Keys defaults() {
     Keys keys;
     defaults(keys.data());
+    for (const auto &action : g_mod_actions) keys.mods[action.id] = action.key;
     return keys;
+}
+
+int Keys::mod(const std::string &id) const {
+    const auto found = mods.find(id);
+    return found == mods.end() ? -1 : found->second;
 }
 
 const Keys &base() { return g_base; }
@@ -327,12 +344,37 @@ void set_base(const int *keys) { std::copy(keys, keys + KA_LAST, g_base.begin())
 
 std::span<const Action> actions() { return action_list; }
 
+Group group_of(std::wstring_view name) {
+    constexpr std::pair<const wchar_t *, Group> groups[] = {
+        {L"camera", Group::Camera}, {L"driving", Group::Driving}, {L"orders", Group::Orders}, {L"building", Group::Building}};
+    for (const auto &[text, group] : groups)
+        if (name.size() == std::wcslen(text) && _wcsnicmp(name.data(), text, name.size()) == 0) return group;
+    return Group::Mods;
+}
+
+void set_mod_actions(std::vector<ModAction> actions) {
+    g_mod_actions = std::move(actions);
+    g_base.mods.clear();
+    for (const auto &action : g_mod_actions) g_base.mods[action.id] = action.key;
+}
+
+std::span<const ModAction> mod_actions() { return g_mod_actions; }
+
+void set_mod_keys(const std::map<std::string, int> &keys) { g_mod_keys = keys; }
+
+int mod_key(std::string_view id) {
+    const std::string key(id);
+    if (const auto found = g_mod_keys.find(key); found != g_mod_keys.end()) return found->second;
+    return g_base.mod(key);
+}
+
 const wchar_t *group_name(Group group, bool russian) {
     switch (group) {
         case Group::Camera: return russian ? L"Камера" : L"Camera";
         case Group::Driving: return russian ? L"Ручное управление" : L"Manual control";
         case Group::Orders: return russian ? L"Приказы" : L"Orders";
         case Group::Building: return russian ? L"Строительство" : L"Building";
+        case Group::Mods: return russian ? L"Моды" : L"Mods";
     }
     return L"";
 }
@@ -344,16 +386,18 @@ Keys load(const std::wstring &path, const Keys &over, std::vector<std::string> *
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line.empty() || line[0] == ';') continue;
         const auto equal = line.find('=');
-        const std::string id = line.substr(0, equal);
+        std::string id = line.substr(0, equal);
+        if (id == "SelectAll") id = "interface.SelectAll";  // the engine's until the interface mod took it (2026-11)
         const Action *found = nullptr;
         for (const auto &action : action_list)
             if (id == action.id) found = &action;
         const int key = equal == std::string::npos ? -1 : code(widen(line.substr(equal + 1)));
-        if (!found || key < 0) {
+        if ((!found && !mod_id(id)) || key < 0) {
             if (invalid) invalid->push_back(id);
             continue;
         }
-        keys[found->action] = key;
+        if (found) keys[found->action] = key;
+        else keys.mods[id] = key;
     }
     return keys;
 }
@@ -366,6 +410,11 @@ bool save(const std::wstring &path, const Keys &keys, const Keys &over, std::str
         if (keys[action.action] == over[action.action]) continue;
         const std::wstring key = name(keys[action.action]);
         text << action.id << '=' << std::string(key.begin(), key.end()) << '\n';
+    }
+    for (const auto &[id, code] : keys.mods) {
+        if (code == over.mod(id) || code < 0) continue;
+        const std::wstring key = name(code);
+        text << id << '=' << std::string(key.begin(), key.end()) << '\n';
     }
     const std::filesystem::path target(path);
     auto temporary = target;

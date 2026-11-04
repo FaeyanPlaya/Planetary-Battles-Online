@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "LobbyModel.hpp"
+#include "UiTheme.hpp"
 #include "Factions.hpp"
 #include "Lockstep.hpp"
 #include "PlayerName.hpp"
@@ -11,15 +12,15 @@
 namespace LobbyModel {
 namespace {
 
-constexpr uint32_t text_color = 0xFF000000;
+uint32_t text_color() { return UiTheme::pick(0xFF000000, UiTheme::Dark::text); }
 // Dark enough to read well on the light panel.
-constexpr uint32_t selected_color = 0xFF08498A;
-constexpr uint32_t disabled_color = 0xFF6F777D;
-constexpr uint32_t arrow_color = 0xFF4A555D;
-constexpr uint32_t legend_color = 0xFF384046;
-constexpr uint32_t ready_color = 0xFF1B6420;
-constexpr uint32_t error_color = 0xFF9A0E0E;
-constexpr uint32_t slow_color = 0xFF8C5200;  // a ping that wants a longer delay
+uint32_t selected_color() { return UiTheme::pick(0xFF08498A, UiTheme::Dark::selected); }
+uint32_t disabled_color() { return UiTheme::pick(0xFF6F777D, UiTheme::Dark::disabled); }
+uint32_t arrow_color() { return UiTheme::pick(0xFF4A555D, UiTheme::Dark::arrow); }
+uint32_t legend_color() { return UiTheme::pick(0xFF384046, UiTheme::Dark::legend); }
+uint32_t ready_color() { return UiTheme::pick(0xFF1B6420, UiTheme::Dark::ready); }
+uint32_t error_color() { return UiTheme::pick(0xFF9A0E0E, UiTheme::Dark::error); }
+uint32_t slow_color() { return UiTheme::pick(0xFF8C5200, UiTheme::Dark::slow); }  // a ping that wants a longer delay
 
 using SettingsModel::text_element;
 
@@ -28,7 +29,7 @@ const wchar_t *text(Language language, const wchar_t *english, const wchar_t *ru
 }
 
 std::wstring frame(int width, int height) {
-    return std::to_wstring(SettingsModel::window_border) + L"|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(width) + L"|_HEIGHT:" +
+    return std::to_wstring(UiTheme::border()) + L"|_BORDER:0:0:0:0|_FONT:Font.2Normal|_WIDTH:" + std::to_wstring(width) + L"|_HEIGHT:" +
            std::to_wstring(height) + L"|_TEXTP:L|_TEXT: |_TEXTP:B";
 }
 
@@ -162,19 +163,40 @@ bool offered(const Screen &s, int index) {
 }
 
 bool can_start(const Screen &s) {
-    return s.host && people(s) >= (s.local ? 1 : 2) && offered(s, s.selected) && map_fine(s) &&
+    return s.host && people(s) >= (s.local ? 1 : 2) && offered(s, s.selected) && map_fine(s) && mods_fine(s) &&
            Lobby::clients_ready({{}, 0, s.people, {}});
 }
 
 bool map_fine(const Screen &s) { return s.map_problem.kind == MapProblem::Kind::None; }
 
 bool mods_fine(const Screen &s) {
-    return std::none_of(s.mods.begin(), s.mods.end(), [](const ModRow &m) { return m.on && m.problem != ModRow::Problem::None; });
+    return s.conflicts.empty() &&
+           std::none_of(s.mods.begin(), s.mods.end(), [](const ModRow &m) { return m.on && m.problem != ModRow::Problem::None; });
 }
 
 int mods_page_count(const Screen &s) {
     constexpr int per_page = Layout::visible_rows / Layout::mod_rows;
-    return std::max(1, (int(s.mods.size()) + per_page - 1) / per_page);
+    return std::max(1, (battle_rows(s) + per_page - 1) / per_page);
+}
+
+int battle_rows(const Screen &s) {
+    return int(std::find_if(s.mods.begin(), s.mods.end(), [](const ModRow &m) { return m.kind != ModRow::Kind::Battle; }) -
+               s.mods.begin());
+}
+
+namespace {
+int address_lines(const Screen &s) { return 1 + int(std::count(s.address.begin(), s.address.end(), L',')); }
+}  // namespace
+
+int personal_line_y(const Screen &s) { return Layout::address_y + address_lines(s) * Layout::row_height + 4; }
+
+std::vector<PersonalRow> personal_rows(const Screen &s) {
+    std::vector<PersonalRow> rows;
+    if (s.local) return rows;
+    const int first = personal_line_y(s) + 6;
+    for (int i = battle_rows(s); i < int(s.mods.size()); ++i)
+        rows.push_back({i, first + (i - battle_rows(s)) * Layout::row_height});
+    return rows;
 }
 
 int mods_page_moved(const Screen &s, int delta) { return std::clamp(s.mods_page + delta, 0, mods_page_count(s) - 1); }
@@ -243,6 +265,7 @@ const std::vector<Line> &separators() {
         {Layout::people_x, 352, Layout::people_width, false},                     // delay | address
         {Layout::list_x, 500, Layout::width - 2 * Layout::list_x, false},         // over the status
         {Layout::list_x, 558, Layout::width - 2 * Layout::list_x, false},         // over the buttons
+        {Layout::people_x, 0, Layout::people_width, false},                       // addresses | personal mods (y: personal_line_y)
     };
     return lines;
 }
@@ -250,6 +273,7 @@ const std::vector<Line> &separators() {
 std::wstring line_bitmap(int index) { return L"LobbyLine" + std::to_wstring(index); }
 
 std::wstring toggle_bitmap(bool on) { return on ? L"LobbyToggleOn" : L"LobbyToggleOff"; }
+std::wstring info_bitmap() { return L"LobbyInfo"; }
 
 Hit hit(const Screen &s, int x, int y) {
     if (y >= Layout::buttons_y && y < Layout::buttons_y + Layout::row_height) {
@@ -259,6 +283,11 @@ Hit hit(const Screen &s, int x, int y) {
         return {};
     }
     if (x >= Layout::people_x && x < Layout::people_x + Layout::people_width) {
+        for (const PersonalRow &row : personal_rows(s))
+            if (y >= row.y && y < row.y + Layout::row_height) {
+                const int info_x = Layout::people_x + Layout::people_width - Layout::toggle_size - 6 - Layout::info_size;
+                return {.mod = row.mod, .info = x >= info_x && x < info_x + Layout::info_size};
+            }
         // The host's: a client's name asks whether to send them away; that row then answers.
         if (s.host && !s.local && y >= Layout::people_y + Layout::person_height && y < Layout::people_y + people(s) * Layout::person_height) {
             const int person = (y - Layout::people_y) / Layout::person_height;
@@ -299,8 +328,8 @@ Hit hit(const Screen &s, int x, int y) {
         if (y < Layout::first_row_y) return {};
         const int row = (y - Layout::first_row_y) / Layout::row_height;
         const int index = s.mods_page * (Layout::visible_rows / Layout::mod_rows) + row / Layout::mod_rows;
-        if (row >= Layout::visible_rows || index >= int(s.mods.size())) return {};
-        return {.mod = index};
+        if (row >= Layout::visible_rows || index >= battle_rows(s)) return {};
+        return {.mod = index, .info = x >= Layout::info_x && x < Layout::info_x + Layout::info_size};
     }
     if (y >= Layout::header_y && y < Layout::first_row_y)
         return {.sort = int(x < Layout::list_x + Layout::list_width - 60 ? MapSort::Name : MapSort::People)};
@@ -314,6 +343,31 @@ Hit hit(const Screen &s, int x, int y) {
     const int position = s.page * Layout::visible_rows + row;
     if (row >= Layout::visible_rows || position >= int(s.maps.size())) return {};
     return {.map = map_at(s, position)};
+}
+
+ModInfo::Info mod_info(const Screen &s, int index) {
+    const Language l = s.language;
+    ModInfo::Info info;
+    if (index < 0 || index >= int(s.mods.size())) return info;
+    const ModRow &mod = s.mods[std::size_t(index)];
+    info.name = mod.name;
+    info.description = mod.description;
+    if (mod.kind == ModRow::Kind::Battle) {
+        info.kind = ModInfo::Info::Kind::Battle;
+        info.author = mod.author;
+        info.depends = mod.depends;
+        info.conflicts = mod.conflicts;
+    }
+    if (mod.on && mod.problem == ModRow::Problem::Missing)
+        info.problem = text(l, L"This PC does not have it: its folder goes in mods beside the game",
+                            L"На этом ПК его нет: его папка нужна в mods рядом с игрой");
+    else if (mod.on && mod.problem == ModRow::Problem::Differs)
+        info.problem = text(l, L"This PC's copy differs from the host's",
+                            L"Копия на этом ПК отличается от копии хоста");
+    else if (mod.on && mod.problem == ModRow::Problem::Conflict)
+        info.problem = text(l, L"On with a mod it conflicts with: the battle cannot start",
+                            L"Включён вместе с несовместимым модом: бой не начнётся");
+    return info;
 }
 
 namespace {
@@ -338,6 +392,11 @@ std::wstring map_problem_text(const Screen &s) {
 std::wstring status(const Screen &s) {
     const Language l = s.language;
     const MapRow *map = selected_row(s);
+    if (!s.conflicts.empty() && !s.loading)
+        return text(l, L"The mods ", L"Моды «") + s.conflicts[0].first + text(l, L" and ", L"» и «") +
+               s.conflicts[0].second +
+               text(l, L" conflict: switch one off (battle mods here, personal ones in the settings)",
+                    L"» несовместимы: выключите один (моды боя здесь, личные в настройках)");
     if (!s.host) {
         if (s.loading) return text(l, L"The host is loading the battle...", L"\u0425\u043e\u0441\u0442 \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u0442 \u0431\u043e\u0439...");
         for (const ModRow &m : s.mods) {
@@ -402,8 +461,30 @@ bool status_is_error(const Screen &s) {
         return !s.loading && (!mods_fine(s) || (!coming && !map_fine(s)) || ((!s.missing_map.empty() || s.map_differs) && s.map_failed));
     }
     const MapRow *map = selected_row(s);
-    return map && (!map_fine(s) || ((people(s) >= 2 || s.local) && map->capacity >= 0 && !offered(s, s.selected)));
+    return (map && (!map_fine(s) || ((people(s) >= 2 || s.local) && map->capacity >= 0 && !offered(s, s.selected)))) ||
+           (map && map_fine(s) && !mods_fine(s));
 }
+
+namespace {
+// A mod's row: its name, its "i" and, but for the people's row (its "i" lists everyone's mods), its switch at the
+// row's right, level with the name's letters: the window draws the buttons (none in tests: no button).
+std::wstring mod_row(const Screen &s, const ModRow &mod, int x, int width, int y) {
+    const bool problem = mod.on && mod.problem != ModRow::Problem::None;
+    const bool person = mod.kind == ModRow::Kind::People;
+    const uint32_t color = problem ? error_color() : person ? text_color() : mod.on ? selected_color() : s.host ? text_color() : disabled_color();
+    const int info_x = x + width - Layout::toggle_size - 6 - Layout::info_size, name_width = info_x - x - 6;
+    const auto name = fit_row(s, mod.name, name_width);
+    std::wstring result = el(s, name.text, name.font, color, x, y + (name.font == std::wstring_view(L"Font.2Small") ? 2 : 0),
+                             name_width, 0);
+    const auto button = [&](int at, int size, const std::wstring &bitmap) {
+        result += L"|_POS:" + std::to_wstring(px(s, at)) + L":" +
+                  std::to_wstring(px(s, y + (Layout::row_height - size) / 2 - 1)) + L"|_BITMAP:" + bitmap + L":B";
+    };
+    button(info_x, Layout::info_size, info_bitmap());
+    if (!person) button(x + width - Layout::toggle_size, Layout::toggle_size, toggle_bitmap(mod.on));
+    return result;
+}
+}  // namespace
 
 std::wstring hint_template(const Screen &s) {
     const Language l = s.language;
@@ -411,44 +492,26 @@ std::wstring hint_template(const Screen &s) {
     result += el(s, s.local  ? text(l, L"New battle", L"\u041d\u043e\u0432\u0430\u044f \u0431\u0438\u0442\u0432\u0430")
                     : s.host ? text(l, L"Network battle: you are the host", L"\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u0431\u043e\u0439: \u0432\u044b \u0445\u043e\u0441\u0442")
                              : text(l, L"Network battle", L"\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u0431\u043e\u0439"),
-                 L"Font.2Ranger", text_color, 0, Layout::title_y, Layout::width, 1);
+                 L"Font.2Ranger", text_color(), 0, Layout::title_y, Layout::width, 1);
 
     if (s.mods_view) {
         // The battle mods, each a name with its switch and a line of what it does; the host's are its to switch.
         result += el(s, s.host ? text(l, L"Battle mods (click: on/off)", L"\u041c\u043e\u0434\u044b \u0431\u043e\u044f (\u0449\u0435\u043b\u0447\u043e\u043a: \u0432\u043a\u043b/\u0432\u044b\u043a\u043b)")
                                 : text(l, L"Battle mods (the host chooses)", L"\u041c\u043e\u0434\u044b \u0431\u043e\u044f (\u0432\u044b\u0431\u0438\u0440\u0430\u0435\u0442 \u0445\u043e\u0441\u0442)"),
-                     L"Font.2Small", legend_color, Layout::list_x + 12, Layout::header_y, Layout::list_width - 12, 0);
+                     L"Font.2Small", legend_color(), Layout::list_x + 12, Layout::header_y, Layout::list_width - 12, 0);
         constexpr int per_page = Layout::visible_rows / Layout::mod_rows;
-        if (s.mods.empty())
+        if (battle_rows(s) == 0)
             result += el(s, text(l, L"No mods: put them in mods beside the game", L"\u041c\u043e\u0434\u043e\u0432 \u043d\u0435\u0442: \u043f\u0430\u043f\u043a\u0430 mods \u0440\u044f\u0434\u043e\u043c \u0441 \u0438\u0433\u0440\u043e\u0439"),
-                         L"Font.2Small", disabled_color, Layout::list_x, Layout::first_row_y, Layout::list_width, 0);
-        for (int i = 0; i < per_page && s.mods_page * per_page + i < int(s.mods.size()); ++i) {
-            const ModRow &mod = s.mods[std::size_t(s.mods_page * per_page + i)];
-            const int y = Layout::first_row_y + i * Layout::mod_rows * Layout::row_height;
-            const bool problem = mod.on && mod.problem != ModRow::Problem::None;
-            const uint32_t color = problem ? error_color : mod.on ? selected_color : s.host ? text_color : disabled_color;
-            constexpr int name_width = Layout::list_width - Layout::toggle_size - 8;
-            const auto name = fit_row(s, mod.name, name_width);
-            result += el(s, name.text, name.font, color, Layout::list_x, y + (name.font == std::wstring_view(L"Font.2Small") ? 2 : 0),
-                         name_width, 0);
-            // Its switch: the window draws the buttons (none in tests: no button).
-            result += L"|_POS:" + std::to_wstring(px(s, Layout::list_x + Layout::list_width - Layout::toggle_size)) + L":" +
-                      std::to_wstring(px(s, y)) + L"|_BITMAP:" +  // level with the name's letters
-                      toggle_bitmap(mod.on) + L":B";
-            const std::wstring about = !problem ? mod.description
-                                       : mod.problem == ModRow::Problem::Missing ? std::wstring(text(l, L"not on this PC", L"\u043d\u0435\u0442 \u043d\u0430 \u044d\u0442\u043e\u043c \u041f\u041a"))
-                                                                                 : std::wstring(text(l, L"differs from the host's", L"\u043e\u0442\u043b\u0438\u0447\u0430\u0435\u0442\u0441\u044f \u043e\u0442 \u0445\u043e\u0441\u0442\u0430"));
-            // Two lines: a longer description wraps (mod.txt keeps it short). Less than the box: its margins, the stroke.
-            const int about_width = px(s, Layout::list_width - 22) - 6;
-            result += el(s, wrapped(s, about, sized_font(s, L"Font.2Mini").c_str(), about_width), L"Font.2Mini", problem ? error_color : legend_color, Layout::list_x + 22,
-                         y + Layout::row_height - 2, Layout::list_width - 22, 0, (Layout::mod_rows - 1) * Layout::row_height - 1);
-        }
+                         L"Font.2Small", disabled_color(), Layout::list_x, Layout::first_row_y, Layout::list_width, 0);
+        for (int i = 0; i < per_page && s.mods_page * per_page + i < battle_rows(s); ++i)
+            result += mod_row(s, s.mods[std::size_t(s.mods_page * per_page + i)], Layout::list_x, Layout::list_width,
+                              Layout::first_row_y + i * Layout::mod_rows * Layout::row_height);
         if (mods_page_count(s) > 1) {
-            result += el(s, L"<", L"Font.2Normal", arrow_color, Layout::list_x, Layout::pager_y, Layout::pager_width, 0);
+            result += el(s, L"<", L"Font.2Normal", arrow_color(), Layout::list_x, Layout::pager_y, Layout::pager_width, 0);
             result += el(s, std::to_wstring(s.mods_page + 1) + L"/" + std::to_wstring(mods_page_count(s)), L"Font.2Small",
-                         legend_color, Layout::list_x + Layout::pager_width, Layout::pager_y,
+                         legend_color(), Layout::list_x + Layout::pager_width, Layout::pager_y,
                          Layout::list_width - 2 * Layout::pager_width, 1);
-            result += el(s, L">", L"Font.2Normal", arrow_color, Layout::list_x + Layout::list_width - Layout::pager_width,
+            result += el(s, L">", L"Font.2Normal", arrow_color(), Layout::list_x + Layout::list_width - Layout::pager_width,
                          Layout::pager_y, Layout::pager_width, 0);
         }
     }
@@ -456,16 +519,16 @@ std::wstring hint_template(const Screen &s) {
         // Maps: the ones that do not take everyone are greyed and cannot be chosen. The headers choose the
         // order; the chosen one is in the selection's colour.
         result += el(s, text(l, L"Map", L"\u041a\u0430\u0440\u0442\u0430"), L"Font.2Small",
-                     s.sort == MapSort::Name ? selected_color : legend_color, Layout::list_x + 12, Layout::header_y,
+                     s.sort == MapSort::Name ? selected_color() : legend_color(), Layout::list_x + 12, Layout::header_y,
                      Layout::list_width - 60, 0);
         result += el(s, text(l, L"People", L"\u0418\u0433\u0440\u043e\u043a\u043e\u0432"), L"Font.2Small",
-                     s.sort == MapSort::People ? selected_color : legend_color,
+                     s.sort == MapSort::People ? selected_color() : legend_color(),
                      Layout::list_x + Layout::list_width - 60, Layout::header_y, 60, 2);
         const int first = s.page * Layout::visible_rows;
         for (int row = 0; row < Layout::visible_rows && first + row < int(s.maps.size()); ++row) {
             const int index = map_at(s, first + row);
             const MapRow &map = s.maps[index];
-            const uint32_t color = !offered(s, index) ? disabled_color : index == s.selected ? selected_color : text_color;
+            const uint32_t color = !offered(s, index) ? disabled_color() : index == s.selected ? selected_color() : text_color();
             const int y = Layout::first_row_y + row * Layout::row_height;
             const auto row_text = fit_row(s, (index == s.selected ? L"> " : L"  ") + map.name, Layout::list_width - Layout::capacity_width);
             result += el(s, row_text.text, row_text.font, color, Layout::list_x,
@@ -476,11 +539,11 @@ std::wstring hint_template(const Screen &s) {
                          Layout::capacity_width, 2);
         }
         if (page_count(s) > 1) {
-            result += el(s, L"<", L"Font.2Normal", arrow_color, Layout::list_x, Layout::pager_y, Layout::pager_width, 0);
+            result += el(s, L"<", L"Font.2Normal", arrow_color(), Layout::list_x, Layout::pager_y, Layout::pager_width, 0);
             result += el(s, std::to_wstring(s.page + 1) + L"/" + std::to_wstring(page_count(s)), L"Font.2Small",
-                         legend_color, Layout::list_x + Layout::pager_width, Layout::pager_y,
+                         legend_color(), Layout::list_x + Layout::pager_width, Layout::pager_y,
                          Layout::list_width - 2 * Layout::pager_width, 1);
-            result += el(s, L">", L"Font.2Normal", arrow_color, Layout::list_x + Layout::list_width - Layout::pager_width,
+            result += el(s, L">", L"Font.2Normal", arrow_color(), Layout::list_x + Layout::list_width - Layout::pager_width,
                          Layout::pager_y, Layout::pager_width, 0);
         }
     }
@@ -493,24 +556,24 @@ std::wstring hint_template(const Screen &s) {
                   L"|_BITMAP:MapPreview:B";
     }
     else if (map) {
-        result += el(s, text(l, L"No preview", L"\u041d\u0435\u0442 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f"), L"Font.2Small", legend_color, Layout::preview_x,
+        result += el(s, text(l, L"No preview", L"\u041d\u0435\u0442 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f"), L"Font.2Small", legend_color(), Layout::preview_x,
                      Layout::preview_y + Layout::preview_height / 2 - Layout::row_height / 2, Layout::preview_width, 1);
     }
     if (map || !s.missing_map.empty()) {
         // Two lines tall: a long name wraps instead of hiding its end.
-        result += el(s, map ? map->name : s.missing_map, L"Font.2Normal", selected_color, Layout::preview_x, Layout::caption_y,
+        result += el(s, map ? map->name : s.missing_map, L"Font.2Normal", selected_color(), Layout::preview_x, Layout::caption_y,
                      Layout::preview_width + 12, 0, Layout::map_info_y - Layout::caption_y - 2);
     }
     if (map) {
         const std::wstring info = map->capacity > 0 ? text(l, L"People: up to ", L"\u0418\u0433\u0440\u043e\u043a\u043e\u0432: \u0434\u043e ") + std::to_wstring(map->capacity)
                                   : map->capacity == 0 ? std::wstring(text(l, L"Cannot be read", L"\u041a\u0430\u0440\u0442\u0430 \u043d\u0435 \u0447\u0438\u0442\u0430\u0435\u0442\u0441\u044f"))
                                                        : std::wstring(text(l, L"People: ...", L"\u0418\u0433\u0440\u043e\u043a\u043e\u0432: ..."));
-        result += el(s, info, L"Font.2Small", text_color, Layout::preview_x, Layout::map_info_y, Layout::preview_width + 12, 0);
+        result += el(s, info, L"Font.2Small", text_color(), Layout::preview_x, Layout::map_info_y, Layout::preview_width + 12, 0);
     }
 
     // Direct robot control: the host switches it (and its bonus), the others see it.
     {
-        const uint32_t color = s.host ? selected_color : text_color;
+        const uint32_t color = s.host ? selected_color() : text_color();
         const int width = Layout::preview_width + 12;
         const std::wstring on = text(l, L"on", L"\u0432\u043a\u043b"), off = text(l, L"off", L"\u0432\u044b\u043a\u043b");
         result += el(s, fit(s, text(l, L"Robot control: ", L"\u0412\u0445\u043e\u0434 \u0432 \u0440\u043e\u0431\u043e\u0442\u0430: ") + (s.manual_control ? on : off),
@@ -518,11 +581,11 @@ std::wstring hint_template(const Screen &s) {
                      L"Font.2Small", color, Layout::preview_x, Layout::manual_y, width, 0);
         result += el(s, fit(s, text(l, L"Robot bonus: ", L"\u0411\u043e\u043d\u0443\u0441 \u0432 \u0440\u043e\u0431\u043e\u0442\u0435: ") + (s.manual_bonus ? on : off),
                                    L"Font.2Small", width),
-                     L"Font.2Small", s.manual_control ? color : disabled_color, Layout::preview_x,
+                     L"Font.2Small", s.manual_control ? color : disabled_color(), Layout::preview_x,
                      Layout::manual_bonus_y, width, 0);
-        result += el(s, text(l, L"bonus: reach x1.2,", L"\u0431\u043e\u043d\u0443\u0441: \u0434\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c x1.2,"), L"Font.2Small", legend_color,
+        result += el(s, text(l, L"bonus: reach x1.2,", L"\u0431\u043e\u043d\u0443\u0441: \u0434\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c x1.2,"), L"Font.2Small", legend_color(),
                      Layout::preview_x, Layout::manual_note_y, width, 0);
-        result += el(s, text(l, L"speed x1.1", L"\u0441\u043a\u043e\u0440\u043e\u0441\u0442\u044c x1.1"), L"Font.2Small", legend_color, Layout::preview_x,
+        result += el(s, text(l, L"speed x1.1", L"\u0441\u043a\u043e\u0440\u043e\u0441\u0442\u044c x1.1"), L"Font.2Small", legend_color(), Layout::preview_x,
                      Layout::manual_note_y + Layout::row_height, width, 0);
     }
 
@@ -532,54 +595,54 @@ std::wstring hint_template(const Screen &s) {
         result += el(s, fit(s, s.dropped_ai ? text(l, L"Dropped player: AI plays", L"\u0412\u044b\u043b\u0435\u0442\u0435\u0432\u0448\u0438\u0439: \u0438\u0433\u0440\u0430\u0435\u0442 \u0418\u0418")
                                             : text(l, L"Dropped player: no orders", L"\u0412\u044b\u043b\u0435\u0442\u0435\u0432\u0448\u0438\u0439: \u0431\u0435\u0437 \u043f\u0440\u0438\u043a\u0430\u0437\u043e\u0432"),
                             L"Font.2Small", width),
-                     L"Font.2Small", s.host ? selected_color : text_color, Layout::preview_x, Layout::dropped_y, width, 0);
+                     L"Font.2Small", s.host ? selected_color() : text_color(), Layout::preview_x, Layout::dropped_y, width, 0);
     }
 
     // People, under the columns' names.
-    result += el(s, text(l, L"People", L"\u0418\u0433\u0440\u043e\u043a\u0438"), L"Font.2Normal", text_color, Layout::people_x, Layout::people_title_y,
+    result += el(s, text(l, L"People", L"\u0418\u0433\u0440\u043e\u043a\u0438"), L"Font.2Normal", text_color(), Layout::people_x, Layout::people_title_y,
                  Layout::side_column, 0);
-    result += el(s, text(l, L"Side", L"\u0421\u0442\u043e\u0440\u043e\u043d\u0430"), L"Font.2Mini", legend_color, Layout::people_x + Layout::side_column,
+    result += el(s, text(l, L"Side", L"\u0421\u0442\u043e\u0440\u043e\u043d\u0430"), L"Font.2Mini", legend_color(), Layout::people_x + Layout::side_column,
                  Layout::people_title_y + 2, Layout::side_width, 1);
-    result += el(s, text(l, L"Bonus", L"\u0411\u043e\u043d\u0443\u0441"), L"Font.2Mini", legend_color, Layout::people_x + Layout::bonus_column,
+    result += el(s, text(l, L"Bonus", L"\u0411\u043e\u043d\u0443\u0441"), L"Font.2Mini", legend_color(), Layout::people_x + Layout::bonus_column,
                  Layout::people_title_y + 2, Layout::bonus_width, 0);
     if (!s.local)
-        result += el(s, text(l, L"Ping", L"\u041f\u0438\u043d\u0433"), L"Font.2Mini", legend_color, Layout::people_x + Layout::ping_column,
+        result += el(s, text(l, L"Ping", L"\u041f\u0438\u043d\u0433"), L"Font.2Mini", legend_color(), Layout::people_x + Layout::ping_column,
                      Layout::people_title_y + 2, Layout::ping_width, 0);
     // Without a network only this person's row: the AI's sides are not people.
     for (int i = 0; i < (s.local ? people(s) : Lobby::max_people); ++i) {
         const int y = Layout::people_y + i * Layout::person_height;
         if (i >= people(s)) {
-            result += el(s, text(l, L"free", L"\u0441\u0432\u043e\u0431\u043e\u0434\u043d\u043e"), L"Font.2Small", disabled_color, Layout::people_x, y, 100, 0);
+            result += el(s, text(l, L"free", L"\u0441\u0432\u043e\u0431\u043e\u0434\u043d\u043e"), L"Font.2Small", disabled_color(), Layout::people_x, y, 100, 0);
             continue;
         }
         const Lobby::Person &p = s.people[i];
         if (s.host && i == s.kick_asked && i > 0) {
             // "Rover  Send away?  Yes  No"
             const std::wstring who = !p.name.empty() ? p.name : text(l, L"Player ", L"\u0418\u0433\u0440\u043e\u043a ") + std::to_wstring(i + 1);
-            result += el(s, fit(s, who, L"Font.2Small", Layout::side_column - 4), L"Font.2Small", text_color, Layout::people_x, y,
+            result += el(s, fit(s, who, L"Font.2Small", Layout::side_column - 4), L"Font.2Small", text_color(), Layout::people_x, y,
                          Layout::side_column - 4, 0);
-            result += el(s, text(l, L"Send away?", L"\u0412\u044b\u0433\u043d\u0430\u0442\u044c?"), L"Font.2Small", error_color,
+            result += el(s, text(l, L"Send away?", L"\u0412\u044b\u0433\u043d\u0430\u0442\u044c?"), L"Font.2Small", error_color(),
                          Layout::people_x + Layout::side_column, y, Layout::side_width, 1);
-            result += el(s, text(l, L"Yes", L"\u0414\u0430"), L"Font.2Normal", error_color, Layout::people_x + Layout::bonus_column, y,
+            result += el(s, text(l, L"Yes", L"\u0414\u0430"), L"Font.2Normal", error_color(), Layout::people_x + Layout::bonus_column, y,
                          Layout::bonus_width, 1);
-            result += el(s, text(l, L"No", L"\u041d\u0435\u0442"), L"Font.2Normal", selected_color, Layout::people_x + Layout::ready_column,
+            result += el(s, text(l, L"No", L"\u041d\u0435\u0442"), L"Font.2Normal", selected_color(), Layout::people_x + Layout::ready_column,
                          y, Layout::people_width - Layout::ready_column, 1);
             continue;
         }
         const std::wstring name = !p.name.empty() ? p.name
                                   : i == 0     ? std::wstring(text(l, L"Host", L"\u0425\u043e\u0441\u0442"))
                                                : text(l, L"Player ", L"\u0418\u0433\u0440\u043e\u043a ") + std::to_wstring(i + 1);
-        const uint32_t color = i == s.you ? selected_color : text_color;
+        const uint32_t color = i == s.you ? selected_color() : text_color();
         result += el(s, fit(s, name, L"Font.2Small", Layout::side_column - 4), L"Font.2Small", color, Layout::people_x, y,
                      Layout::side_column - 4, 0);
         // The chosen side by its faction, in its colour; none chosen: any (the start gives a free one).
         const std::wstring side = p.side ? std::wstring(Factions::name(p.side, l == Language::Russian))
                                          : std::wstring(text(l, L"Any", L"\u041b\u044e\u0431\u0430\u044f"));
-        const uint32_t side_color = p.side ? Factions::colour(p.side) : text_color;
+        const uint32_t side_color = p.side ? Factions::colour(p.side) : text_color();
         constexpr int arrow = Layout::side_arrow;
         if (i == s.you) {
-            result += el(s, L"<", L"Font.2Normal", selected_color, Layout::people_x + Layout::side_column, y, arrow, 1);
-            result += el(s, L">", L"Font.2Normal", selected_color,
+            result += el(s, L"<", L"Font.2Normal", selected_color(), Layout::people_x + Layout::side_column, y, arrow, 1);
+            result += el(s, L">", L"Font.2Normal", selected_color(),
                          Layout::people_x + Layout::side_column + Layout::side_width - arrow, y, arrow, 1);
         }
         result += el(s, side, L"Font.2Small", side_color, Layout::people_x + Layout::side_column + arrow, y,
@@ -590,59 +653,63 @@ std::wstring hint_template(const Screen &s) {
         // The round trip to the host, as the host measures it: green while the shortest delay copes.
         if (i > 0) {
             const std::wstring ping = p.ping >= 0 ? std::to_wstring(p.ping) + text(l, L" ms", L" \u043c\u0441") : std::wstring(L"...");
-            const uint32_t ping_color = p.ping < 0 ? legend_color : p.ping < 120 ? ready_color : p.ping < 220 ? slow_color : error_color;
+            const uint32_t ping_color = p.ping < 0 ? legend_color() : p.ping < 120 ? ready_color() : p.ping < 220 ? slow_color() : error_color();
             result += el(s, ping, L"Font.2Small", ping_color, Layout::people_x + Layout::ping_column, y, Layout::ping_width, 0);
         }
         if (s.local) continue;  // nobody to wait for
         const wchar_t *ready = i == 0     ? text(l, L"host", L"\u0445\u043e\u0441\u0442")
                                : p.ready ? text(l, L"ready", L"\u0433\u043e\u0442\u043e\u0432")
                                          : text(l, L"wait", L"\u0436\u0434\u0451\u043c");
-        result += el(s, ready, L"Font.2Small", i > 0 && p.ready ? ready_color : legend_color,
+        result += el(s, ready, L"Font.2Small", i > 0 && p.ready ? ready_color() : legend_color(),
                      Layout::people_x + Layout::ready_column, y, Layout::people_width - Layout::ready_column, 0);
     }
 
     // This person's bonus and the host's AI economy.
-    result += el(s, text(l, L"Your bonus:", L"\u0412\u0430\u0448 \u0431\u043e\u043d\u0443\u0441:"), L"Font.2Small", text_color, Layout::people_x,
+    result += el(s, text(l, L"Your bonus:", L"\u0412\u0430\u0448 \u0431\u043e\u043d\u0443\u0441:"), L"Font.2Small", text_color(), Layout::people_x,
                  Layout::bonus_title_y, Layout::people_width, 0);
     const auto mine = s.you >= 0 && s.you < people(s) ? s.people[s.you].bonus : BattleChoice::Bonus::None;
     for (int i = 0; i < 3; ++i) {
         const auto bonus = static_cast<BattleChoice::Bonus>(i);
         const int y = Layout::bonus_y + i * Layout::row_height;
-        result += el(s, (bonus == mine ? L"(*) " : L"( ) ") + bonus_label(l, bonus), L"Font.2Small", selected_color,
+        result += el(s, (bonus == mine ? L"(*) " : L"( ) ") + bonus_label(l, bonus), L"Font.2Small", selected_color(),
                      Layout::people_x, y, 160, 0);
-        result += el(s, bonus_effect(l, bonus), L"Font.2Small", legend_color, Layout::people_x + 160, y,
+        result += el(s, bonus_effect(l, bonus), L"Font.2Small", legend_color(), Layout::people_x + 160, y,
                      Layout::people_width - 160, 0);
     }
     if (s.host) {
-        result += el(s, L"<", L"Font.2Normal", selected_color, Layout::people_x, Layout::ai_y, Layout::pager_width, 0);
-        result += el(s, L">", L"Font.2Normal", selected_color, Layout::people_x + Layout::people_width - Layout::pager_width,
+        result += el(s, L"<", L"Font.2Normal", selected_color(), Layout::people_x, Layout::ai_y, Layout::pager_width, 0);
+        result += el(s, L">", L"Font.2Normal", selected_color(), Layout::people_x + Layout::people_width - Layout::pager_width,
                      Layout::ai_y, Layout::pager_width, 0);
     }
-    result += el(s, ai_label(l, s.ai_resources), L"Font.2Small", text_color, Layout::people_x + Layout::pager_width,
+    result += el(s, ai_label(l, s.ai_resources), L"Font.2Small", text_color(), Layout::people_x + Layout::pager_width,
                  Layout::ai_y, Layout::people_width - 2 * Layout::pager_width, 1);
     if (!s.local) {  // a network's: the delay, and the address others join at
         // The battle's delay between an order and its execution: the host's choice, auto by the pings.
         if (s.host) {
-            result += el(s, L"<", L"Font.2Normal", selected_color, Layout::people_x, Layout::delay_y, Layout::pager_width, 0);
-            result += el(s, L">", L"Font.2Normal", selected_color, Layout::people_x + Layout::people_width - Layout::pager_width,
+            result += el(s, L"<", L"Font.2Normal", selected_color(), Layout::people_x, Layout::delay_y, Layout::pager_width, 0);
+            result += el(s, L">", L"Font.2Normal", selected_color(), Layout::people_x + Layout::people_width - Layout::pager_width,
                          Layout::delay_y, Layout::pager_width, 0);
         }
-        result += el(s, delay_label(l, s.delay, auto_delay_ms(s)), L"Font.2Small", text_color, Layout::people_x + Layout::pager_width,
+        result += el(s, delay_label(l, s.delay, auto_delay_ms(s)), L"Font.2Small", text_color(), Layout::people_x + Layout::pager_width,
                      Layout::delay_y, Layout::people_width - 2 * Layout::pager_width, 1);
 
-        result += el(s, s.host ? text(l, L"Others join at:", L"\u0410\u0434\u0440\u0435\u0441 \u0434\u043b\u044f \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f:") : text(l, L"Host:", L"\u0425\u043e\u0441\u0442:"),
-                     L"Font.2Small", text_color, Layout::people_x, Layout::address_y, Layout::people_width, 0);
+        result += el(s, s.host ? text(l, L"Join at:", L"\u0410\u0434\u0440\u0435\u0441:") : text(l, L"Host:", L"\u0425\u043e\u0441\u0442:"),
+                     L"Font.2Small", text_color(), Layout::people_x, Layout::address_y + 2, Layout::address_label_width, 0);
         // The host's addresses, a line each ("a:p, b:p").
         std::wstring_view addresses = s.address;
-        for (int line = 1; !addresses.empty() && line <= 4; ++line) {
+        for (int line = 0; !addresses.empty() && line < 4; ++line) {
             const auto comma = addresses.find(L", ");
-            result += el(s, std::wstring(addresses.substr(0, comma)), L"Font.2Normal", selected_color, Layout::people_x,
-                         Layout::address_y + line * Layout::row_height, Layout::people_width, 0);
+            result += el(s, std::wstring(addresses.substr(0, comma)), L"Font.2Normal", selected_color(),
+                         Layout::people_x + Layout::address_label_width, Layout::address_y + line * Layout::row_height,
+                         Layout::people_width - Layout::address_label_width, 0);
             addresses = comma == std::wstring_view::npos ? std::wstring_view{} : addresses.substr(comma + 2);
         }
+        // Personal mods: the host's switch and who plays with what.
+        for (const PersonalRow &row : personal_rows(s))
+            result += mod_row(s, s.mods[std::size_t(row.mod)], Layout::people_x, Layout::people_width, row.y);
     }
 
-    result += el(s, status(s), L"Font.2Small", status_is_error(s) ? error_color : text_color, Layout::list_x,
+    result += el(s, status(s), L"Font.2Small", status_is_error(s) ? error_color() : text_color(), Layout::list_x,
                  Layout::status_y, Layout::width - 2 * Layout::list_x, 0);
     const std::wstring arrows = s.mods_view ? text(l, L"Arrows: page.", L"\u0421\u0442\u0440\u0435\u043b\u043a\u0438: \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430.")
                                             : text(l, L"Arrows: map.", L"\u0421\u0442\u0440\u0435\u043b\u043a\u0438: \u043a\u0430\u0440\u0442\u0430.");
@@ -652,7 +719,7 @@ std::wstring hint_template(const Screen &s) {
                                              L" S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438. \u041a\u043b\u0438\u043a \u043f\u043e \u043d\u0438\u043a\u0443: \u0432\u044b\u0433\u043d\u0430\u0442\u044c")
                              : text(l, L"S: side. 1-3: bonus. Enter: ready. Esc: leave. List headers: order",
                                     L"S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. Enter: \u0433\u043e\u0442\u043e\u0432. Esc: \u0432\u044b\u0439\u0442\u0438. \u0417\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0438 \u0441\u043f\u0438\u0441\u043a\u0430: \u0441\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430"),
-                 L"Font.2Small", legend_color, Layout::list_x, Layout::legend_y, Layout::width - 2 * Layout::list_x, 0);
+                 L"Font.2Small", legend_color(), Layout::list_x, Layout::legend_y, Layout::width - 2 * Layout::list_x, 0);
 
     std::wstring primary;
     bool enabled = true;
@@ -667,22 +734,23 @@ std::wstring hint_template(const Screen &s) {
                   map_fine(s);
     }
     int on = 0;
-    for (const ModRow &m : s.mods) on += m.on ? 1 : 0;
+    for (int i = 0; i < battle_rows(s); ++i) on += s.mods[std::size_t(i)].on ? 1 : 0;  // battle mods (not the switch)
     result += el(s, s.mods_view ? std::wstring(text(l, L"( Maps )", L"( \u041a\u0430\u0440\u0442\u044b )"))
                                 : text(l, L"( Mods: ", L"( \u041c\u043e\u0434\u044b: ") + std::to_wstring(on) + L" )",
-                 L"Font.2Normal", mods_fine(s) ? selected_color : error_color, Layout::mods_x, Layout::buttons_y,
+                 L"Font.2Normal", mods_fine(s) ? selected_color() : error_color(), Layout::mods_x, Layout::buttons_y,
                  Layout::button_width, 1);
-    result += el(s, primary, L"Font.2Normal", enabled ? selected_color : disabled_color, Layout::primary_x,
+    result += el(s, primary, L"Font.2Normal", enabled ? selected_color() : disabled_color(), Layout::primary_x,
                  Layout::buttons_y, Layout::button_width, 1);
-    result += el(s, text(l, L"( Leave )", L"( \u0412\u044b\u0439\u0442\u0438 )"), L"Font.2Normal", selected_color, Layout::leave_x,
+    result += el(s, text(l, L"( Leave )", L"( \u0412\u044b\u0439\u0442\u0438 )"), L"Font.2Normal", selected_color(), Layout::leave_x,
                  Layout::buttons_y, Layout::button_width, 1);
     // The lines are centred on their place; the window makes their bitmaps (none in tests: no line). Without a
     // network nothing is under the AI's economy: no line there.
     for (std::size_t i = 0; i < separators().size(); ++i) {
-        if (s.local && i == 5) continue;
+        if (s.local && (i == 5 || i == 8)) continue;
         const Line &line = separators()[i];
+        const int y = i == 8 ? personal_line_y(s) : line.y;  // under the addresses, as many as there are
         result += L"|_POS:" + std::to_wstring(px(s, line.x) - (line.vertical ? 1 : 0)) + L":" +
-                  std::to_wstring(px(s, line.y) - (line.vertical ? 0 : 1)) + L"|_BITMAP:" + line_bitmap(int(i)) + L":B";
+                  std::to_wstring(px(s, y) - (line.vertical ? 0 : 1)) + L"|_BITMAP:" + line_bitmap(int(i)) + L":B";
     }
     return result;
 }
@@ -724,23 +792,23 @@ std::wstring join_error_text(Language l, JoinError error) {
 std::wstring join_template(const JoinScreen &s) {
     const Language l = s.language;
     std::wstring result = frame(px(s.scale, JoinLayout::width), px(s.scale, JoinLayout::content_height));
-    result += el(s.scale, text(l, L"Join a network battle", L"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f \u043a \u0431\u043e\u044e"), L"Font.2Ranger", text_color, 0,
+    result += el(s.scale, text(l, L"Join a network battle", L"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f \u043a \u0431\u043e\u044e"), L"Font.2Ranger", text_color(), 0,
                            Layout::title_y, JoinLayout::width, 1);
     result += el(s.scale, text(l, L"Host address (IP or IP:port):", L"\u0410\u0434\u0440\u0435\u0441 \u0445\u043e\u0441\u0442\u0430 (IP \u0438\u043b\u0438 IP:\u043f\u043e\u0440\u0442):"), L"Font.2Small",
-                           text_color, 40, 70, JoinLayout::width - 80, 0);
-    result += el(s.scale, s.address + (s.connecting ? L"" : L"_"), L"Font.2Normal", selected_color, 40, JoinLayout::field_y,
+                           text_color(), 40, 70, JoinLayout::width - 80, 0);
+    result += el(s.scale, s.address + (s.connecting ? L"" : L"_"), L"Font.2Normal", selected_color(), 40, JoinLayout::field_y,
                            JoinLayout::width - 80, 0);
     result += el(s.scale, text(l, L"Digits, dots and a colon. Ctrl+V pastes.", L"\u0426\u0438\u0444\u0440\u044b, \u0442\u043e\u0447\u043a\u0438 \u0438 \u0434\u0432\u043e\u0435\u0442\u043e\u0447\u0438\u0435. Ctrl+V: \u0432\u0441\u0442\u0430\u0432\u0438\u0442\u044c."),
-                           L"Font.2Small", legend_color, 40, 122, JoinLayout::width - 80, 0);
+                           L"Font.2Small", legend_color(), 40, 122, JoinLayout::width - 80, 0);
     if (s.connecting)
-        result += el(s.scale, text(l, L"Connecting...", L"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u043c\u0441\u044f..."), L"Font.2Small", text_color, 40, JoinLayout::status_y,
+        result += el(s.scale, text(l, L"Connecting...", L"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u043c\u0441\u044f..."), L"Font.2Small", text_color(), 40, JoinLayout::status_y,
                                JoinLayout::width - 80, 0);
     else if (s.error != JoinError::None)
-        result += el(s.scale, join_error_text(l, s.error), L"Font.2Mini", error_color, 40, JoinLayout::status_y,
+        result += el(s.scale, join_error_text(l, s.error), L"Font.2Mini", error_color(), 40, JoinLayout::status_y,
                                JoinLayout::width - 80, 0);
-    result += el(s.scale, text(l, L"( Connect )", L"( \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f )"), L"Font.2Normal", s.connecting ? disabled_color : selected_color,
+    result += el(s.scale, text(l, L"( Connect )", L"( \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f )"), L"Font.2Normal", s.connecting ? disabled_color() : selected_color(),
                            JoinLayout::connect_x, JoinLayout::buttons_y, JoinLayout::button_width, 1);
-    result += el(s.scale, text(l, L"( Back )", L"( \u041d\u0430\u0437\u0430\u0434 )"), L"Font.2Normal", selected_color, JoinLayout::back_x,
+    result += el(s.scale, text(l, L"( Back )", L"( \u041d\u0430\u0437\u0430\u0434 )"), L"Font.2Normal", selected_color(), JoinLayout::back_x,
                            JoinLayout::buttons_y, JoinLayout::button_width, 1);
     return result;
 }
@@ -757,20 +825,20 @@ int name_hit(const NameScreen &s, int x, int y) {
 std::wstring name_template(const NameScreen &s) {
     const Language l = s.language;
     std::wstring result = frame(px(s.scale, JoinLayout::width), px(s.scale, JoinLayout::content_height));
-    result += el(s.scale, text(l, L"Your name", L"\u0412\u0430\u0448 \u043d\u0438\u043a"), L"Font.2Ranger", text_color, 0, Layout::title_y,
+    result += el(s.scale, text(l, L"Your name", L"\u0412\u0430\u0448 \u043d\u0438\u043a"), L"Font.2Ranger", text_color(), 0, Layout::title_y,
                            JoinLayout::width, 1);
     result += el(s.scale, s.forced ? text(l, L"Choose the name other players will see:", L"\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043d\u0438\u043a, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u0443\u0432\u0438\u0434\u044f\u0442 \u0434\u0440\u0443\u0433\u0438\u0435 \u0438\u0433\u0440\u043e\u043a\u0438:")
                                     : text(l, L"The name other players see:", L"\u041d\u0438\u043a, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u0432\u0438\u0434\u044f\u0442 \u0434\u0440\u0443\u0433\u0438\u0435 \u0438\u0433\u0440\u043e\u043a\u0438:"),
-                           L"Font.2Small", text_color, 40, 70, JoinLayout::width - 80, 0);
-    result += el(s.scale, s.name + L"_", L"Font.2Normal", selected_color, 40, JoinLayout::field_y, JoinLayout::width - 80, 0);
+                           L"Font.2Small", text_color(), 40, 70, JoinLayout::width - 80, 0);
+    result += el(s.scale, s.name + L"_", L"Font.2Normal", selected_color(), 40, JoinLayout::field_y, JoinLayout::width - 80, 0);
     result += el(s.scale, text(l, L"2 to 16 letters, digits, _ and -", L"\u041e\u0442 2 \u0434\u043e 16 \u0437\u043d\u0430\u043a\u043e\u0432: \u0431\u0443\u043a\u0432\u044b, \u0446\u0438\u0444\u0440\u044b, _ \u0438 -"),
-                           L"Font.2Small", legend_color, 40, 122, JoinLayout::width - 80, 0);
+                           L"Font.2Small", legend_color(), 40, 122, JoinLayout::width - 80, 0);
     const bool valid = PlayerName::valid(s.name);
-    result += el(s.scale, text(l, L"( Save )", L"( \u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c )"), L"Font.2Normal", valid ? selected_color : disabled_color,
+    result += el(s.scale, text(l, L"( Save )", L"( \u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c )"), L"Font.2Normal", valid ? selected_color() : disabled_color(),
                            s.forced ? (JoinLayout::width - JoinLayout::button_width) / 2 : JoinLayout::connect_x,
                            JoinLayout::buttons_y, JoinLayout::button_width, 1);
     if (!s.forced)
-        result += el(s.scale, text(l, L"( Cancel )", L"( \u041e\u0442\u043c\u0435\u043d\u0430 )"), L"Font.2Normal", selected_color,
+        result += el(s.scale, text(l, L"( Cancel )", L"( \u041e\u0442\u043c\u0435\u043d\u0430 )"), L"Font.2Normal", selected_color(),
                                JoinLayout::back_x, JoinLayout::buttons_y, JoinLayout::button_width, 1);
     return result;
 }

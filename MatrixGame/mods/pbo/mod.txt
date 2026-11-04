@@ -1,0 +1,18 @@
+# LiftSight: robots on a base's lift see the enemies in reach and are seen (the original ignored them there).
+# CaptureLift: a capturer rides the lift down when something else closed it (it stood in the air).
+# DriveReachReset: a robot its driver left loses the reach bonus too (the original kept it).
+Name=Planetary Battles Online
+NameEn=Planetary Battles Online
+Description=Исправления Planetary Battles Online.
+Description=- Роботы на лифте базы видят врагов в пределах дальности и видны им (в оригинале на лифте их не замечали).
+Description=- Захватчик базы едет на лифте вниз, даже если лифт закрыл кто-то другой (в оригинале он зависал в воздухе).
+Description=- Робот, которого покинул водитель, теряет и бонус дальности за ручное управление.
+DescriptionEn=Fixes of Planetary Battles Online.
+DescriptionEn=- Robots on a base's lift see the enemies within reach and are seen (the original ignored them there).
+DescriptionEn=- A capturer rides the lift down even when something else closed it (it stood in the air).
+DescriptionEn=- A robot its driver left loses the manual control's reach bonus too.
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=pbo.dll
+Switches=LiftSight,CaptureLift,DriveReachReset

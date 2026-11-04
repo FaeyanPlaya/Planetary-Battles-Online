@@ -1,0 +1,23 @@
+# SR2Balance: the values Universe's PBSR2Balance (by Klaxons) brings back from Space Rangers 2, over the
+# data's (HD's): the machine gun, cannon, missile launcher and repairer fire every 70, 500, 1000 and 27 ms
+# (55, 400, 1500, 20), a cannon's and a missile launcher's shot heat 20% and 50% (16%, 75%), the mortar
+# hurts a turret 30 (50), the blocker head adds 30 hit points (50), the firewall head costs 40 plasma (50)
+# and the missile launcher 10 electronics (20). Resources stay the map's. Data only:
+# data.txt here, laid over the game's data for the battle (ModData).
+Name=Баланс КР2
+NameEn=SR2 balance
+Description=Баланс оружия и модулей как в «Космических рейнджерах 2», как в PBSR2Balance для Universe (автор Klaxons).
+Description=- Пулемёт, пушка, ракетница и ремонтник стреляют раз в 70, 500, 1000 и 27 мс (в HD 55, 400, 1500 и 20).
+Description=- Выстрел пушки греет на 20%, ракетницы — на 50% (в HD 16% и 75%).
+Description=- Миномёт бьёт турель на 30 (в HD 50).
+Description=- Голова «Блокиратор» даёт 30 прочности (в HD 50), «Фаервол» стоит 40 плазмы (в HD 50), ракетница — 10 электроники (в HD 20).
+Description=- Ресурсы на картах не меняются.
+DescriptionEn=Weapons and modules as in Space Rangers 2, as Universe's PBSR2Balance (by Klaxons).
+DescriptionEn=- The machine gun, cannon, missile launcher and repairer fire every 70, 500, 1000 and 27 ms (HD: 55, 400, 1500, 20).
+DescriptionEn=- A cannon's shot heats 20%, a missile launcher's 50% (HD: 16%, 75%).
+DescriptionEn=- The mortar hurts a turret 30 (HD: 50).
+DescriptionEn=- The Blocker head adds 30 hit points (HD: 50), the Firewall costs 40 plasma (HD: 50), the missile launcher 10 electronics (HD: 20).
+DescriptionEn=- The maps' resources are unchanged.
+Author=Planetary Battles Online, по PBSR2Balance для Universe (Klaxons)
+Kind=battle
+Default=on

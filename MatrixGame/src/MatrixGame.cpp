@@ -6,6 +6,7 @@
 // MatrixGame.cpp : Defines the entry point for the application.
 
 #include "CStorage.hpp"
+#include "UiTheme.hpp"
 #include "CFile.hpp"
 
 #include "MatrixGame.h"
@@ -45,6 +46,8 @@
 #include "GameData.hpp"
 #include "BattleStats.hpp"
 #include "MapMetadata.hpp"
+#include "CrashReport.hpp"
+#include "ModData.hpp"
 #include "SettingsModel.hpp"
 #include <cwctype>
 #include "MatrixGamePathUtils.hpp"
@@ -278,6 +281,7 @@ bool Session::cleanup_standalone(CFormMatrixGame *&form, bool &timer_active) noe
         [&] { if (form) { HDelete(CFormMatrixGame, form, nullptr); form = nullptr; } },
         [] { CGame::Deinit(); },
         [] { if (g_Cache) g_Cache->Clear(); },
+        [] { Text::Shutdown(); },
         [] { L3GDeinit(); },
         [] { CacheDeinit(); },
         [] { CMain::BaseDeInit(); },
@@ -469,6 +473,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
     }
 #ifdef BUILD_EXE
     auto standalone = StandaloneSettings::load();
+    UiTheme::choose(standalone.values.theme);
     for (const auto &key : standalone.invalid) lgr.error("Invalid {} in CFG/standalone.txt; using its default")(key);
     StandaloneSettings::apply_startup(standalone.values, settings);
     std::wstring remembered_map;
@@ -508,12 +513,14 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
 
     g_Config.SetDefaults();
     g_Config.ReadParams();
-    // The person's keys (the settings' keys page) over the game's.
+    // The person's keys (the settings' keys page) over the game's; the installed mods give theirs first.
+    Mods::installed();
     KeyBindings::set_base(g_Config.m_KeyActions);
     {
         std::vector<std::string> invalid;
         const auto keys = KeyBindings::load(KeyBindings::file, KeyBindings::base(), &invalid);
         std::copy(keys.begin(), keys.end(), g_Config.m_KeyActions);
+        KeyBindings::set_mod_keys(keys.mods);
         for (const auto &id : invalid) lgr.warning("CFG/keys.txt: {} left out")(id);
     }
 
@@ -585,12 +592,29 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
         const auto personal = standalone.values.personal_mods ? *standalone.values.personal_mods
                                                               : Mods::default_personal(Mods::installed());
         std::string missing, skipped;
+        Mods::set_verified_only(BattleRules::verified_personal());  // the lobby host's choice, the whole battle
         if (!Mods::apply(BattleRules::mods(), personal, missing, skipped))
             throw std::runtime_error("The battle needs mods this PC does not have: " + missing);
-        if (!skipped.empty()) lgr.warning("Personal mods not installed: {}")(skipped);
+        if (!skipped.empty()) lgr.warning("Personal mods left out (not installed, or not built in): {}")(skipped);
         SetViewScale(Mods::view_scale());  // the far view
-        g_Config.ApplyBalance();
-        lgr.notice("Battle mods: {}; personal mods: {}")(Mods::join(BattleRules::mods()), Mods::join(personal));
+        // The battle mods' data (data.txt: SR2 balance, Help from above) laid over the game's, the battle's values
+        // read again; without them the game's own (the last battle's are taken off first).
+        std::vector<std::filesystem::path> data;
+        std::string with_data;
+        for (const auto &mod : Mods::installed())
+            if (mod.kind == Mods::Kind::Battle && Mods::on(mod.id) &&
+                std::filesystem::is_regular_file(mod.folder / ModData::file_name)) {
+                data.push_back(mod.folder / ModData::file_name);
+                with_data += (with_data.empty() ? "" : ",") + mod.id;
+            }
+        if (!ModData::apply(*g_MatrixData, data))
+            lgr.warning("A battle mod's data.txt cannot be read; left out");
+        g_Config.ReadBattleParams();
+        if (!with_data.empty()) lgr.notice("Battle mods' data: {}")(with_data);
+        std::vector<std::string> personal_on;  // those not left out
+        for (const auto &id : personal)
+            if (Mods::on(id)) personal_on.push_back(id);
+        lgr.notice("Battle mods: {}; personal mods: {}")(Mods::join(BattleRules::mods()), Mods::join(personal_on));
     }
 #endif
     g_MatrixMap = HNew(g_MatrixHeap) CMatrixMapLogic;
@@ -1109,6 +1133,14 @@ void CGame::RunGameLoop(CFormMatrixGame *formgame) {
         L3GRun();
     }
     catch (... /*ExceptionHandler(GetExceptionInformation())*/) {
+        // It ended the game without a word: crash.txt and the log say what it was.
+        try {
+            const auto what = CrashReport::current_exception();
+            CrashReport::exception(what.c_str());
+            lgr.error("The game loop ended on an exception: {}")(what);
+        }
+        catch (...) {
+        }
         SETFLAG(g_Flags, GFLAG_EXITLOOP);
         g_ExitState += 100;
     }

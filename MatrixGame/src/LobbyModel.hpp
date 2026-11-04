@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Lobby.hpp"
+#include "ModInfo.hpp"
 #include "SettingsModel.hpp"
 
 #include <functional>
@@ -60,7 +61,11 @@ struct Layout {
     static constexpr int bonus_y = 214;
     static constexpr int ai_y = 298;
     static constexpr int delay_y = 322;   // the battle's delay: the host's < >
-    static constexpr int address_y = 358;
+    static constexpr int address_y = 358;  // "Host:" and the address right of it; the host's further ones under it
+    static constexpr int address_label_width = 96;
+    // Under the addresses, past a line: the host's switch "only built-in personal mods", then a row per person with
+    // their own mods (the rows that fit above the status' line).
+    static constexpr int personal_bottom = 500;
     static constexpr int status_y = 508;
     static constexpr int legend_y = 532;
     static constexpr int buttons_y = 566;
@@ -68,8 +73,10 @@ struct Layout {
     static constexpr int primary_x = 455;
     static constexpr int leave_x = 705;
     static constexpr int button_width = 160;
-    static constexpr int mod_rows = 3;  // a mod in the list: its name, then two lines of its description
-    static constexpr int toggle_size = 16;  // a mod's switch, right of its name: a round button, lit when on
+    static constexpr int mod_rows = 1;  // a mod in the list: its name, its "i" and its switch (SR HD's mods menu)
+    static constexpr int toggle_size = 17;  // a mod's switch, at the row's right: a round button, lit when on
+    static constexpr int info_size = 20;    // its "i", left of the switch: the mod's window (ModInfo)
+    static constexpr int info_x = list_x + list_width - toggle_size - 6 - info_size;
 };
 
 // A length of the grid in pixels at this scale.
@@ -85,11 +92,19 @@ struct MapRow {
 // The map list's order, chosen by its column headers.
 enum class MapSort { Name, People };
 
-// A battle mod in the lobby's list: the host's installed ones; a client's, with those the host chose that it lacks.
+// A row of the lobby's mods: a battle mod (the host's installed ones; a client's, with those the host chose that it
+// lacks), in the list's place; then, under the addresses (personal_rows), the host's switch "only built-in personal
+// mods" (with it on, the battle leaves out the others: Mods::set_verified_only) and one row of everyone's own mods.
 struct ModRow {
-    std::wstring name, description;
-    bool on = false;  // the host chose it for the battle
-    enum class Problem { None, Missing, Differs } problem = Problem::None;  // a client's copy of a mod that is on
+    std::wstring name, description;  // the people's row: its title, and a line a person: their name and mods' names
+    bool on = false;  // a battle mod the host chose; the built-in switch on
+    // Missing, Differs: a client's copy of a battle mod that is on; Conflict: a battle mod on with one it cannot be on
+    // with (Screen::conflicts).
+    enum class Problem { None, Missing, Differs, Conflict } problem = Problem::None;
+    enum class Kind { Battle, Verified, People } kind = Kind::Battle;
+    std::wstring author{};                         // a battle mod's, for its window
+    std::vector<std::wstring> depends{}, conflicts{};  // a battle mod's: the names of what it needs and cannot be on with
+    std::string id{};                                  // a battle mod's
 };
 
 // Separator lines between the lobby's parts (the game's statistics lines, stretched).
@@ -100,6 +115,7 @@ struct Line {
 const std::vector<Line> &separators();
 std::wstring line_bitmap(int index);  // the runtime bitmap name of separators()[index]
 std::wstring toggle_bitmap(bool on);   // the runtime bitmap name of a mod's switch (Layout::toggle_size square)
+std::wstring info_bitmap();            // of a mod's "i" (Layout::info_size square)
 
 // Why this PC cannot play the lobby's map.
 struct MapProblem {
@@ -137,6 +153,8 @@ struct Screen {
     int auto_delay = 0;        // Lobby::State::auto_delay: ms, 0 measuring
     bool dropped_ai = true;    // Lobby::State::dropped_ai
     std::vector<ModRow> mods;
+    // The names of mods on that cannot be on together (the battle's, and this person's own): no start, no ready.
+    std::vector<std::pair<std::wstring, std::wstring>> conflicts{};
     bool mods_view = false;    // the list shows the mods
     int mods_page = 0;
     double scale = 1;          // pixels per unit of Layout
@@ -159,11 +177,21 @@ Fitted fit_row(const Screen &screen, const std::wstring &text, int width);
 bool offered(const Screen &screen, int index);
 // The host starts once everyone is ready; the lobby without a network, at once.
 bool can_start(const Screen &screen);
-// A client has every mod the host chose, the same as the host's.
+// A client has every mod the host chose, the same as the host's, and no own mod the lobby refuses; the host: nobody
+// has one.
 bool mods_fine(const Screen &screen);
 // This PC has the map's map mod (the host's) and every file the map names.
 bool map_fine(const Screen &screen);
 int mods_page_count(const Screen &screen);
+// The battle mods' rows: the first of Screen::mods.
+int battle_rows(const Screen &screen);
+// The personal block under the addresses (none without a network): the line over it, and its rows, each a row of
+// Screen::mods (mod) at y.
+int personal_line_y(const Screen &screen);
+struct PersonalRow {
+    int mod, y;
+};
+std::vector<PersonalRow> personal_rows(const Screen &screen);
 // The mods' page `delta` pages on from the one shown, within the list.
 int mods_page_moved(const Screen &screen, int delta);
 // Two people or more chose one side: the start draws who keeps it.
@@ -185,11 +213,14 @@ struct Hit {
     int sort = -1;   // a list header: the order it chooses (MapSort)
     int action = 0;  // 1 the primary button (start, ready), -1 leave, 2 the mods' button
     int mod = -1;    // the mods' list: a mod's rows (index into Screen::mods)
+    bool info = false;  // with mod: its "i", which opens its window
     int person = -1; // the host: a client's name (asks whether to send them away)
     int kick = 0;    // the host, in the asking row: 1 send away, -1 not
     int delay = 0;   // -1 or +1: a delay arrow
 };
 Hit hit(const Screen &screen, int x, int y);
+// The window a mod's "i" opens (Screen::mods[mod]).
+ModInfo::Info mod_info(const Screen &screen, int mod);
 
 std::wstring status(const Screen &screen);
 bool status_is_error(const Screen &screen);

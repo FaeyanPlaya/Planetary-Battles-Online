@@ -3,12 +3,18 @@
 
 #include "StandaloneSettings.hpp"
 #include "KeyBindings.hpp"
+#include "Mods.hpp"
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
 // Device-independent state, text and geometry of the in-game settings window.
+namespace ModInfo {
+struct Info;
+struct Question;
+}
+
 namespace SettingsModel {
 
 enum class Language { English, Russian };
@@ -22,6 +28,7 @@ enum class Row {
     Resolution,
     WindowMode,
     FullscreenMode,
+    Theme,           // the windows' look: as Windows', light, dark (UiTheme)
     SoundGroup,
     SoundVolume,
     MusicVolume,
@@ -37,7 +44,7 @@ enum class Row {
     Keys,            // opens the keys page (18, key rebinding)
     Mods,            // opens the mods page, this person's own mods (the rows after it)
     FarView,         // farview and its scale
-    InterfaceFixes,  // interface
+    InterfaceFixes,  // interface (a mod of the mods folder): grey and Off while it is not there
     FirstPerson,     // firstperson
     NewSky,          // newsky: grey and Off while the game lacks PBNewSky
     SavedDesigns,    // how many designs built are kept between battles (the engine's, not a mod)
@@ -45,7 +52,8 @@ enum class Row {
 };
 
 constexpr int row_count = static_cast<int>(Row::Count);
-// The main page has the rows up to Mods, the mods page the rest; the window is main_rows high on every page.
+// The main page has the rows up to Mods, the mods page the rest (and the rows of the mods folder's personal mods,
+// numbered from row_count: Window); the window is main_rows high on every page.
 constexpr int main_rows = static_cast<int>(Row::Mods) + 1;
 constexpr int mods_first = static_cast<int>(Row::FarView);
 
@@ -67,6 +75,11 @@ struct Layout {
     static constexpr int value_width = 136;
     static constexpr int next_x = 404;  // ">" marker; the right half of the value cell steps forward.
     static constexpr int cell_right = 420;
+    // A mod row's switch (in the value cell's middle) and its "i" just left of it, as the lobby's: SR HD's mods menu's
+    // buttons. The mods page has no arrows (a click on the value's halves steps it, as everywhere).
+    static constexpr int button_size = 16;
+    static constexpr int switch_x = value_x + (value_width - button_size) / 2;
+    static constexpr int info_x = switch_x - 6 - button_size;
     static constexpr int legend_y = first_row_y + main_rows * row_height + 5;
     static constexpr int content_height = legend_y + row_height;  // (a failed save's text in the legend's place)
 };
@@ -74,7 +87,12 @@ struct Layout {
 struct Hit {
     int row = -1;       // Option row under the point, or -1.
     int direction = 0;  // -1 or +1 when the value cell was hit, otherwise 0.
+    bool info = false;  // the row's "i": its mod's window (ModInfo)
 };
+
+// The runtime bitmap names of a mod row's switch and "i" (Layout::button_size square; SettingsWindow makes them).
+std::wstring switch_bitmap(bool on);
+std::wstring info_bitmap();
 
 bool is_group(int row);
 bool mods_row(int row);
@@ -83,7 +101,7 @@ bool opener(int row);
 bool needs_restart(int row);
 // A battle shared by several people keeps its rules: rule rows then apply from the next battle.
 void lock_battle_rules(bool locked);
-// On the main page or the mods page (rows by their place on their page).
+// On the main page or the mods page (rows by their place on their page, without the mods folder's: Window::hit).
 Hit hit(int x, int y, bool mods_page = false);
 int row_top(int row);
 
@@ -98,22 +116,28 @@ public:
     // default_personal: the personal mods of a person who never chose (PersonalMods=Default); unavailable: personal
     // mods whose files this PC lacks (their rows grey, Off and fixed; the choice kept for when they are back).
     // keys: the person's keys now (the keys page changes them; base: the game's, what Del puts back).
+    // mods: the installed ones (the personal mods of the mods folder get rows on the mods page); mod_settings: the
+    // person's values of their settings now.
     Window(StandaloneSettings::Values values, std::vector<Resolution> resolutions, Language language,
            std::vector<std::string> default_personal = {}, std::vector<std::string> unavailable = {},
-           KeyBindings::Keys keys = KeyBindings::base(), KeyBindings::Keys base = KeyBindings::base());
+           KeyBindings::Keys keys = KeyBindings::base(), KeyBindings::Keys base = KeyBindings::base(),
+           const std::vector<Mods::Mod> &mods = {}, Mods::SettingValues mod_settings = {});
 
     const StandaloneSettings::Values &values() const { return m_Values; }
-    bool changed() const { return m_Values != m_Original || m_Keys != m_KeysOriginal; }
+    bool changed() const { return m_Values != m_Original || m_Keys != m_KeysOriginal || mod_settings_changed(); }
     const KeyBindings::Keys &keys() const { return m_Keys; }
     bool keys_changed() const { return m_Keys != m_KeysOriginal; }
+    const Mods::SettingValues &mod_settings() const { return m_ModSettings; }
+    bool mod_settings_changed() const { return m_ModSettings != m_ModSettingsOriginal; }
 
-    // The keys page (Row::Keys opens it): a row per action under its group's, then one that puts back all the
-    // game's keys; key_rows_shown of them at a time, scrolled to the selected one.
+    // The keys page (Row::Keys opens it): a row per action under its group's (the engine's, then the mods' of
+    // KeyBindings::mod_actions as the window opens), then one that puts back all the game's keys; key_rows_shown of
+    // them at a time, scrolled to the selected one.
     static constexpr int key_rows_shown = main_rows;
-    static int key_row_count();
-    static bool key_group(int row);
+    int key_row_count() const { return int(m_KeyRows.size()); }
+    bool key_group(int row) const;
     // An action's row or the last (not a group's, not the empty one before the last).
-    static bool key_selectable(int row);
+    bool key_selectable(int row) const;
     bool keys_page() const { return m_KeysPage; }
     void close_keys();
     int key_selected() const { return m_KeySelected; }
@@ -140,9 +164,37 @@ public:
     // The keys page's row under a point of the window, or -1.
     int key_hit(int x, int y) const;
 
-    // The mods page (Row::Mods opens it; Esc back to the main page, its Mods row selected).
+    // The mods page (Row::Mods opens it; Esc back to the main page, its Mods row selected): the built-in personal
+    // mods' rows, then for each personal mod of the mods folder a row (its name; grey when it cannot be used) and one
+    // per setting of it, then Saved designs; scrolled as the keys page when they are more than fit.
     bool mods_page() const { return m_ModsPage; }
     void close_mods();
+    const std::vector<int> &mods_rows() const { return m_ModsOrder; }
+    static constexpr int mods_rows_shown = main_rows;
+    int mods_top() const { return m_ModsTop; }
+    void mods_scroll(int rows);
+    bool mods_more_above() const { return m_ModsTop > 0; }
+    bool mods_more_below() const { return m_ModsTop + mods_rows_shown < int(m_ModsOrder.size()); }
+    // A row of a mods folder's mod's setting (drawn further in).
+    bool setting_row(int row) const;
+    // A mod's own row (Far view, Interface fixes, First person, HD sky, a mods folder's mod): it has an "i".
+    bool info_row(int row) const;
+    // A mod's row that is on or off (all of them but Far view, which has its scales): a switch, no arrows.
+    bool switch_row(int row) const;
+    bool switched_on(int row) const;
+    // The window a row's "i" opens.
+    ModInfo::Info info(int row) const;
+    // A mod switched on that needs personal mods that are off is not switched yet: the window asks question(), then
+    // answer() switches it on with them (yes) or leaves it off (no).
+    bool asking() const { return !m_Asking.empty(); }
+    ModInfo::Question question() const;
+    void answer(bool yes);
+    // A mod's row on with a personal mod it cannot be on with (red; a battle does not start: the lobby says so).
+    bool conflicting(int row) const;
+    // The row under a point of the window on the page shown (as SettingsModel::hit).
+    Hit hit(int x, int y) const;
+    // A row's top on the page shown.
+    int top(int row) const;
 
     int selected() const { return m_Selected; }
     // An option row that can be selected and changed (not one of a mod this PC lacks).
@@ -180,9 +232,40 @@ private:
     bool m_Capturing = false;
     int m_KeySelected = 1;  // the first action (row 0 is its group's)
     int m_KeyTop = 0;
+    // The keys page's rows: a group's, an engine action's (its index in KeyBindings::actions()), a mod's (in
+    // m_ModActions), an empty one and the last, all keys back.
+    struct KeyRow {
+        int action = -1;
+        int mod = -1;
+        int group = -1;
+        bool blank = false;
+    };
+    std::vector<KeyRow> m_KeyRows;
+    std::vector<KeyBindings::ModAction> m_ModActions;
+    // The mods folder's personal mods; their rows (row_count + index): a mod's own (setting -1) or a setting's.
+    struct FolderRow {
+        int mod;
+        int setting;
+    };
+    std::vector<Mods::Mod> m_Mods;
+    std::vector<Mods::Mod> m_Installed;  // all of them: the windows of the mods' rows name what they need
+    std::vector<FolderRow> m_FolderRows;
+    std::vector<int> m_ModsOrder;  // the mods page's rows in order
+    int m_ModsTop = 0;
+    Mods::SettingValues m_ModSettings, m_ModSettingsOriginal;
+
+    std::string m_Asking;  // the mod a question is about (asking)
 
     bool personal(const char *id) const;
+    std::string row_mod(int row) const;  // the mod a row is (info_row); empty: none
+    std::vector<std::string> personal_on() const;
+    std::vector<Mods::Mod> personal_mods() const;  // the installed personal mods (what they need, what they conflict)
+    void switch_mod(const std::string &id);
     void set_personal(const char *id, bool on);
+    bool option(int row) const;
+    void mods_show(int row);
+    int key_of(const KeyRow &row, const KeyBindings::Keys &keys) const;
+    void set_key(const KeyRow &row, int key);
 
     const wchar_t *text(const wchar_t *english, const wchar_t *russian) const;
 };

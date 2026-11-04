@@ -11,6 +11,7 @@
 namespace {
 
 Text::FontCache *fontCache = nullptr;
+std::unique_ptr<Text::FontCache> ownedCache;
 
 LPD3DXFONT loadFont(IDirect3DDevice9* device, std::wstring_view name, size_t size)
 {
@@ -133,13 +134,20 @@ size_t Font::CalcTextWidth(std::wstring_view text) const
 Font& GetFont(IDirect3DDevice9* device, std::wstring_view font_name)
 {
     // Preserve first-use initialization; notifications must not create unused fonts.
-    static const auto cache = [device] {
-        prepareRangersFont();
-        auto result = std::make_unique<FontCache>(device, loadFont, makeFont);
-        fontCache = result.get();
-        return result;
-    }();
-    return cache->Get(font_name);
+    if (!ownedCache)
+    {
+        static const bool prepared = (prepareRangersFont(), true);
+        (void)prepared;
+        ownedCache = std::make_unique<FontCache>(device, loadFont, makeFont);
+        fontCache = ownedCache.get();
+    }
+    return ownedCache->Get(font_name);
+}
+
+void Shutdown()
+{
+    fontCache = nullptr;
+    ownedCache.reset();
 }
 
 void OnLostDevice()

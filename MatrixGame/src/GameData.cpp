@@ -421,7 +421,13 @@ const std::string &data_fingerprint() {
 }
 
 const std::string &build_fingerprint() {
-    static const std::string value = hex(hash_file(Startup::ExecutablePath()));
+    // The EXE is a stub over PBOEngine.dll beside it, which has the code (the DLL host's build has no such DLL).
+    static const std::string value = [] {
+        const auto exe = Startup::ExecutablePath();
+        std::uint64_t h = hash_file(exe);
+        if (const auto engine = exe.parent_path() / L"PBOEngine.dll"; file_exists(engine)) h = hash_file(engine, h);
+        return hex(h);
+    }();
     return value;
 }
 

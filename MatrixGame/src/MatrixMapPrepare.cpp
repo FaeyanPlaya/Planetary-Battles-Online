@@ -22,6 +22,7 @@
 #include "MapPacks.hpp"
 #include "CFile.hpp"
 #include "Mods.hpp"
+#include "ModHooks.hpp"
 
 #include <stupid_logger.hpp>
 
@@ -1119,9 +1120,8 @@ int CMatrixMap::PrepareMap(CStorage &stor, const std::wstring &mapname) {
         if (g_Config.m_SkyBox != 0) {
             // NewSky: PBNewSky's sides of this sky (at 2048, their rectangles too), each one whose texture is there.
             std::map<std::wstring, std::wstring> sides;
-            if (Mods::switches().new_sky)
-                if (const auto folder = MapPacks::new_sky_folder(); !folder.empty())
-                    sides = MapPacks::new_sky(folder, propval->GetAsWStr(ic));
+            if (const auto hook = ModHooks::hooks().sky_sides; Mods::switches().new_sky && hook)
+                sides = hook(propval->GetAsWStr(ic));
             for (int idx = 0; idx < 4; ++idx) {
                 if (idx == 0)
                     skyname = L"Fore";

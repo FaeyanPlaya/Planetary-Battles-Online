@@ -1379,6 +1379,7 @@ Start lobby_start(const Lobby::State &state, const std::vector<int> &sides, cons
     start.rules.dropped_ai = state.dropped_ai;
     start.rules.mods.clear();
     for (const Lobby::ModRef &mod : state.mods) start.rules.mods.push_back(mod.id);
+    start.rules.verified_personal = state.verified_only;
     start.rules.bonus.fill(BattleChoice::Bonus::None);
     for (std::size_t i = 0; i < sides.size() && i < state.people.size(); ++i) {
         start.rules.bonus[sides[i] - 1] = state.people[i].bonus;

@@ -26,7 +26,7 @@ constexpr std::array keys{L"RandomGenerator", L"ResolutionWidth", L"ResolutionHe
                           L"Skybox",          L"RobotShadows",    L"CameraSpeed",      L"DelayedDamage",
                           L"Map",             L"GroupCounts",      L"BattleBonus",      L"PlaceContainment",
                           L"ZeroXTrace",      L"MusicVolume",      L"Mods",             L"PersonalMods",
-                          L"FarViewScale",    L"SavedDesigns"};
+                          L"FarViewScale",    L"SavedDesigns",     L"Theme"};
 
 std::optional<std::wstring> single(const Base::CBlockPar &options, const wchar_t *key) {
     if (options.ParCount(key) != 1) return std::nullopt;
@@ -49,6 +49,13 @@ std::optional<int> percent(const std::wstring &value, int minimum, int maximum) 
 std::optional<bool> boolean(const std::wstring &value) {
     if (value == L"on" || value == L"true" || value == L"1") return true;
     if (value == L"off" || value == L"false" || value == L"0") return false;
+    return std::nullopt;
+}
+
+std::optional<Theme> theme(const std::wstring &value) {
+    if (value == L"system") return Theme::System;
+    if (value == L"light") return Theme::Light;
+    if (value == L"dark") return Theme::Dark;
     return std::nullopt;
 }
 
@@ -136,6 +143,7 @@ std::wstring value_text(const Values &values, std::wstring_view key) {
     if (key == L"StencilShadows") return on_off(values.stencil_shadows);
     if (key == L"ProjectedShadows") return on_off(values.projected_shadows);
     if (key == L"Skybox") return utils::to_wstring(name(values.skybox));
+    if (key == L"Theme") return utils::to_wstring(name(values.theme));
     if (key == L"RobotShadows") return on_off(values.robot_shadows);
     if (key == L"CameraSpeed") return std::to_wstring(values.camera_speed);
     if (key == L"DelayedDamage") return utils::to_wstring(name(values.delayed_damage));
@@ -283,6 +291,15 @@ const char *name(Skybox skybox) {
     return "High";
 }
 
+const char *name(Theme theme) {
+    switch (theme) {
+        case Theme::System: return "System";
+        case Theme::Light: return "Light";
+        case Theme::Dark: return "Dark";
+    }
+    return "System";
+}
+
 const char *name(DamageAttribution attribution) {
     return attribution == DamageAttribution::Original ? "Original" : "Corrected";
 }
@@ -312,6 +329,7 @@ Selection resolve(const Base::CBlockPar &options) {
     read(options, L"StencilShadows", values.stencil_shadows, boolean, selection);
     read(options, L"ProjectedShadows", values.projected_shadows, boolean, selection);
     read(options, L"Skybox", values.skybox, skybox, selection);
+    read(options, L"Theme", values.theme, theme, selection);
     read(options, L"RobotShadows", values.robot_shadows, boolean, selection);
     read(options, L"DelayedDamage", values.delayed_damage, delayed_damage, selection);
     if (options.ParCount(L"Map")) {

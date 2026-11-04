@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "BattleWait.hpp"
+#include "UiTheme.hpp"
 
 #include "Factions.hpp"
 #include "SettingsModel.hpp"
@@ -17,9 +18,9 @@ namespace {
 
 const wchar_t *text(bool ru, const wchar_t *english, const wchar_t *russian) { return ru ? russian : english; }
 
-constexpr std::uint32_t text_colour = 0xFF000000;
-constexpr std::uint32_t button_colour = 0xFF8E0000;  // the lobby's dark red
-constexpr std::uint32_t button_hover = 0xFFE00000;
+std::uint32_t text_colour() { return UiTheme::pick(0xFF000000, UiTheme::Dark::text); }
+std::uint32_t button_colour() { return UiTheme::pick(0xFF8E0000, UiTheme::Dark::error); }  // the lobby's dark red
+std::uint32_t button_hover() { return UiTheme::pick(0xFFE00000, 0xFFFF9A8A); }
 const std::wstring title_font = L"Font.2Ranger";
 const std::wstring line_font = L"Font.2Normal";
 
@@ -152,7 +153,7 @@ Templates compose(const Window &window, bool ru, int hover,
 
     // Each text a line of its own, row_height high, centred; the buttons' rows stay empty (their own hints).
     t.window = std::format(L"{}|_BORDER:{}:{}:{}:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_TEXTP:L|_COLOR:{:08X}|_FONT:{}|_TEXT:{}",
-                           SettingsModel::window_border, padding_x, padding_top, padding_x, padding_bottom, inner, row_height + 6, text_colour,
+                           UiTheme::border(), padding_x, padding_top, padding_x, padding_bottom, inner, row_height + 6, text_colour(),
                            title_font, title);
     t.window += L"|_HEIGHT:" + std::to_wstring(row_height) + L"|_FONT:" + line_font;
     for (const std::wstring &l : lines) t.window += L"|_TEXT:" + l;
@@ -161,7 +162,7 @@ Templates compose(const Window &window, bool ru, int hover,
     t.buttons_y += 6;
     for (std::size_t i = 0; i < buttons.size(); ++i)
         t.buttons.push_back(std::format(L"-1|_FONT:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_COLOR:{:08X}|_TEXT:{}", line_font, inner,
-                                        row_height, int(i) == hover ? button_hover : button_colour, buttons[i]));
+                                        row_height, int(i) == hover ? button_hover() : button_colour(), buttons[i]));
     return t;
 }
 

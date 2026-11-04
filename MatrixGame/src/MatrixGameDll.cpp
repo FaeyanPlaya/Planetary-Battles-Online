@@ -6,6 +6,7 @@
 #include "MatrixGameDll.hpp"
 #include "MatrixFormGame.hpp"
 #include "MatrixGame.h"
+#include "CrashReport.hpp"
 #include "3g.hpp"
 #include "utils.hpp"
 
@@ -43,6 +44,11 @@ void log_run_failure(const char *message) noexcept {
 int failed_run(bool end_timer) noexcept {
     ClipCursor(nullptr);
     try {
+        CrashReport::exception(CrashReport::current_exception().c_str());
+    }
+    catch (...) {
+    }
+    try {
         throw;
     }
     catch (const Base::CException &exception) {
@@ -68,7 +74,10 @@ int failed_run(bool end_timer) noexcept {
 
 }  // namespace
 
-long __stdcall ExceptionHandler(PEXCEPTION_POINTERS) {
+long __stdcall ExceptionHandler(PEXCEPTION_POINTERS ep) {
+    // The game still ends without Windows' crash dialog, but crash.txt says where.
+    if (ep && ep->ExceptionRecord)
+        CrashReport::fault(*ep);
     return EXCEPTION_EXECUTE_HANDLER;
 }
 

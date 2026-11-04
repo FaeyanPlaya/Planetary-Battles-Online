@@ -428,8 +428,10 @@ private:
     D3DXVECTOR3 m_DriveSentAim{0, 0, 0};
     int m_DriveSentTime = 0;
     int m_DriveLeaving = 0;
+public:
     // Interface (ManualExtras): the weapon slots this person turned off in the robot they drive (DRIVE_SLOT_OFF bits).
     int m_DriveSlotsOff = 0;
+private:
     // Interface: the mouse turned the robot (the mouse camera, middle button): -1 left, 1 right, until then.
     int m_MouseTurn = 0;
     int m_MouseTurnUntil = 0;
@@ -713,6 +715,8 @@ public:
     void IssueGroupOrder(Commands::Type type, const D3DXVECTOR3 &pos, CMatrixMapStatic *target, int param = 0);
     // Interface: a turret-attack (target or null) or turret-dismantle command for the selected turrets.
     void IssueTurretOrder(Commands::Type type, CMatrixMapStatic *target);
+    // Interface: the selected turrets fire at this point of the ground (a turret-attack command at it).
+    void IssueTurretPoint(const D3DXVECTOR3 &at);
     // TurretControl: selects these turrets (a frame, a click), the first one's panel; `add` (Shift) adds them to the
     // turrets selected, taking out the ones already there.
     void SelectTurrets(const std::vector<CMatrixCannon *> &turrets, bool add);

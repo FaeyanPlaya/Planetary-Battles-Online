@@ -11,6 +11,7 @@
 #include "SettingsWindow.hpp"
 #include "NetBattle.hpp"
 #include "Mods.hpp"
+#include "ModHooks.hpp"
 #include "NewBattle.hpp"
 #include "StandaloneRuntime.hpp"
 #include "BattleRules.hpp"
@@ -2421,7 +2422,8 @@ void CMatrixMap::DrawSky(void) {
 }
 
 float DrawShadowsDistanceSq() {
-    const float distance = Mods::switches().far_view ? 1536.0f * Mods::view_scale() : 1024.0f;
+    const auto shadows = ModHooks::hooks().shadow_distance;  // the far view mod's
+    const float distance = Mods::switches().far_view && shadows ? shadows(Mods::view_scale()) : 1024.0f;
     return distance * distance;
 }
 

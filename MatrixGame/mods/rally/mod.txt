@@ -1,0 +1,18 @@
+# RallyPoint: a person selects a base and right-clicks the ground: the robots it builds afterwards drive to
+# that point and wait there (the original sent them to a free place near the base). A right click on the
+# base itself clears its point. Each base has its own; a captured base loses it. A command (rally).
+Name=Точка сбора
+NameEn=Rally point
+Description=Точка сбора для баз.
+Description=- Выберите свою базу и щёлкните правой кнопкой по земле: построенные потом роботы поедут туда и будут ждать.
+Description=- Правый щелчок по самой базе убирает точку.
+Description=- У каждой базы своя точка; захваченная база её теряет.
+DescriptionEn=A rally point for bases.
+DescriptionEn=- Select your base and right-click the ground: the robots it builds afterwards drive there and wait.
+DescriptionEn=- A right click on the base itself clears its point.
+DescriptionEn=- Each base has its own; a captured base loses it.
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=rally.dll
+Switches=RallyPoint

@@ -84,7 +84,6 @@ enum EKeyAction : int {
     KA_UNIT_SLOT3,
     KA_UNIT_SLOT4,
     KA_UNIT_SLOT5,
-    KA_SELECT_ALL,  // SelectAll: all the person's robots
 
     //..........................
     KA_LAST

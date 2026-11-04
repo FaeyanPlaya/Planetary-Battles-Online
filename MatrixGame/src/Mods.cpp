@@ -1,20 +1,27 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "Mods.hpp"
+#include "ModHooks.hpp"
 
 #include "GameData.hpp"
+#include "KeyBindings.hpp"
 
 #include "utils.hpp"
+
+#include <windows.h>
 
 #include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <sstream>
 
 namespace Mods {
 namespace {
 
 Switches g_switches;
 float g_far_view_scale = 2.0f;
+std::vector<std::string> g_battle_on, g_personal_on;  // the mods on: the battle's, this person's
+bool g_verified_only = false;
 
 struct SwitchName {
     const char *name;
@@ -32,8 +39,6 @@ constexpr SwitchName battle_switches[] = {
     {"autoboom", &Switches::auto_boom},
     {"homingmissiles", &Switches::homing_missiles},
     {"missileballistics", &Switches::missile_ballistics},
-    {"sr2balance", &Switches::sr2_balance},
-    {"helpfromabove", &Switches::help_from_above},
     {"rallypoint", &Switches::rally_point},
     {"manualextras", &Switches::manual_extras},
 };
@@ -44,7 +49,6 @@ constexpr SwitchName personal_switches[] = {
     {"dialogesc", &Switches::dialog_esc},
     {"minimapcursor", &Switches::minimap_cursor},
     {"buildinggroups", &Switches::building_groups},
-    {"selectall", &Switches::select_all},
     {"constructorkeys", &Switches::constructor_keys},
     {"zoomfar", &Switches::zoom_far},
     {"camerashift", &Switches::camera_shift},
@@ -73,6 +77,8 @@ std::optional<std::string> file_bytes(const std::filesystem::path &file) {
     return std::string(std::istreambuf_iterator<char>(in), {});
 }
 
+}  // namespace
+
 // Every file under the folder, by its path from there in lower case with '/': names and bytes.
 std::string folder_hash(const std::filesystem::path &folder) {
     std::vector<std::pair<std::string, std::filesystem::path>> files;
@@ -93,173 +99,30 @@ std::string folder_hash(const std::filesystem::path &folder) {
     return GameData::hex(h);
 }
 
-Mod made(std::string id, const wchar_t *name, const wchar_t *name_en, const wchar_t *description,
-         const wchar_t *description_en, Kind kind, std::vector<std::string> switches) {
-    Mod mod{std::move(id), name, name_en, description, description_en, kind, true, std::move(switches), {}, {}};
-    std::uint64_t h = GameData::hash_bytes("pbo-builtin", 11);
-    h = GameData::hash_bytes(mod.id.data(), mod.id.size() + 1, h);
-    for (const auto &s : mod.switches) h = GameData::hash_bytes(s.data(), s.size() + 1, h);
-    mod.hash = GameData::hex(h);
-    return mod;
-}
-
-// The project's mods, all on for a person who never chose. Switches in lower case.
-std::vector<Mod> builtin_mods() {
-    return {
-        // AutoBoom: a robot of a person's side with a bomb sets it off as it dies (the original did it only for
-        //   the AI's robots, and only with more enemy than own strength in the blast). Each robot keeps its own
-        //   choice, on when built; a right click on the bomb order turns it for the selected bombers (a command).
-        made("autoboom", L"Автоподрыв", L"Auto detonation",
-             L"Робот с бомбой взрывает её, когда погибает; "
-             L"правый щелчок по кнопке бомбы выключает",
-             L"A robot with a bomb sets it off as it dies; a right click on the bomb order turns it off", Kind::Battle,
-             {"autoboom"}),
-        // MissileBallistics: a missile's (a robot's or a missile turret's) engine burns out when it is as far from
-        //   where it was fired as its weapon reaches; it then goes on unpowered, slowed by the air and pulled down,
-        //   and nothing steers it. It hurts whatever it hits at any distance (the original hurt only within the
-        //   weapon's reach) and bursts only on hitting something (the original burst in the air 1500 ahead when it
-        //   locked on nothing).
-        made("ballistics", L"Баллистика ракет", L"Missile ballistics",
-             L"После дальности оружия ракета падает, но бьёт на любом расстоянии и только от удара",
-             L"Past its weapon's reach a missile falls, but it hurts at any distance, only on hitting",
-             Kind::Battle, {"missileballistics"}),
-        // FarView: the far clip plane and the fog, the distance effects are made at and how many of each kind are
-        //   kept, all times the scale (FarViewScale=, 1.5 to 3 times, 2 by default); shadows drawn to 1536 times it
-        //   instead of 1024. Drawing only: the battle never reads it.
-        made("farview", L"\u0414\u0430\u043b\u044c\u043d\u044f\u044f \u043f\u0440\u043e\u0440\u0438\u0441\u043e\u0432\u043a\u0430", L"Far view",
-             L"\u0422\u0443\u043c\u0430\u043d \u0432\u0434\u0432\u043e\u0435 \u0434\u0430\u043b\u044c\u0448\u0435, \u044d\u0444\u0444\u0435\u043a\u0442\u044b \u0438 \u0442\u0435\u043d\u0438 "
-             L"\u0432\u0438\u0434\u043d\u044b \u0434\u0430\u043b\u044c\u0448\u0435",
-             L"Fog twice as far; effects and shadows seen farther", Kind::Personal, {"farview"}),
-        // FirstPerson (as Universe's PBFirstPerson, which gets there by its camera's numbers): in a robot or a turret
-        //   the wheel zoomed all the way in once more looks from it: from above the robot's hull (drawn) along its
-        //   heading, or from the turret's head (not drawn); a step out goes back. Drawing only.
-        made("firstperson", L"Вид от первого лица", L"First person view",
-             L"В роботе или турели колесо до упора к себе: вид от первого лица",
-             L"In a robot or turret the wheel all the way in: first person view", Kind::Personal, {"firstperson"}),
-        // CaptureNoTimeout: the 10 s limit of a robot with a base (for a new robot stuck on its lift) no longer kills
-        //   a robot whose capture is held up (the original killed it and closed the base).
-        // StopInPlace: Stop halts each robot where it stands (the original sent the group on to free places round
-        //   its centre).
-        made("fixes", L"\u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0431\u043e\u044f", L"Battle fixes",
-             L"\u0417\u0430\u0445\u0432\u0430\u0442\u0447\u0438\u043a \u0431\u0430\u0437\u044b \u043d\u0435 \u043f\u043e\u0433\u0438\u0431\u0430\u0435\u0442 \u0447\u0435\u0440\u0435\u0437 10 \u0441; "
-             L"\u043f\u043e \u043a\u043e\u043c\u0430\u043d\u0434\u0435 \u0421\u0442\u043e\u043f \u0440\u043e\u0431\u043e\u0442\u044b \u0432\u0441\u0442\u0430\u044e\u0442 \u043d\u0430 \u043c\u0435\u0441\u0442\u0435",
-             L"A base's capturer does not die after 10 s; Stop halts robots where they stand", Kind::Battle,
-             {"capturenotimeout", "stopinplace"}),
-        // HomingMissiles: a missile (a robot's or a missile turret's) flies straight for HOMING_DELAY, then seeks the
-        //   enemy most ahead within 45 degrees (the original: 10 degrees, and only nudged its course) and keeps it while
-        //   it is ahead. It turns to it at HOMING_TURN_RATE.
-        made("homing", L"Самонаведение ракет", L"Homing missiles",
-             L"Через 0,4 с после пуска ракета ищет врага в конусе 45° и мягко доворачивает",
-             L"0.4 s after launch a missile seeks an enemy within 45 degrees and turns to it smoothly",
-             Kind::Battle, {"homingmissiles"}),
-        // DriveAimFar: over the sky or water past the map's edge the cursor's trace finds nothing and the original
-        //   kept the robot aiming at the last point it found; the robot now aims along the cursor's ray.
-        // TurretLaserGlow: the laser turret's muzzle glow, a robot laser's size at a point inside the thick barrel
-        //   (never seen), is three times as large and before the barrel.
-        // DialogEsc: Esc presses OK of the dialogs before and after the battle (the result, the statistics), as Enter
-        //   does; the original ignored it there.
-        // MinimapCursor: over the minimap's picture (not its buttons) the cursor is the blue cross a Move order shows
-        //   instead of the arrow; the game has no cursor picture of its own for it.
-        // ZoomFar: the wheel takes the camera out to twice the original's farthest distance.
-        // CameraShift: while Shift is held the camera moves over the map (the arrows, the screen's edge) twice as fast.
-        // ChassisMotion: wheels and tracks are drawn turning as each side of the chassis goes: back when backing, one
-        //   side forward and the other back when turning in place; only the drawing, the battle's frame stays.
-        made("interface", L"\u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430", L"Interface fixes",
-             L"\u0412 \u0440\u0443\u0447\u043d\u043e\u043c \u0443\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0438 \u0440\u043e\u0431\u043e\u0442 \u0446\u0435\u043b\u0438\u0442\u0441\u044f \u0432 \u043d\u0435\u0431\u043e \u0438 \u0432 \u0432\u043e\u0434\u0443 "
-             L"\u0437\u0430 \u043a\u0440\u0430\u0435\u043c \u043a\u0430\u0440\u0442\u044b; \u0441\u0432\u0435\u0442\u0438\u0442\u0441\u044f \u0441\u0442\u0432\u043e\u043b "
-             L"\u043b\u0430\u0437\u0435\u0440\u043d\u043e\u0439 \u0442\u0443\u0440\u0435\u043b\u0438; "
-             L"Esc \u0437\u0430\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u043e\u043a\u043d\u0430 \u0434\u043e \u0438 \u043f\u043e\u0441\u043b\u0435 \u0431\u043e\u044f; "
-             L"\u043f\u0440\u0438\u0446\u0435\u043b \u043d\u0430\u0434 \u043c\u0438\u043d\u0438\u043a\u0430\u0440\u0442\u043e\u0439; "
-             L"камера колесом отдаляется вдвое дальше; с Shift камера движется вдвое быстрее; "
-             L"колёса и гусеницы крутятся по ходу: назад на заднем ходу, в разные стороны на повороте",
-             L"A driven robot aims at the sky and at water past the map's edge; the laser turret's muzzle glows; "
-             L"Esc closes the dialogs before and after the battle; a cross over the minimap; the wheel zooms out twice as far; "
-             L"Shift moves the camera twice as fast; wheels and tracks turn as they go: back when backing, "
-             L"each side its own way when turning",
-             Kind::Personal, {"driveaimfar", "turretlaserglow", "dialogesc", "minimapcursor", "buildinggroups", "selectall",
-                              "constructorkeys", "zoomfar", "camerashift", "chassismotion"}),
-        // ManualExtras (as Universe's PBEngine): in a driven robot Q and E go sideways (hovercraft and antigravity
-        //   at their PBEngine share of the speed), the bomb goes off on F instead of E, X turns the view back and
-        //   forth, and 1-5 turn the weapon in that constructor slot off and on (it holds its fire).
-        made("manual", L"Ручное управление+", L"Manual control+",
-             L"В роботе Q и E: стрейф, F: бомба, X: вид назад, 1-5: выключить или включить орудие",
-             L"In a robot Q and E: strafe, F: bomb, X: rear view, 1-5: weapon slot off or on", Kind::Battle,
-             {"manualextras"}),
-        // NewSky: the game's own skies at 2048 (the game's are 1024) from Universe's PBNewSky (by Klaxons), read in
-        //   place where the game has it (MapPacks::new_sky_folder); nothing of it is shipped. Without it: the game's.
-        made("newsky", L"Небо высокого разрешения", L"High resolution sky",
-             L"Небо игры в 2048 из мода PBNewSky для Universe (Klaxons), если он есть в игре",
-             L"The game's skies at 2048 from Universe's PBNewSky (by Klaxons), when the game has it", Kind::Personal,
-             {"newsky"}),
-        // LiftSight: robots on a base's lift see the enemies in reach and are seen (the original ignored them there).
-        // CaptureLift: a capturer rides the lift down when something else closed it (it stood in the air).
-        // DriveReachReset: a robot its driver left loses the reach bonus too (the original kept it).
-        made("pbo", L"Planetary Battles Online", L"Planetary Battles Online",
-             L"\u041d\u0430 \u043b\u0438\u0444\u0442\u0435 \u0431\u0430\u0437\u044b \u0440\u043e\u0431\u043e\u0442\u044b \u0432\u0438\u0434\u044f\u0442 \u0432\u0440\u0430\u0433\u043e\u0432, "
-             L"\u0437\u0430\u0445\u0432\u0430\u0442\u0447\u0438\u043a \u0435\u0434\u0435\u0442 \u0432\u043d\u0438\u0437; \u0431\u0440\u043e\u0448\u0435\u043d\u043d\u044b\u0439 \u0440\u043e\u0431\u043e\u0442 \u0442\u0435\u0440\u044f\u0435\u0442 \u0431\u043e\u043d\u0443\u0441",
-             L"Robots on a base lift see enemies, a capturer rides it down; a robot left loses its bonus", Kind::Battle,
-             {"liftsight", "capturelift", "drivereachreset"}),
-        // RallyPoint: a person selects a base and right-clicks the ground: the robots it builds afterwards drive to
-        //   that point and wait there (the original sent them to a free place near the base). A right click on the
-        //   base itself clears its point. Each base has its own; a captured base loses it. A command (rally).
-        made("rally", L"Точка сбора", L"Rally point",
-             L"Правый щелчок по земле при выбранной базе: туда поедут её роботы; по базе: снять",
-             L"A right click on the ground with a base selected: its robots go there; on the base: off",
-             Kind::Battle, {"rallypoint"}),
-        // RepairPlant: a repair factory of a side keeps two repairer's beams from its probes, at the rate of a robot
-        //   with four repairers, on the nearest damaged robot of that side standing in its capture area; the
-        //   reinforcements' lift field reaches from its hatch to the robot meanwhile. A captured factory repairs for
-        //   its new side; a neutral one does nothing.
-        made("repair", L"\u0420\u0435\u043c\u043e\u043d\u0442\u043d\u044b\u0435 \u0437\u0430\u0432\u043e\u0434\u044b", L"Repair factories",
-             L"\u0420\u0435\u043c\u043e\u043d\u0442\u043d\u044b\u0439 \u0437\u0430\u0432\u043e\u0434 \u0447\u0438\u043d\u0438\u0442 \u0440\u043e\u0431\u043e\u0442\u043e\u0432 \u0441\u0432\u043e\u0435\u0439 \u0441\u0442\u043e\u0440\u043e\u043d\u044b "
-             L"\u0432 \u0437\u043e\u043d\u0435 \u0437\u0430\u0445\u0432\u0430\u0442\u0430",
-             L"A repair factory repairs its side's robots in its capture area", Kind::Battle, {"repairplant"}),
-        // HelpFromAbove: the reinforcements of Universe's PBHelpFromAbove (by Klaxons): a call brings robots worth
-        //   150 points (at most 180; the original 100 and 130) from its own 19 templates, stronger, with more hit
-        //   points; those worth 75 and more come by the bomber. Its Репаратор head (self-repair) is not in the game:
-        //   those robots have no head and repair themselves 3% a second. Only a person's side calls reinforcements.
-        made("sky", L"Помощь с небес", L"Help from above",
-             L"Подкрепления сильнее: роботов примерно в полтора раза больше, и они мощнее",
-             L"Stronger reinforcements: about half as many robots again, and more powerful", Kind::Battle,
-             {"helpfromabove"}),
-        // SR2Balance: the values Universe's PBSR2Balance (by Klaxons) brings back from Space Rangers 2, over the
-        //   data's (HD's): the machine gun, cannon, missile launcher and repairer fire every 70, 500, 1000 and 27 ms
-        //   (55, 400, 1500, 20), a cannon's and a missile launcher's shot heat 20% and 50% (16%, 75%), the mortar
-        //   hurts a turret 30 (50), the blocker head adds 30 hit points (50), the firewall head costs 40 plasma (50)
-        //   and the missile launcher 10 electronics (20). Resources stay the map's. CMatrixConfig::ApplyBalance.
-        made("sr2", L"Баланс КР2", L"SR2 balance",
-             L"Оружие и модули как в Космических рейнджерах 2; ресурсы на картах не меняются",
-             L"Weapons and modules as in Space Rangers 2; the maps' resources unchanged",
-             Kind::Battle, {"sr2balance"}),
-        // TurretControl: a person selects their side's turret with a click. An order to attack a unit (a robot, a
-        //   flyer or a turret) makes the turret fire at it while it stays in the turret's reach, then the turret
-        //   chooses its targets again. A person enters a built turret as a robot: the turret turns to the cursor at
-        //   its own speed within its own angles and fires while the button is held; the lobby's manual control bonus
-        //   lengthens its reach as a robot's. Dismantling a built turret frees its place and returns half its price,
-        //   times the share of its hit points left.
-        made("turrets", L"\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0442\u0443\u0440\u0435\u043b\u044f\u043c\u0438", L"Turret control",
-             L"\u0421\u0432\u043e\u0438 \u0442\u0443\u0440\u0435\u043b\u0438 \u043c\u043e\u0436\u043d\u043e \u0432\u044b\u0434\u0435\u043b\u044f\u0442\u044c, \u043f\u0440\u0438\u043a\u0430\u0437\u044b\u0432\u0430\u0442\u044c \u0438\u043c \u0446\u0435\u043b\u044c, "
-             L"\u0443\u043f\u0440\u0430\u0432\u043b\u044f\u0442\u044c \u0432\u0440\u0443\u0447\u043d\u0443\u044e \u0438 \u0440\u0430\u0437\u0431\u0438\u0440\u0430\u0442\u044c",
-             L"A side's turrets can be selected, given a target, driven by hand and dismantled", Kind::Battle,
-             {"turretcontrol"}),
-    };
-}
-
-}  // namespace
-
 const Switches &switches() { return g_switches; }
 
 void set_switches(const Switches &switches) { g_switches = switches; }
 
+void set_on(const std::vector<std::string> &battle, const std::vector<std::string> &personal) {
+    g_battle_on = battle;
+    g_personal_on = personal;
+}
+
 void set_personal(const std::vector<std::string> &personal, float far_view_scale) {
     Switches on = g_switches;
     for (const auto &known : personal_switches) on.*known.flag = false;
-    collect_personal(installed(), personal, on);
+    const auto absent = collect_personal(installed(), personal, on);
     g_switches = on;
+    g_personal_on.clear();
+    for (const auto &id : personal)
+        if (std::find(absent.begin(), absent.end(), id) == absent.end()) g_personal_on.push_back(id);
     g_far_view_scale = std::clamp(far_view_scale, 1.0f, 3.0f);
 }
 
-float view_scale() { return g_switches.far_view ? g_far_view_scale : 1.0f; }
+float view_scale() {
+    const auto hook = ModHooks::hooks().view_scale;  // the far view mod's
+    return g_switches.far_view && hook ? hook(g_far_view_scale) : 1.0f;
+}
 
 std::string id_of(std::wstring_view folder_name) {
     if (folder_name.empty() || folder_name.size() > 32) return {};
@@ -288,8 +151,69 @@ std::wstring decode(std::string_view bytes) {
     }
 }
 
+namespace {
+// "a, B ,c" -> a, B, c, each trimmed, the empty ones left out.
+std::vector<std::wstring> split_on(std::wstring_view list, wchar_t separator, bool keep_empty = false) {
+    std::vector<std::wstring> items;
+    while (true) {
+        const auto at = list.find(separator);
+        std::wstring item = utils::trim(std::wstring(list.substr(0, at)));
+        if (keep_empty || !item.empty()) items.push_back(std::move(item));
+        if (at == std::wstring_view::npos) break;
+        list = list.substr(at + 1);
+    }
+    return items;
+}
+
+// "a, B,c" -> a, b, c.
+std::vector<std::string> list_of(std::wstring_view list) {
+    std::vector<std::string> items;
+    for (const auto &item : split_on(list, L',')) items.push_back(lower_ascii(utils::from_wstring(item)));
+    return items;
+}
+
+// Key.<Id>, Setting.<Id>: <Id> of letters, digits and _ (empty when it is not one).
+std::string line_id(const std::wstring &key, std::size_t prefix) {
+    const std::wstring id = key.substr(prefix);
+    if (id.empty()) return {};
+    for (wchar_t c : id)
+        if (!((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9') || c == L'_'))
+            return {};
+    return utils::from_wstring(id);
+}
+
+std::optional<KeyLine> key_line(const std::wstring &key, const std::wstring &value) {
+    KeyLine line;
+    line.id = line_id(key, 4);
+    auto parts = split_on(value, L'|', true);
+    if (line.id.empty() || parts.size() < 2) return std::nullopt;
+    parts.resize(4);
+    line.key = parts[0];
+    line.russian = parts[1];
+    line.english = parts[2];
+    line.group = parts[3];
+    return line;
+}
+
+std::optional<SettingLine> setting_line(const std::wstring &key, const std::wstring &value) {
+    SettingLine line;
+    line.id = line_id(key, 8);
+    auto parts = split_on(value, L'|', true);
+    if (line.id.empty() || parts.size() < 3) return std::nullopt;
+    parts.resize(4);
+    line.values = split_on(parts[0], L',');
+    if (line.values.empty()) return std::nullopt;
+    line.default_value = std::find(line.values.begin(), line.values.end(), parts[1]) != line.values.end() ? parts[1]
+                                                                                                         : line.values[0];
+    line.russian = parts[2];
+    line.english = parts[3];
+    return line;
+}
+}  // namespace
+
 Mod parse(std::wstring_view text) {
     Mod mod;
+    bool described = false, described_en = false;
     while (!text.empty()) {
         const auto end = text.find(L'\n');
         std::wstring line(text.substr(0, end));
@@ -302,18 +226,20 @@ Mod parse(std::wstring_view text) {
         const std::wstring value = utils::trim(line.substr(eq + 1));
         if (key == L"name") mod.name = value;
         else if (key == L"nameen") mod.name_en = value;
-        else if (key == L"description") mod.description = value;
-        else if (key == L"descriptionen") mod.description_en = value;
+        else if (key == L"description") mod.description += (described ? L"\n" : L"") + value, described = true;
+        else if (key == L"descriptionen") mod.description_en += (described_en ? L"\n" : L"") + value, described_en = true;
+        else if (key == L"author") mod.author = value;
         else if (key == L"kind") mod.kind = lower(value) == L"personal" ? Kind::Personal : Kind::Battle;
         else if (key == L"default") mod.default_on = lower(value) == L"on";
-        else if (key == L"switches") {
-            std::wstring_view list = value;
-            while (!list.empty()) {
-                const auto comma = list.find(L',');
-                const std::wstring item = utils::trim(std::wstring(list.substr(0, comma)));
-                list = comma == std::wstring_view::npos ? std::wstring_view{} : list.substr(comma + 1);
-                if (!item.empty()) mod.switches.push_back(lower_ascii(utils::from_wstring(item)));
-            }
+        else if (key == L"dll") mod.dll = value;
+        else if (key == L"switches") mod.switches = list_of(value);
+        else if (key == L"dependence") mod.depends = list_of(value);
+        else if (key == L"conflict") mod.conflicts = list_of(value);
+        else if (key.starts_with(L"key.")) {
+            if (auto parsed = key_line(utils::trim(line.substr(0, eq)), value)) mod.keys.push_back(std::move(*parsed));
+        }
+        else if (key.starts_with(L"setting.")) {
+            if (auto parsed = setting_line(utils::trim(line.substr(0, eq)), value)) mod.settings.push_back(std::move(*parsed));
         }
     }
     return mod;
@@ -341,21 +267,33 @@ std::vector<Mod> scan(const std::filesystem::path &folder) {
     return mods;
 }
 
-const std::vector<Mod> &builtin() {
-    static const std::vector<Mod> mods = builtin_mods();
-    return mods;
+namespace {
+// The keys of the mods that can be used, for KeyBindings.
+std::vector<KeyBindings::ModAction> key_actions(const std::vector<Mod> &mods) {
+    std::vector<KeyBindings::ModAction> actions;
+    for (const Mod &mod : mods) {
+        if (mod.problem != Problem::None) continue;
+        for (const KeyLine &key : mod.keys) {
+            KeyBindings::ModAction action;
+            action.id = mod.id + "." + key.id;
+            action.russian = key.russian;
+            action.english = key.english.empty() ? key.russian : key.english;
+            action.group = KeyBindings::group_of(key.group);
+            action.key = KeyBindings::code(key.key);
+            actions.push_back(std::move(action));
+        }
+    }
+    return actions;
 }
-
-std::vector<Mod> catalogue(const std::vector<Mod> &scanned) {
-    std::vector<Mod> mods = builtin();
-    for (const Mod &m : scanned)
-        if (!find(builtin(), m.id)) mods.push_back(m);
-    std::sort(mods.begin(), mods.end(), [](const Mod &a, const Mod &b) { return a.id < b.id; });
-    return mods;
-}
+}  // namespace
 
 const std::vector<Mod> &installed() {
-    static const std::vector<Mod> mods = catalogue({});
+    static const std::vector<Mod> mods = [] {
+        std::vector<Mod> all = scan(folder);
+        load_code(all);
+        KeyBindings::set_mod_actions(key_actions(all));
+        return all;
+    }();
     return mods;
 }
 
@@ -401,7 +339,7 @@ std::vector<std::string> collect(const std::vector<Mod> &mods, const std::vector
     out = {};
     for (const auto &id : battle) {
         const Mod *mod = find(mods, id);
-        if (!mod || mod->kind != Kind::Battle) {
+        if (!mod || mod->kind != Kind::Battle || mod->problem != Problem::None) {
             missing.push_back(id);
             continue;
         }
@@ -417,7 +355,8 @@ std::vector<std::string> collect_personal(const std::vector<Mod> &mods, const st
     std::vector<std::string> missing;
     for (const auto &id : personal) {
         const Mod *mod = find(mods, id);
-        if (!mod || mod->kind != Kind::Personal) {
+        if (!mod || mod->kind != Kind::Personal || mod->problem != Problem::None ||
+            (g_verified_only && !verified(mod->id, mod->hash))) {
             missing.push_back(id);
             continue;
         }
@@ -439,7 +378,78 @@ bool apply(const std::vector<std::string> &battle, const std::vector<std::string
     const auto left_out = collect_personal(installed(), personal, on);
     skipped = left_out.empty() ? std::string() : join(left_out);
     g_switches = on;
+    g_battle_on = battle;
+    g_personal_on.clear();
+    for (const auto &id : personal)
+        if (std::find(left_out.begin(), left_out.end(), id) == left_out.end()) g_personal_on.push_back(id);
     return true;
 }
+
+bool on(std::string_view id) {
+    return std::find(g_battle_on.begin(), g_battle_on.end(), id) != g_battle_on.end() ||
+           std::find(g_personal_on.begin(), g_personal_on.end(), id) != g_personal_on.end();
+}
+
+bool verified(std::string_view id, std::string_view hash) {
+    const auto *list = reinterpret_cast<const char *>(GetProcAddress(GetModuleHandleW(nullptr), "pbo_verified_mods"));
+    if (!list || id.empty() || hash.empty()) return false;
+    const std::string entry = std::string(id) + ":" + std::string(hash) + ";";
+    const std::string_view all(list);
+    for (std::size_t at = 0; (at = all.find(entry, at)) != std::string_view::npos; ++at)
+        if (at == 0 || all[at - 1] == ';') return true;
+    return false;
+}
+
+void set_verified_only(bool only) { g_verified_only = only; }
+
+namespace {
+std::optional<SettingValues> g_setting_values;
+}
+
+SettingValues load_settings(const std::filesystem::path &path) {
+    SettingValues values;
+    const auto bytes = file_bytes(path);
+    if (!bytes) return values;
+    for (const auto &line : split_on(decode(*bytes), L'\n')) {
+        if (line.starts_with(L";") || line.starts_with(L"#")) continue;
+        const auto eq = line.find(L'=');
+        if (eq == std::wstring::npos) continue;
+        const std::string id = utils::from_wstring(utils::trim(line.substr(0, eq)));
+        const auto dot = id.find('.');
+        if (dot == std::string::npos || dot == 0 || dot + 1 == id.size()) continue;
+        values[id] = utils::trim(line.substr(eq + 1));
+    }
+    return values;
+}
+
+bool save_settings(const std::filesystem::path &path, const SettingValues &values, std::string &error) {
+    std::string text = "; Planetary Battles Online: this person's settings of mods (the settings' Mods page)\n";
+    for (const auto &[id, value] : values) text += id + "=" + utils::from_wstring(value) + "\n";
+    auto temporary = path;
+    temporary += L".tmp";
+    std::error_code failed;
+    if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), failed);
+    {
+        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+        stream.write(text.data(), std::streamsize(text.size()));
+        if (!stream.good()) {
+            error = "cannot write a temporary file";
+            return false;
+        }
+    }
+    if (!MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        error = "cannot replace the file";
+        std::filesystem::remove(temporary, failed);
+        return false;
+    }
+    return true;
+}
+
+const SettingValues &setting_values() {
+    if (!g_setting_values) g_setting_values = load_settings(settings_file);
+    return *g_setting_values;
+}
+
+void set_setting_values(SettingValues values) { g_setting_values = std::move(values); }
 
 }  // namespace Mods

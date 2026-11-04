@@ -11,6 +11,8 @@
 #include "NewBattle.hpp"
 #include "NetBattle.hpp"
 #include "Mods.hpp"
+#include "ModApi.hpp"
+#include "ModHooks.hpp"
 #include "BattleLoading.hpp"
 #include "ScreenLayout.hpp"
 #include "MatrixMap.hpp"
@@ -375,7 +377,8 @@ void selcallback(CMatrixMapStatic *ms, uintptr_t param);
 
 // What a frame selects: robots, buildings, and turrets (TurretControl).
 static DWORD SelectionMask() {
-    return TRACE_ROBOT | TRACE_BUILDING | (Mods::switches().turret_control ? TRACE_CANNON : 0);
+    const auto turrets = ModHooks::hooks().turrets_selectable;  // the turret control mod's
+    return TRACE_ROBOT | TRACE_BUILDING | (Mods::switches().turret_control && turrets && turrets() ? TRACE_CANNON : 0);
 }
 
 void CFormMatrixGame::Takt(int step) {
@@ -663,9 +666,8 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
             // TurretControl: a click on a built turret of the side selects it, a frame with turrets and no robots
             // selects them; with Shift they are added to the turrets selected (or taken out).
             CMatrixMapStatic *turret = g_MatrixMap->m_TraceStopObj;
-            const bool turret_clicked = Mods::switches().turret_control && !ps->GetCurSelGroup()->GetObjectsCnt() &&
-                                        IS_TRACE_STOP_OBJECT(turret) && turret->IsCannon() &&
-                                        turret->GetSide() == ps->m_Id && turret->AsCannon()->IsBuilt();
+            const auto clicked = ModHooks::hooks().turret_clicked;
+            const bool turret_clicked = Mods::switches().turret_control && clicked && clicked(*ps, turret);
             if (turret_clicked || (!framed.empty() && !ps->GetCurSelGroup()->GetObjectsCnt())) {
                 ps->SelectTurrets(turret_clicked ? std::vector<CMatrixCannon *>{turret->AsCannon()} : framed,
                                   isKeyPressed(KA_SHIFT));
@@ -945,8 +947,8 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
 
         if (FLAG(g_MatrixMap->m_Flags, MMFLAG_DIALOG_MODE)) {
             // DialogEsc: the dialogs before and after the battle close as Enter does (the original ignored Esc).
-            if (Mods::switches().dialog_esc && g_MatrixMap->m_DialogModeName)
-                g_IFaceList->PressHintButton(HINT_OK);
+            if (const auto esc = ModHooks::hooks().dialog_esc; Mods::switches().dialog_esc && esc)
+                esc();
             return;
         }
 
@@ -995,28 +997,16 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
         if (ps->IsRobotMode()) {
             CMatrixRobotAI *robot = ps->GetArcadedObject()->AsRobot();
 
-            // ManualExtras: the bomb on F (E goes sideways), X looks back, 1-5 turn weapon slots off and on.
-            const bool extras = Mods::switches().manual_extras;
-            if (extras ? isKeyPressed(KA_UNIT_BOOM_EXTRAS) : isKeyPressed(KA_UNIT_BOOM))
+            // ManualExtras (the manual control+ mod): its keys (the bomb on F, E going sideways).
+            const auto extra = ModHooks::hooks().drive_key;
+            const bool extras = Mods::switches().manual_extras && extra;
+            if (extras && extra(*ps, *robot, vk))
+                return;
+            if (!extras && isKeyPressed(KA_UNIT_BOOM))
             {
                 //"E" - Взорвать.
-                if (!(extras && ps->DriveKindOff(robot, RUK_WEAPON_BOMB)))  // a bomb turned off stays
-                    ps->RequestDrive(Commands::DriveAction::Explode, robot);
+                ps->RequestDrive(Commands::DriveAction::Explode, robot);
                 return;
-            }
-            if (extras && isKeyPressed(KA_UNIT_REAR_VIEW)) {
-                g_MatrixMap->m_Camera.ToggleRearView();
-                return;
-            }
-            if (extras) {
-                for (int slot = 1; slot <= 5; ++slot) {
-                    if (vk == g_Config.m_KeyActions[KA_UNIT_SLOT1 + slot - 1]) {
-                        // (As the panel shows the weapons: g_IFaceList knows where.)
-                        if (g_IFaceList)
-                            ps->ToggleDriveSlot(g_IFaceList->SlotForKey(robot, slot));
-                        return;
-                    }
-                }
             }
             if (isKeyPressed(KA_UNIT_ENTER) || isKeyPressed(KA_UNIT_ENTER_ALT))
             {
@@ -1150,18 +1140,10 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
                     //Стратегический режим - выбрана База\Завод
                     CMatrixBuilding *bld = (CMatrixBuilding *)ps->m_ActiveObject;
 
-                    if (Mods::switches().constructor_keys && bld->IsBase() && ps->m_ConstructPanel->IsActive() &&
-                        (vk == VK_UP || vk == VK_DOWN || vk == VK_LEFT || vk == VK_RIGHT || vk == VK_RETURN))
+                    if (Mods::switches().constructor_keys && ModHooks::hooks().constructor_key && bld->IsBase() &&
+                        ps->m_ConstructPanel->IsActive() && ModHooks::hooks().constructor_key(*ps, vk))
                     {
-                        // ConstructorKeys: the panel's buttons.
-                        if (vk == VK_UP) g_IFaceList->m_RCountControl->KeyUp();
-                        else if (vk == VK_DOWN) g_IFaceList->m_RCountControl->KeyDown();
-                        else if (vk == VK_LEFT) g_ConfigHistory->PrevConfig(nullptr);
-                        else if (vk == VK_RIGHT) g_ConfigHistory->NextConfig(nullptr);
-                        else if (g_IFaceList->m_RCountControl->GetCounter() > 0) {
-                            CSound::Play(S_BUILD_CLICK, SL_INTERFACE);
-                            ps->m_Constructor->RemoteBuild(nullptr);
-                        }
+                        // ConstructorKeys (the interface fixes mod): the panel's buttons.
                     }
                     else if (bld->IsBase() && !ps->m_ConstructPanel->IsActive() &&
                         isKeyPressed(KA_BUILD_ROBOT))
@@ -1406,8 +1388,9 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
             }
         }
 
-        const bool select_all = vk == g_Config.m_KeyActions[KA_SELECT_ALL] && Mods::switches().select_all;
-        if (((vk >= VK_0 && vk <= VK_9) || select_all) && !ps->IsArcadeMode() && !ps->m_ConstructPanel->IsActive()) {
+        // The mods' keys (ModApi::Context::on_key), then the digits' groups.
+        const bool taken = ModApi::key_down(vk);
+        if (!taken && vk >= VK_0 && vk <= VK_9 && !ps->IsArcadeMode() && !ps->m_ConstructPanel->IsActive()) {
             if (CMultiSelection::m_GameSelection) {
                 CMultiSelection::m_GameSelection->End(false);
             }
@@ -1419,25 +1402,7 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
 
             g_IFaceList->ResetOrderingMode();
 
-            if (select_all) {
-                bool prev_unselected = false;
-                for (CMatrixMapStatic *o = CMatrixMapStatic::GetFirstLogic(); o; o = o->GetNextLogic()) {
-                    if (o->GetSide() == PLAYER_SIDE && o->IsLiveRobot()) {
-                        if (!prev_unselected) {
-                            prev_unselected = true;
-                            ps->SelectedGroupUnselect();
-                            ps->GetCurSelGroup()->RemoveAll();
-                        }
-                        ps->GetCurSelGroup()->AddObject(o, -4);
-                    }
-                }
-                const int robots = ps->GetCurSelGroup()->GetRobotsCnt();
-                if (robots) {
-                    ps->CreateGroupFromCurrent();
-                    ps->Select(robots > 1 ? GROUP : ROBOT, NULL);
-                }
-            }
-            else if (Input::isVKeyPressed(VK_CONTROL)) {
+            if (Input::isVKeyPressed(VK_CONTROL)) {
                 ps->AssignBuildingGroup(vk);
                 CMatrixMapStatic *o = CMatrixMapStatic::GetFirstLogic();
                 while (o) {

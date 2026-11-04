@@ -33,7 +33,6 @@ class CMatrixEffectElevatorField;
 #define CAPTURE_SEEK_ROBOT_PERIOD 500
 
 #define DISTANCE_CAPTURE_ME 300
-#define REPAIR_BEAM_LINGER  500  // RepairPlant: ms a beam with nothing to repair stays on
 
 #define MAX_PLACES 4
 
@@ -291,7 +290,6 @@ public:
     float GetHitPoint() { return m_HitPoint / 10; }
     void ReleaseMe();
     // RepairPlant (Mods): the beams of a repair factory at the nearest damaged robot of its side in its capture area.
-    void RepairTakt(int cms);
     void StopRepair();
     void RemoveRepairField();
 

@@ -1,0 +1,22 @@
+# HelpFromAbove: the reinforcements of Universe's PBHelpFromAbove (by Klaxons): a call brings robots worth
+# 150 points (at most 180; the original 100 and 130) from its own 19 templates, stronger, with more hit
+# points; those worth 75 and more come by the bomber. Its Репаратор head (self-repair) is not in the game:
+# those robots have no head unit and repair themselves 3% a second, and wear our Reparator head (reparator.vo,
+# drawn only: the Ремонтник's texture of each player's own game, its green glow on the antennas). Only a
+# person's side calls reinforcements. Data only: data.txt here, laid over the game's data for the battle (ModData):
+# FlyerOrders/GiveBot's templates replaced, CallPoints=150, SelfRepairHead= this folder's reparator.vo.
+Name=Помощь с небес
+NameEn=Help from above
+Description=Сильные подкрепления, как в PBHelpFromAbove для Universe (автор Klaxons).
+Description=- Вызов приносит роботов на 150 очков (не больше 180; в оригинале 100 и 130) из 19 собственных шаблонов, сильнее и крепче.
+Description=- Роботы от 75 очков прилетают на бомбардировщике.
+Description=- Роботы с головой «Репаратор» (её нет в игре) чинят себя на 3% в секунду. Голова у них своя, на текстуре «Ремонтника», с его зелёным свечением на антеннах; свойств обычной головы у неё нет.
+Description=- Подкрепления вызывает только сторона игрока.
+DescriptionEn=Strong reinforcements, as Universe's PBHelpFromAbove (by Klaxons).
+DescriptionEn=- A call brings robots worth 150 points (at most 180; the original 100 and 130) from its own 19 templates, stronger and tougher.
+DescriptionEn=- Those worth 75 and more come by the bomber.
+DescriptionEn=- Robots with the Reparator head (not in the game) repair themselves 3% a second. They wear a head of their own, on the Repairer's texture with its green glow on the antennas; it has no ordinary head's properties.
+DescriptionEn=- Only a person's side calls reinforcements.
+Author=Planetary Battles Online, по PBHelpFromAbove для Universe (Klaxons)
+Kind=battle
+Default=on

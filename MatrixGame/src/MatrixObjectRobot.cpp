@@ -5,6 +5,7 @@
 
 #include <new>
 #include <algorithm>
+#include <filesystem>
 
 #include "MatrixObject.hpp"
 #include "MatrixObjectBuilding.hpp"
@@ -14,13 +15,16 @@
 #include "MatrixRenderPipeline.hpp"
 #include "ShadowStencil.hpp"
 #include "MatrixRobot.hpp"
+#include "ModHooks.hpp"
 
 #include "Effects/MatrixEffectElevatorField.hpp"
 #include "Effects/MatrixEffectSmokeAndFire.hpp"
+#include "Effects/MatrixEffectExplosion.hpp"
 
 #include "CFile.hpp"
 #include "Mods.hpp"
 #include "MatrixLogic.hpp"
+#include "random.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -73,6 +77,140 @@ CMatrixRobot::~CMatrixRobot() {
         HDelete(CVOShadowProj, m_ShadowProj, g_MatrixHeap);
         m_ShadowProj = NULL;
     }
+    if (m_DecorShadow)
+        HDelete(CVOShadowStencil, m_DecorShadow, g_MatrixHeap);
+    if (m_DecorHead)
+        UnloadObject(m_DecorHead, g_MatrixHeap);
+    for (SWeaponRepairData *glow : m_DecorGlow)
+        if (glow)
+            glow->Release();
+}
+
+void CMatrixRobot::DecorHeadPlace(const D3DXVECTOR3 &top) {
+    m_DecorTop = top;
+    m_DecorTopSet = true;
+    if (!m_DecorHead) {
+        // A reinforcement's self-repair comes after its first matrices: asked until the robot has it.
+        if (m_DecorHeadTried || IsInterfaceDraw() || !IsRobot() || AsRobot()->m_SelfRepair <= 0)
+            return;
+        m_DecorHeadTried = true;
+        // The head's model and texture: SelfRepairHead= and SelfRepairHeadTexture= of the reinforcements' data (a
+        // battle mod's: Help from above's).
+        CBlockPar *templates = ReinforcementTemplates();
+        const std::wstring model = templates->ParGetNE(L"SelfRepairHead");
+        const std::wstring texture = templates->ParGetNE(L"SelfRepairHeadTexture");
+        std::wstring found;
+        std::error_code error;
+        if (model.empty() || texture.empty() || !std::filesystem::is_regular_file(model, error))
+            return;
+        // Every side's own colour, as the units' (CMatrixMap::LoadSide).
+        std::wstring name = texture;
+        if (m_Side >= 2 && CFile::FileExist(found, texture.c_str(), L"png~dds"))
+            name += utils::format(L"?Side%d", m_Side);
+        m_DecorHead = LoadObject(model.c_str(), g_MatrixHeap, true, name.c_str());
+        m_DecorHead->SetAnimByName(ANIMATION_NAME_IDLE);
+        for (int k = 0; k < 2; ++k)
+            if (m_DecorHead->GetMatrixById(10 + 2 * k) && m_DecorHead->GetMatrixById(11 + 2 * k))
+                m_DecorGlow[k] = SWeaponRepairData::Allocate(1.6f, 2.6f, 2.4f, 0.8f);
+        RChange(MR_ShadowStencil);
+    }
+    // Turned as the hull, as a head is (RNeed).
+    D3DXMATRIX m;
+    D3DXMatrixIdentity(&m);
+    D3DXVECTOR3 th;
+    D3DXVec3TransformNormal(&th, &m_HullForward, &m_Core->m_IMatrix);
+    m._21 = th.x;
+    m._22 = th.y;
+    m._11 = th.y;
+    m._12 = -th.x;
+    *(D3DXVECTOR3 *)&m._41 = top;
+    m_DecorHeadMatrix = m * m_Core->m_Matrix;
+    for (int k = 0; k < 2; ++k) {
+        if (!m_DecorGlow[k])
+            continue;
+        D3DXVECTOR3 p0, p1;
+        D3DXVec3TransformCoord(&p0, (const D3DXVECTOR3 *)&m_DecorHead->GetMatrixById(10 + 2 * k)->_41, &m_DecorHeadMatrix);
+        D3DXVec3TransformCoord(&p1, (const D3DXVECTOR3 *)&m_DecorHead->GetMatrixById(11 + 2 * k)->_41, &m_DecorHeadMatrix);
+        m_DecorGlow[k]->Set(p0, p1);
+    }
+}
+
+void CMatrixRobot::DecorHeadBreak(bool onair) {
+    for (SWeaponRepairData *&glow : m_DecorGlow) {
+        if (glow)
+            glow->Release();
+        glow = nullptr;
+    }
+    if (m_DecorShadow) {
+        HDelete(CVOShadowStencil, m_DecorShadow, g_MatrixHeap);
+        m_DecorShadow = nullptr;
+    }
+    if (!m_DecorHead)
+        return;
+    random::CosmeticScope cosmetic;
+    float last = 0;
+    for (int i = 0; i < m_UnitCnt; ++i)
+        last = std::max(last, m_Unit[i].u1.s2.m_TTL);
+    m_DecorTTL = std::min(FRND(3000) + 2000, last);
+    m_DecorAge = 0;
+    // Turned about its middle, as the units are.
+    const D3DXVECTOR3 &mid = m_DecorHead->VO()->GetFrameGeoCenter(m_DecorHead->GetVOFrame());
+    D3DXVec3TransformCoord(&m_DecorPos, &mid, &m_DecorHeadMatrix);
+    D3DXMATRIX to_mid;
+    D3DXMatrixTranslation(&to_mid, -mid.x, -mid.y, -mid.z);
+    m_DecorBase = m_DecorHeadMatrix;
+    m_DecorBase._41 = m_DecorBase._42 = m_DecorBase._43 = 0;
+    m_DecorBase = to_mid * m_DecorBase;
+    m_DecorSpin = D3DXVECTOR3(FSRND(0.005f), FSRND(0.005f), FSRND(0.005f));
+    m_DecorVelocity = D3DXVECTOR3(FSRND(0.08f), FSRND(0.08f), onair ? FSRND(0.1f) : 0.1f);
+    CMatrixEffect::CreateSmoke(&m_DecorSmoke, m_DecorPos, m_DecorTTL + 100000, 1600, 80, 0xCF303030, false,
+                               1.0f / 30.0f);
+}
+
+void CMatrixRobot::DecorSmokeEnd() {
+    if (m_DecorSmoke.effect) {
+        ((CMatrixEffectSmoke *)m_DecorSmoke.effect)->SetTTL(1000);
+        m_DecorSmoke.Unconnect();
+    }
+}
+
+void CMatrixRobot::DecorHeadTakt(float ms) {
+    if (m_DecorTTL <= 0)
+        return;
+    m_DecorTTL -= ms;
+    if (m_DecorTTL <= 0) {
+        CMatrixEffect::CreateExplosion(m_DecorPos + D3DXVECTOR3(0, 0, 10), ExplosionRobotBoomSmall, true);
+        DecorSmokeEnd();
+        return;
+    }
+    m_DecorAge += ms;
+    if (!IS_ZERO_VECTOR(m_DecorVelocity)) {
+        m_DecorVelocity.z -= 0.0002f * ms;
+        m_DecorPos += m_DecorVelocity * ms;
+        // Only the ground and the water stop it.
+        const float z = g_MatrixMap->GetZ(m_DecorPos.x, m_DecorPos.y);
+        if (z < WATER_LEVEL && m_DecorPos.z <= WATER_LEVEL) {
+            m_DecorTTL = 0;
+            CMatrixEffect::CreateKonusSplash(
+                    D3DXVECTOR3(m_DecorPos.x, m_DecorPos.y, WATER_LEVEL), D3DXVECTOR3(0, 0, 1), 10, 5, 0, 1000, true,
+                    (CTextureManaged *)g_Cache->Get(CacheClass::TextureManaged, TEXTURE_PATH_SPLASH));
+            DecorSmokeEnd();
+            return;
+        }
+        if (m_DecorPos.z <= z) {
+            m_DecorPos.z = z;
+            m_DecorVelocity = D3DXVECTOR3(0, 0, 0);
+        }
+        if (m_DecorSmoke.effect)
+            ((CMatrixEffectSmoke *)m_DecorSmoke.effect)->SetPos(m_DecorPos);
+    }
+    D3DXMATRIX spin;
+    D3DXMatrixRotationYawPitchRoll(&spin, m_DecorSpin.x * m_DecorAge, m_DecorSpin.y * m_DecorAge,
+                                   m_DecorSpin.z * m_DecorAge);
+    m_DecorHeadMatrix = m_DecorBase * spin;
+    m_DecorHeadMatrix._41 += m_DecorPos.x;
+    m_DecorHeadMatrix._42 += m_DecorPos.y;
+    m_DecorHeadMatrix._43 += m_DecorPos.z;
 }
 
 void CMatrixRobot::UnitInsert(int beforeunit, ERobotUnitType type, ERobotUnitKind kind) {
@@ -563,6 +701,7 @@ void CMatrixRobot::RNeed(dword need) {
                 p.z += tm->_43;
             }
         }
+        DecorHeadPlace(p);  // the Reparator's head, where a head would stand
 
         if (m_Unit[0].u1.s1.m_Kind == RUK_CHASSIS_ANTIGRAVITY) {
             // D3DXMATRIX mx;
@@ -634,6 +773,10 @@ void CMatrixRobot::RNeed(dword need) {
                     m_Unit[i].u1.s1.m_ShadowStencil = NULL;
                 }
             }
+            if (m_DecorShadow) {
+                HDelete(CVOShadowStencil, m_DecorShadow, g_MatrixHeap);
+                m_DecorShadow = NULL;
+            }
         }
         else {
             for (int i = 0; i < m_UnitCnt; i++) {
@@ -668,6 +811,21 @@ void CMatrixRobot::RNeed(dword need) {
                 if (!m_Unit[i].u1.s1.m_ShadowStencil->IsReady()) {
                     HDelete(CVOShadowStencil, m_Unit[i].u1.s1.m_ShadowStencil, g_MatrixHeap);
                     m_Unit[i].u1.s1.m_ShadowStencil = NULL;
+                }
+            }
+            if (m_DecorHead) {
+                if (!m_DecorShadow)
+                    m_DecorShadow = HNew(g_MatrixHeap) CVOShadowStencil();
+                D3DXMATRIX im;
+                D3DXMatrixInverse(&im, NULL, &m_DecorHeadMatrix);
+                D3DXVECTOR3 light;
+                D3DXVec3TransformNormal(&light, &g_MatrixMap->m_LightMain, &im);
+                float len = (GetRadius() * 2) + m_DecorHeadMatrix._43 -
+                            (IsNearBase() ? g_MatrixMap->m_GroundZBase : g_MatrixMap->m_GroundZ);
+                m_DecorShadow->Build(*m_DecorHead->VO(), m_DecorHead->GetVOFrame(), light, len, false);
+                if (!m_DecorShadow->IsReady()) {
+                    HDelete(CVOShadowStencil, m_DecorShadow, g_MatrixHeap);
+                    m_DecorShadow = NULL;
                 }
             }
         }
@@ -939,6 +1097,8 @@ void CMatrixRobot::FreeDynamicResources(void) {
             if (m_Unit[i].u1.s1.m_ShadowStencil)
                 m_Unit[i].u1.s1.m_ShadowStencil->DX_Free();
         }
+        if (m_DecorShadow)
+            m_DecorShadow->DX_Free();
     }
 }
 
@@ -963,12 +1123,16 @@ void CMatrixRobot::BeforeDraw(void) {
             m_PB.Modify(p.x - (PB_ROBOT_WIDTH * 0.5f), p.y - GetRadius(), m_HitPoint * m_MaxHitPointInversed);
         }
     }
+    if (m_DecorHead)
+        m_DecorHead->BeforeDraw();
     if (g_Config.m_ShowStencilShadows && !IsInterfaceDraw()) {
         for (int i = 0; i < m_UnitCnt; i++) {
             m_Unit[i].m_Graph->BeforeDraw();
             if (m_CurrState != ROBOT_DIP && m_Unit[i].u1.s1.m_ShadowStencil)
                 m_Unit[i].u1.s1.m_ShadowStencil->BeforeRender();
         }
+        if (m_CurrState != ROBOT_DIP && m_DecorShadow)
+            m_DecorShadow->BeforeRender();
     }
     if (m_CurrState != ROBOT_DIP && m_ShadowProj && g_Config.m_ShowProjShadows)
         m_ShadowProj->BeforeRender();
@@ -979,47 +1143,12 @@ void CMatrixRobot::BeforeDraw(void) {
 }
 
 bool CMatrixRobot::ChassisSidesTakt() {
-    auto &s = m_ChassisSides;
-    const int kind = m_Unit[0].u1.s1.m_Kind;
-    if (!Mods::switches().chassis_motion || (kind != RUK_CHASSIS_WHEEL && kind != RUK_CHASSIS_TRACK) ||
-        !m_Unit[0].m_Graph || m_CurrState == ROBOT_DIP) {
-        s.time = -1;
-        return false;
-    }
-    const int now = g_MatrixMap->GetTime();
-    D3DXVECTOR2 forward(m_Forward.x, m_Forward.y);
-    D3DXVec2Normalize(&forward, &forward);
-    if (s.time >= 0 && now > s.time && now - s.time <= 1000) {
-        // Each side's way along the heading: the robot's own, and the turn's (the side's offset across times the
-        // angle; a side's half of the chassis about half its radius out). Sideways (a strafe) turns no wheel.
-        const D3DXVECTOR2 way(m_PosX - s.x, m_PosY - s.y);
-        const float ahead = D3DXVec2Dot(&way, &s.forward);
-        const float turn = std::atan2(s.forward.x * forward.y - s.forward.y * forward.x, D3DXVec2Dot(&s.forward, &forward));
-        D3DXVECTOR2 across(m_Unit[0].m_Matrix._11, m_Unit[0].m_Matrix._12);
-        D3DXVec2Normalize(&across, &across);
-        // A point at +X goes ahead by turn * offset * ((z x across) . forward) as the robot turns.
-        const float spin = turn * 0.5f * GetRadius() * (forward.y * across.x - forward.x * across.y);
-        // As the original's moving animation: a frame each k * its time, k = ANIMSPEED / the speed per logic takt.
-        CVectorObjectAnim *graph = m_Unit[0].m_Graph;
-        const int anim = graph->GetAnimIndex();
-        const int time = std::max(1, graph->VO()->GetAnimFrameTime(anim, 0));
-        const float speed = kind == RUK_CHASSIS_TRACK ? ANIMSPEED_CHAISIS_TRACK : ANIMSPEED_CHAISIS_WHEEL;
-        const float frames = float(graph->VO()->GetAnimFramesCount(anim));
-        for (int i = 0; i < 2; ++i) {
-            s.step[i] = (ahead + (i ? -spin : spin)) * LOGIC_TAKT_PERIOD / (speed * time);
-            s.frames[i] = std::fmod(s.frames[i] + s.step[i], frames);
-        }
-    }
-    else {
-        s.step[0] = s.step[1] = 0;
-        if (s.time < 0)
-            s.frames[0] = s.frames[1] = float(m_Unit[0].m_Graph->GetFrame());  // from the battle's frame
-    }
-    s.x = m_PosX;
-    s.y = m_PosY;
-    s.forward = forward;
-    s.time = now;
-    return true;
+    // ChassisMotion (the interface fixes mod): the sides' frames are its code.
+    const auto hook = ModHooks::hooks().chassis_sides;
+    if (Mods::switches().chassis_motion && hook)
+        return hook(*this);
+    m_ChassisSides.time = -1;
+    return false;
 }
 
 int CMatrixRobot::ChassisSideFrame(int side) const {
@@ -1075,6 +1204,11 @@ void CMatrixRobot::Draw(void) {
                 m_Unit[i].m_Graph->Draw(coltex);
             }
         }
+        if (m_DecorHead && m_DecorTTL > 0) {
+            g_D3DD->SetRenderState(D3DRS_TEXTUREFACTOR, 0xFF808080);
+            ASSERT_DX(g_D3DD->SetTransform(D3DTS_WORLD, &m_DecorHeadMatrix));
+            m_DecorHead->Draw(coltex);
+        }
     }
     else {
         for (int i = 0; i < m_UnitCnt; i++) {
@@ -1091,6 +1225,12 @@ void CMatrixRobot::Draw(void) {
                 draw(i);
             }
         }
+        // Before any light: in a picture a light is drawn at once (DrawNow) and leaves the billboards' vertex format.
+        if (m_DecorHead) {
+            g_D3DD->SetRenderState(D3DRS_TEXTUREFACTOR, m_Core->m_TerainColor);
+            ASSERT_DX(g_D3DD->SetTransform(D3DTS_WORLD, &m_DecorHeadMatrix));
+            m_DecorHead->Draw(coltex);
+        }
         for (int i = 0; i < m_UnitCnt; i++) {
             if (IsInterfaceDraw()) {
                 m_Unit[i].m_Graph->DrawLights(true, m_Unit[i].m_Matrix, &g_MatrixMap->m_Camera.GetDrawNowIView());
@@ -1098,6 +1238,12 @@ void CMatrixRobot::Draw(void) {
             else {
                 m_Unit[i].m_Graph->DrawLights(false, m_Unit[i].m_Matrix, NULL);
             }
+        }
+        if (m_DecorHead) {
+            if (IsInterfaceDraw())  // as the units' lights
+                m_DecorHead->DrawLights(true, m_DecorHeadMatrix, &g_MatrixMap->m_Camera.GetDrawNowIView());
+            else
+                m_DecorHead->DrawLights(false, m_DecorHeadMatrix, NULL);
         }
 
         //#ifdef _DEBUG
@@ -1153,6 +1299,9 @@ void CMatrixRobot::Draw(void) {
                 SBotWeapon *w = this->AsRobot()->m_Weapons + i;
                 w->Draw(this->AsRobot());
             }
+            for (SWeaponRepairData *glow : m_DecorGlow)
+                if (glow)
+                    glow->Draw(false);
         }
 
         if (m_Unit[0].u1.s1.m_Kind == RUK_CHASSIS_ANTIGRAVITY) {
@@ -1196,6 +1345,8 @@ void CMatrixRobot::DrawShadowStencil(void) {
             m_Unit[i].u1.s1.m_ShadowStencil->Render(m_Unit[i].m_Matrix);
         }
     }
+    if (m_DecorShadow)
+        m_DecorShadow->Render(m_DecorHeadMatrix);
 }
 
 void CMatrixRobot::DrawShadowProj(void) {

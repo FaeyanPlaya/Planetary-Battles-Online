@@ -20,6 +20,7 @@ bool g_manual_control = true;
 bool g_manual_bonus = true;
 bool g_dropped_ai = true;
 std::vector<std::string> g_mods;
+bool g_verified_personal = false;
 
 const char *mode_name(bool original) { return original ? "original" : "corrected"; }
 
@@ -57,7 +58,7 @@ bool bonuses_from_text(std::string_view value, std::array<BattleChoice::Bonus, s
 Rules active() {
     return {random::mode(), DelayedDamage::original(), GroupCounts::original(), PlaceContainment::original(),
             ZeroXTrace::original(), g_resources, g_ai_resources, g_bonus, g_manual_control, g_manual_bonus,
-            g_dropped_ai, g_mods};
+            g_dropped_ai, g_mods, g_verified_personal};
 }
 
 void apply_modes(const Rules &rules) {
@@ -75,6 +76,7 @@ void set_sides(const Rules &rules) {
     g_manual_bonus = rules.manual_bonus;
     g_dropped_ai = rules.dropped_ai;
     g_mods = rules.mods;
+    g_verified_personal = rules.verified_personal;
 }
 
 Resources resources() { return g_resources; }
@@ -88,6 +90,8 @@ bool manual_bonus() { return g_manual_bonus; }
 bool dropped_ai() { return g_dropped_ai; }
 
 const std::vector<std::string> &mods() { return g_mods; }
+
+bool verified_personal() { return g_verified_personal; }
 
 BattleChoice::Bonus bonus(int side) {
     return side >= 1 && side <= side_count ? g_bonus[side - 1] : BattleChoice::Bonus::None;
@@ -108,14 +112,16 @@ std::string to_text(const Rules &rules) {
                        rules.resources == Resources::Map ? "map" : "equal",
                        rules.ai_resources > 0 ? std::format("x{}", rules.ai_resources) : std::string("map"), bonuses,
                        rules.manual_control ? "on" : "off", rules.manual_bonus ? "on" : "off",
-                       rules.dropped_ai ? "ai" : "idle", Mods::join(rules.mods));
+                       rules.dropped_ai ? "ai" : "idle", Mods::join(rules.mods)) +
+           (rules.verified_personal ? " personal=verified" : "");
 }
 
 std::optional<Rules> from_text(std::string_view text) {
     Rules rules;
     constexpr std::string_view keys[] = {"rng",          "delayed_damage", "group_counts", "place_containment",
                                          "zero_x_trace", "resources",      "ai_resources", "bonus",
-                                         "manual",       "manual_bonus",   "dropped",      "mods"};
+                                         "manual",       "manual_bonus",   "dropped",      "mods",
+                                         "personal"};
     constexpr std::size_t key_count = std::size(keys);
     constexpr std::size_t required = 8;  // the manual keys came later: records without them have both on
     bool seen[key_count] = {};
@@ -159,6 +165,10 @@ std::optional<Rules> from_text(std::string_view text) {
         else if (key == "dropped") {
             if (value != "ai" && value != "idle") return std::nullopt;
             rules.dropped_ai = value == "ai";
+        }
+        else if (key == "personal") {
+            if (value != "verified" && value != "any") return std::nullopt;
+            rules.verified_personal = value == "verified";
         }
         else if (key == "mods") {
             rules.mods = Mods::split(value);

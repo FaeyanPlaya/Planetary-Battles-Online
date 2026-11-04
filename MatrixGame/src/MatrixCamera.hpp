@@ -278,6 +278,15 @@ public:
     float MaxDistParam(int index) const;
     // FirstPerson: looking from the robot or turret driven (the wheel all the way in once more).
     bool FirstPerson() const { return m_FirstPerson; }
+    // The camera mode now (CAMERA_STRATEGY, CAMERA_INROBOT) and its distance parameter (0.25: all the way in).
+    int ModeIndex() const { return m_ModeIndex; }
+    float DistParam() const { return m_DistParam[m_ModeIndex]; }
+    // Into the robot's or turret's own view (the first person mod chooses when), blending in from where it is.
+    void EnterFirstPerson() {
+        if (!m_FirstPerson)
+            m_FirstPersonBlend = 0;
+        m_FirstPerson = true;
+    }
 
     void RotUpStep(void) {
         m_AngleParam[m_ModeIndex] += g_Config.m_CamParams[m_ModeIndex].m_CamMouseWheelStep;

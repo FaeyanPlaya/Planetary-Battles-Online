@@ -41,6 +41,11 @@ target_compile_definitions(
 
 set(MATRIXGAME_ENGINE_LINK_OPTIONS ${LINK_OPTIONS})
 list(REMOVE_ITEM MATRIXGAME_ENGINE_LINK_OPTIONS /SUBSYSTEM:WINDOWS)
+if(NOT MATRIXGAME_BUILD_DLL AND NOT MSVC)
+    # PBOEngine.dll, the stub EXE and the mods share MinGW's C++ runtime DLLs: one copy of its state, exceptions
+    # across them (the tests link everything statically themselves).
+    set(MATRIXGAME_ENGINE_LINK_OPTIONS "$<$<CONFIG:Release>:-s;-Wl,--no-insert-timestamp>")
+endif()
 target_link_options(
     MatrixGameInternal
     PUBLIC
@@ -71,6 +76,20 @@ add_matrix_directory(src/Interface)
 add_matrix_directory(src/Logic)
 add_matrix_directory(src/Text)
 
+# PBOEngineId.hpp: PBO_ENGINE_ID, the hash of the engine's headers, which a mod's DLL is built with and must carry
+# (ModApi.hpp); the engine loads only mods with its own.
+file(GLOB_RECURSE MATRIXGAME_API_HEADERS CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/MatrixGame/src/*.h ${CMAKE_SOURCE_DIR}/MatrixGame/src/*.hpp
+    ${CMAKE_SOURCE_DIR}/MatrixLib/*.h ${CMAKE_SOURCE_DIR}/MatrixLib/*.hpp)
+set(MATRIXGAME_ENGINE_ID_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/PBOEngineId.hpp)
+add_custom_command(OUTPUT ${MATRIXGAME_ENGINE_ID_HEADER}
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_ROOT=${CMAKE_SOURCE_DIR} -DOUTPUT_HEADER=${MATRIXGAME_ENGINE_ID_HEADER}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/engine/engine_id.cmake
+    DEPENDS ${MATRIXGAME_API_HEADERS} ${CMAKE_CURRENT_SOURCE_DIR}/engine/engine_id.cmake
+    VERBATIM)
+target_sources(MatrixGameInternal PRIVATE ${MATRIXGAME_ENGINE_ID_HEADER})
+target_include_directories(MatrixGameInternal PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
+
 if(MATRIXGAME_BUILD_DLL)
     add_library(MatrixGame SHARED)
     # remove lib prefix from the DLL name (for GCC build)
@@ -87,7 +106,32 @@ else()
             APPEND
             PROPERTY COMPILE_DEFINITIONS BUILD_EXE
     )
-    add_executable(MatrixGame WIN32)
+    # The engine is PBOEngine.dll and the EXE a stub over it (its WinMain is the DLL's, MatrixGame.cpp): the mods'
+    # DLLs in the mods folder link against the engine by a name that stays, whatever the EXE is called
+    # (games/space-rangers-hd/MODS-DESIGN.md).
+    add_library(PBOEngine SHARED engine/PBOEngine.cpp)
+    set_target_properties(PBOEngine PROPERTIES PREFIX "" RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    # Every object of the engine's libraries, not only those the EXE's code reaches; the libraries again for their
+    # own dependencies. A mod gets the engine's includes and definitions, not its static libraries.
+    target_link_libraries(PBOEngine PRIVATE MatrixGameInternal)
+    target_include_directories(PBOEngine INTERFACE $<TARGET_PROPERTY:MatrixGameInternal,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(PBOEngine INTERFACE $<TARGET_PROPERTY:MatrixGameInternal,INTERFACE_COMPILE_DEFINITIONS>)
+    target_compile_options(PBOEngine INTERFACE $<TARGET_PROPERTY:MatrixGameInternal,INTERFACE_COMPILE_OPTIONS>)
+    target_link_options(
+        PBOEngine
+        PRIVATE
+            -Wl,--whole-archive $<TARGET_FILE:MatrixGameInternal> $<TARGET_FILE:MatrixLib> $<TARGET_FILE:MatrixAudio>
+            -Wl,--no-whole-archive
+            -Wl,--export-all-symbols
+            -Wl,--exclude-libs,libpng16.a:libzs.a:libvorbisfile.a:libvorbis.a:libogg.a
+            ${MATRIXGAME_ENGINE_LINK_OPTIONS})
+    add_executable(MatrixGame WIN32 engine/Launcher.cpp)
+    # MinGW's runtime DLLs beside the EXE.
+    get_filename_component(MATRIXGAME_COMPILER_BIN ${CMAKE_CXX_COMPILER} DIRECTORY)
+    foreach(runtime libstdc++-6.dll libgcc_s_dw2-1.dll libmcfgthread-1.dll)
+        add_custom_command(TARGET PBOEngine POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MATRIXGAME_COMPILER_BIN}/${runtime} ${CMAKE_CURRENT_BINARY_DIR})
+    endforeach()
     # Declare DPI awareness before startup without affecting the DLL host.
     if(MSVC)
         target_sources(MatrixGame PRIVATE MatrixGame.manifest)
@@ -103,18 +147,17 @@ set(MATRIX_RESOURCES
 
 source_group("Resources" FILES ${MATRIX_RESOURCES})
 
-target_sources(MatrixGame PRIVATE
-    src/MatrixGame.cpp
-    ${MATRIX_RESOURCES}
-)
-
-target_link_libraries(MatrixGame MatrixGameInternal)
-
-target_link_options(
-    MatrixGame
-    PRIVATE
-        ${LINK_OPTIONS}
-)
+if(MATRIXGAME_BUILD_DLL)
+    target_sources(MatrixGame PRIVATE src/MatrixGame.cpp)
+    target_link_libraries(MatrixGame MatrixGameInternal)
+    target_link_options(MatrixGame PRIVATE ${LINK_OPTIONS})
+else()
+    target_link_libraries(MatrixGame PBOEngine)
+    # The C runtime's start (libmingw32, linked last) wants WinMain: taken from the engine's import library, so
+    # asked for before the libraries are read.
+    target_link_options(MatrixGame PRIVATE -Wl,-u,_WinMain@16 ${MATRIXGAME_ENGINE_LINK_OPTIONS})
+endif()
+target_sources(MatrixGame PRIVATE ${MATRIX_RESOURCES})
 
 # Copy the CFG directory from the MatrixGame/
 if (NOT MATRIXGAME_BUILD_DLL)
@@ -124,9 +167,52 @@ if (NOT MATRIXGAME_BUILD_DLL)
     endif ()
 endif ()
 
-# Our mods are built into the EXE; the players' mods folder beside it is left empty for now.
+# The mods folder beside the EXE. Our mods of it (mods/<id> here; games/space-rangers-hd/MODS-DESIGN.md): each a DLL
+# over PBOEngine and its mod.txt in mods/<id> beside the EXE; the EXE carries the fingerprints of the personal ones
+# (Mods::verified), written by ModHash once they are built. The engine runs their code through ModHooks.hpp.
 if (NOT MATRIXGAME_BUILD_DLL)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mods)
+    # Our mods (mods/<id>: mod.txt, <id>.cpp for a mod with code: its DLL; data.txt for its data: ModData).
+    # tools/make-build.ps1 ships them.
+    set(MATRIXGAME_MODS autoboom ballistics farview firstperson fixes homing interface manual newsky pbo rally repair
+                        sky sr2 turrets)
+    set(MATRIXGAME_MOD_FOLDERS)
+    set(MATRIXGAME_MOD_FILES)
+    foreach(mod ${MATRIXGAME_MODS})
+        set(folder ${CMAKE_CURRENT_BINARY_DIR}/mods/${mod})
+        add_custom_command(OUTPUT ${folder}/mod.txt
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${folder}
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/mod.txt ${folder}/mod.txt
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/mod.txt)
+        list(APPEND MATRIXGAME_MOD_FOLDERS ${folder})
+        list(APPEND MATRIXGAME_MOD_FILES ${folder}/mod.txt)
+        # A mod's models (sky's reparator.vo) and its data (data.txt: ModData) go beside its mod.txt.
+        file(GLOB mod_models CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/*.vo
+             ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/data.txt)
+        foreach(model ${mod_models})
+            get_filename_component(model_name ${model} NAME)
+            add_custom_command(OUTPUT ${folder}/${model_name}
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${folder}
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${model} ${folder}/${model_name}
+                DEPENDS ${model})
+            list(APPEND MATRIXGAME_MOD_FILES ${folder}/${model_name})
+        endforeach()
+        if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/${mod}.cpp)
+            add_library(pbo_mod_${mod} SHARED mods/${mod}/${mod}.cpp ${folder}/mod.txt)
+            set_target_properties(pbo_mod_${mod} PROPERTIES PREFIX "" OUTPUT_NAME ${mod} RUNTIME_OUTPUT_DIRECTORY ${folder})
+            target_link_libraries(pbo_mod_${mod} PRIVATE PBOEngine ${DIRECTX9_LIBRARIES})  # (D3DX: its math)
+            target_link_options(pbo_mod_${mod} PRIVATE ${MATRIXGAME_ENGINE_LINK_OPTIONS})
+            list(APPEND MATRIXGAME_MOD_FILES pbo_mod_${mod})
+        endif ()
+    endforeach()
+    add_executable(ModHash engine/ModHash.cpp)
+    set_target_properties(ModHash PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    target_link_libraries(ModHash PRIVATE PBOEngine)
+    set(MATRIXGAME_VERIFIED_MODS ${CMAKE_CURRENT_BINARY_DIR}/generated/VerifiedMods.cpp)
+    add_custom_command(OUTPUT ${MATRIXGAME_VERIFIED_MODS}
+        COMMAND ModHash ${MATRIXGAME_VERIFIED_MODS} ${MATRIXGAME_MOD_FOLDERS}
+        DEPENDS ModHash ${MATRIXGAME_MOD_FILES})
+    target_sources(MatrixGame PRIVATE ${MATRIXGAME_VERIFIED_MODS})
 endif ()
 
 # Copy the DATA/robots.pkg file from the game

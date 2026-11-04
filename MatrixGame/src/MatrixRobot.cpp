@@ -9,6 +9,7 @@
 #include "MatrixRobot.hpp"
 #include "DelayedDamage.hpp"
 #include "Mods.hpp"
+#include "ModHooks.hpp"
 #include "MatrixObjectBuilding.hpp"
 #include "Logic/MatrixRule.h"
 #include "MatrixObjectCannon.hpp"
@@ -55,11 +56,11 @@ void SWeaponRepairData::Draw(bool now) {
     D3DXVECTOR3 tocam;
     tocam = (now ? g_MatrixMap->m_Camera.GetDrawNowFC() : g_MatrixMap->m_Camera.GetFrustumCenter()) - m_pos0;
     D3DXVec3Normalize(&tocam, &tocam);
-    p0 = m_pos0 + tocam * 3;
+    p0 = m_pos0 + tocam * m_Lift;
 
     tocam = (now ? g_MatrixMap->m_Camera.GetDrawNowFC() : g_MatrixMap->m_Camera.GetFrustumCenter()) - m_pos1;
     D3DXVec3Normalize(&tocam, &tocam);
-    p1 = m_pos1 + tocam * 3;
+    p1 = m_pos1 + tocam * m_Lift;
 
     m_bl.SetPos(p0, p1);
     m_b0.SetPos(p0);
@@ -83,22 +84,29 @@ void SWeaponRepairData::Update(SMatrixRobotUnit *unit) {
     const D3DXMATRIX *m0 = unit->m_Graph->GetMatrixById(1);
     const D3DXMATRIX *m1 = unit->m_Graph->GetMatrixById(2);
 
-    D3DXVec3TransformCoord(&m_pos0, (D3DXVECTOR3 *)&m0->_41, &unit->m_Matrix);
-    D3DXVec3TransformCoord(&m_pos1, (D3DXVECTOR3 *)&m1->_41, &unit->m_Matrix);
+    D3DXVECTOR3 p0, p1;
+    D3DXVec3TransformCoord(&p0, (D3DXVECTOR3 *)&m0->_41, &unit->m_Matrix);
+    D3DXVec3TransformCoord(&p1, (D3DXVECTOR3 *)&m1->_41, &unit->m_Matrix);
+    Set(p0, p1);
+}
 
+void SWeaponRepairData::Set(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1) {
+    m_pos0 = pos0;
+    m_pos1 = pos1;
     SETFLAG(m_Flags, SWeaponRepairData::CAN_BE_DRAWN);
 }
 
-SWeaponRepairData *SWeaponRepairData::Allocate(void) {
+SWeaponRepairData *SWeaponRepairData::Allocate(float end0, float end1, float width, float lift) {
     SWeaponRepairData *r = (SWeaponRepairData *)HAlloc(sizeof(SWeaponRepairData), g_MatrixHeap);
 
-    new(&r->m_b0) CBillboard(TRACE_PARAM_CALL D3DXVECTOR3(-1000, -1000, -1000), 5, 0, 0xFFFFFFFF,
+    new(&r->m_b0) CBillboard(TRACE_PARAM_CALL D3DXVECTOR3(-1000, -1000, -1000), end0, 0, 0xFFFFFFFF,
                                    CMatrixEffect::GetBBTexI(BBT_REPGLOWEND));
-    new(&r->m_b1) CBillboard(TRACE_PARAM_CALL D3DXVECTOR3(-1000, -1000, -1000), 10, 0, 0xFFFFFFFF,
+    new(&r->m_b1) CBillboard(TRACE_PARAM_CALL D3DXVECTOR3(-1000, -1000, -1000), end1, 0, 0xFFFFFFFF,
                                    CMatrixEffect::GetBBTexI(BBT_REPGLOWEND));
     new(&r->m_bl) CBillboardLine(TRACE_PARAM_CALL D3DXVECTOR3(-1000, -1000, -1000),
-                                           D3DXVECTOR3(-1000, -1000, -1000), 10, 0xFFFFFFFF,
+                                           D3DXVECTOR3(-1000, -1000, -1000), width, 0xFFFFFFFF,
                                            CMatrixEffect::GetBBTexI(BBT_REPGLOW));
+    r->m_Lift = lift;
     RESETFLAG(r->m_Flags, SWeaponRepairData::CAN_BE_DRAWN);
     return r;
 }
@@ -199,6 +207,7 @@ void CMatrixRobotAI::DIPTakt(float ms) {
     D3DXVECTOR3 *pos;
     D3DXMATRIX *mat;
 
+    DecorHeadTakt(ms);  // the Reparator's head: drawn only, before the robot can be deleted
     bool del = true;
     for (int i = 0; i < m_UnitCnt; ++i) {
         if (m_Unit[i].u1.s2.m_TTL <= 0)
@@ -356,7 +365,8 @@ void CMatrixRobotAI::LogicTakt(int ms) {
     // A robot with a base (one just built, leaving its lift; or one capturing it) dies after 10 s with it, so that a
     // robot stuck on a lift frees the base. A capture held up longer (its lift kept from closing) killed the capturer;
     // the CaptureNoTimeout switch (the battle fixes mod) stops the count while the robot captures.
-    if (GetBase() && !(Mods::switches().capture_no_timeout && FindOrderLikeThat(ROT_CAPTURE_FACTORY))) {
+    const auto held = ModHooks::hooks().base_time_held;  // the battle fixes mod's
+    if (GetBase() && !(Mods::switches().capture_no_timeout && held && held(*this))) {
         m_TimeWithBase += ms;
         if (m_TimeWithBase > 10000) {
             GetBase()->Close();
@@ -956,30 +966,13 @@ void CMatrixRobotAI::LogicTakt(int ms) {
     // The person driving this robot: the keys they hold (drive commands bring them to every peer).
     if (driver) {
         const int keys = driver->DriveKeys();
-        const int strafe = Mods::switches().manual_extras  // 1 right, -1 left
-                                   ? int((keys & Commands::DRIVE_STRAFE_RIGHT) != 0) -
-                                             int((keys & Commands::DRIVE_STRAFE_LEFT) != 0)
-                                   : 0;
-        // ManualExtras: a chassis that turns to go sideways leaves its heading on a strafe; A and D turn the heading
-        // then, and with no key to go it turns back to it.
-        if (!Mods::switches().manual_extras || !StrafesFacing())
+        // ManualExtras (the manual control+ mod): sideways, and the turning of a chassis that turns to go sideways.
+        const auto &hooks = ModHooks::hooks();
+        const bool extras = Mods::switches().manual_extras && hooks.drive_strafe && hooks.drive_turn;
+        const int strafe = extras ? hooks.drive_strafe(keys) : 0;  // 1 right, -1 left
+        if (!extras)
             m_DriveSplit = false;
-        else if (strafe && !m_DriveSplit) {
-            m_DriveHeading = D3DXVECTOR3(m_Forward.x, m_Forward.y, 0);
-            D3DXVec3Normalize(&m_DriveHeading, &m_DriveHeading);
-            m_DriveSplit = true;
-        }
-        if (m_DriveSplit) {
-            const int turn = int((keys & Commands::DRIVE_RIGHT) != 0) - int((keys & Commands::DRIVE_LEFT) != 0);
-            if (turn) {
-                D3DXMATRIX rot_mat;
-                D3DXMatrixRotationZ(&rot_mat, float(turn) * m_maxRotationSpeed * m_SyncMul);
-                D3DXVec3TransformNormal(&m_DriveHeading, &m_DriveHeading, &rot_mat);
-                D3DXVec3Normalize(&m_DriveHeading, &m_DriveHeading);
-            }
-            if (!strafe && !(keys & (Commands::DRIVE_FORWARD | Commands::DRIVE_BACKWARD)) &&
-                RotateRobot(D3DXVECTOR3(m_PosX, m_PosY, 0) + m_DriveHeading))
-                m_DriveSplit = false;
+        if (extras && hooks.drive_turn(*this, keys, strafe)) {
         }
         else {
             if (keys & Commands::DRIVE_LEFT)
@@ -1060,58 +1053,12 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                 DCP();
                 if (driver) {
                     const int keys = driver->DriveKeys();
-                    const int strafe = Mods::switches().manual_extras  // 1 right, -1 left
-                                               ? int((keys & Commands::DRIVE_STRAFE_RIGHT) != 0) -
-                                                         int((keys & Commands::DRIVE_STRAFE_LEFT) != 0)
-                                               : 0;
-                    if (m_DriveSplit) {
-                        // ManualExtras, a chassis that turns to go sideways: the way from the heading (aslant with
-                        // forward or back held); it turns to face it (its back to it when it goes back), then goes,
-                        // or with forward or back held goes the way it faces while it turns (the owner's choice: a
-                        // curve, as at its own turning speed).
-                        const D3DXVECTOR3 &heading = m_DriveHeading;
-                        const D3DXVECTOR3 left(heading.y, -heading.x, 0);
-                        const float ahead = (keys & Commands::DRIVE_FORWARD)    ? 1.0f
-                                            : (keys & Commands::DRIVE_BACKWARD) ? -1.0f
-                                                                                : 0.0f;
-                        D3DXVECTOR3 way = heading * ahead - left * float(strafe);
-                        if (D3DXVec3LengthSq(&way) < 0.01f) {
-                            StopMoving();
-                            MapPosCalc();
-                            break;
-                        }
-                        D3DXVec3Normalize(&way, &way);
-                        const bool back = D3DXVec3Dot(&way, &heading) < -0.01f;
-                        const D3DXVECTOR3 face = back ? -way : way, pos(m_PosX, m_PosY, 0);
-                        D3DXVECTOR3 forward(m_Forward.x, m_Forward.y, 0);
-                        D3DXVec3Normalize(&forward, &forward);
-                        if (ahead == 0 && D3DXVec3Dot(&forward, &face) < STRAFE_FACING_COS) {
-                            LowLevelMove(ms, pos + face * m_maxSpeed, true, true, false, false, nullptr, 0.0f);
-                        }
-                        else {
-                            if (back)
-                                RotateRobot(pos + face);  // going back, Seek does not turn it; forward, it does
-                            // Far: within a step Seek goes straight to the point, not the way the chassis faces.
-                            LowLevelMove(ms, pos + way * (m_maxSpeed * 100), true, true, false, back);
-                            D3DXVECTOR3 now(m_Forward.x, m_Forward.y, 0);
-                            D3DXVec3Normalize(&now, &now);
-                            if (!strafe && D3DXVec3Dot(&now, &face) > 0.9999f)
-                                m_DriveSplit = false;  // back on the heading
-                        }
-                    }
-                    else if (strafe) {
-                        // ManualExtras, hovercraft and antigravity: sideways (with forward or back held, aslant), not
-                        // turning.
-                        D3DXVECTOR3 forward(m_Forward.x, m_Forward.y, 0);
-                        D3DXVec3Normalize(&forward, &forward);
-                        const D3DXVECTOR3 left(forward.y, -forward.x, 0);  // as RotateRobotLeft turns
-                        const float ahead = (keys & Commands::DRIVE_FORWARD)    ? 1.0f
-                                            : (keys & Commands::DRIVE_BACKWARD) ? -1.0f
-                                                                                : 0.0f;
-                        D3DXVECTOR3 along = forward * ahead - left * float(strafe);
-                        D3DXVec3Normalize(&along, &along);
-                        const D3DXVECTOR3 dest = D3DXVECTOR3(m_PosX, m_PosY, 0) + along * m_maxSpeed;
-                        LowLevelMove(ms, dest, true, true, false, false, &along, StrafeSpeedShare());
+                    const auto &hooks = ModHooks::hooks();
+                    const bool extras = Mods::switches().manual_extras && hooks.drive_strafe && hooks.drive_sideways;
+                    const int strafe = extras ? hooks.drive_strafe(keys) : 0;  // 1 right, -1 left
+                    if (extras && (m_DriveSplit || strafe)) {
+                        // ManualExtras (the manual control+ mod): sideways.
+                        hooks.drive_sideways(*this, ms, keys, strafe);
                     }
                     else if (keys & Commands::DRIVE_FORWARD)
                     {
@@ -1268,8 +1215,8 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                     if (m_Weapons[nC].IsEffectPresent()) {
                         // ManualExtras: a slot its driver turned off holds its fire.
                         const int slot = m_Weapons[nC].m_Unit ? m_Weapons[nC].m_Unit->u1.s1.m_Slot : 0;
-                        if (driver && Mods::switches().manual_extras && slot >= 1 && slot <= MAX_WEAPON_CNT &&
-                            (driver->DriveKeys() & (Commands::DRIVE_SLOT_OFF << (slot - 1)))) {
+                        const auto held = ModHooks::hooks().slot_off;
+                        if (driver && Mods::switches().manual_extras && held && held(driver->DriveKeys(), slot)) {
                             m_Weapons[nC].FireEnd();
                         }
                         else if (m_Weapons[nC].GetWeaponType() == WEAPON_REPAIR) {
@@ -1383,9 +1330,8 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                     // The lift began to close under the robot (the base's new robot left it or died on it): raise
                     // it again, as on the way in (CaptureLift switch; the original game left the robot standing in
                     // the air where the top had been).
-                    if (Mods::switches().capture_lift && factory->IsBase() && factory->m_State != BASE_OPENED &&
-                        factory->m_State != BASE_OPENING)
-                        factory->Open();
+                    if (const auto raise = ModHooks::hooks().capture_raise; Mods::switches().capture_lift && raise)
+                        raise(*factory);
                     if (RotateRobot(
                                 D3DXVECTOR3(m_PosX + factory->GetMatrix()._21, m_PosY + factory->GetMatrix()._22, 0))) {
                         m_OrdersList[0].SetPhase(ROP_CAPTURING);
@@ -1405,12 +1351,9 @@ void CMatrixRobotAI::LogicTakt(int ms) {
 
                     // kshhhhchk "captureing factory" kshhhhchk
                     if (factory->IsBase()) {
-                        if (Mods::switches().capture_lift && m_CurrState != ROBOT_BASE_CAPTURE &&
-                            factory->m_State != BASE_OPENED) {
-                            // Not riding the lift yet: it goes down with the robot only from the top (it stood on
-                            // it in the air when something else had closed it).
-                            if (factory->m_State != BASE_OPENING)
-                                factory->Open();
+                        if (Mods::switches().capture_lift && ModHooks::hooks().capture_wait &&
+                            ModHooks::hooks().capture_wait(*this, *factory)) {
+                            // (CaptureLift: not riding the lift yet.)
                         }
                         else if (factory->m_State != BASE_CLOSED && factory->m_State != BASE_CLOSING) {
                             m_CurrState = ROBOT_BASE_CAPTURE;
@@ -2098,7 +2041,7 @@ bool CMatrixRobotAI::Damage(
         for (int nC = 0; nC < m_WeaponsCnt; ++nC) {
             if (m_Weapons[nC].IsEffectPresent() && m_Weapons[nC].GetWeaponType() == WEAPON_BIGBOOM) {
                 if (g_MatrixMap->IsHumanSide(GetSide())) {
-                    if (Mods::switches().auto_boom && m_AutoBoom)
+                    if (const auto boom = ModHooks::hooks().auto_boom; Mods::switches().auto_boom && boom && boom(*this))
                         BigBoom(nC);
                 }
                 else {
@@ -2244,6 +2187,7 @@ bool CMatrixRobotAI::Damage(
             CMatrixEffect::CreateSmoke(&m_Unit[i].Smoke(), m_Unit[i].u1.s2.m_Pos, m_Unit[i].u1.s2.m_TTL + 100000, 1600, 80,
                                        0xCF303030, false, 1.0f / 30.0f);
         }
+        DecorHeadBreak(onair);
 
         DCP();
         return true;
@@ -2352,18 +2296,9 @@ void CMatrixRobotAI::RobotSpawn(CMatrixBuilding *pBase) {
 
             SETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
 
-            if (Mods::switches().rally_point && pBase->m_HasRally && pBase->m_RallySide == pBase->m_Side) {
-                // RallyPoint: to the base's point once out of the base, and stay (no free place near the base is
-                // taken).
-                m_HasRally = true;
-                m_RallyPoint = pBase->m_Rally;
-                RESETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_ORDER_ATTACK_DISABLE);
-                if (m_Side != 0)
-                    g_MatrixMap->GetSideById(m_Side)->IncStatValue(STAT_ROBOT_BUILD);
-                m_CurrState = ROBOT_IN_SPAWN;
-                pBase->Open();
-                return;
-            }
+            if (const auto rally = ModHooks::hooks().rally_spawn;
+                Mods::switches().rally_point && rally && rally(*this, *pBase))
+                return;  // (RallyPoint, the rally point mod: sent to the base's point)
 
             side->AssignPlace(this, g_MatrixMap->GetRegion(CPoint(int(pBase->m_Pos.x / GLOBAL_SCALE_MOVE),
                                                                   int(pBase->m_Pos.y / GLOBAL_SCALE_MOVE))));
@@ -2546,21 +2481,6 @@ bool CMatrixRobotAI::RotateRobot(const D3DXVECTOR3 &dest, float *rotateangle) {
     //	}
 
     return false;
-}
-
-bool CMatrixRobotAI::StrafesFacing() const {
-    return m_Unit[0].u1.s1.m_Kind != RUK_CHASSIS_HOVERCRAFT && m_Unit[0].u1.s1.m_Kind != RUK_CHASSIS_ANTIGRAVITY;
-}
-
-float CMatrixRobotAI::StrafeSpeedShare() const {
-    switch (m_Unit[0].u1.s1.m_Kind) {
-        case RUK_CHASSIS_HOVERCRAFT:
-            return 0.50f / 0.65f;
-        case RUK_CHASSIS_ANTIGRAVITY:
-            return 0.55f / 0.70f;
-        default:
-            return 1.0f;
-    }
 }
 
 bool CMatrixRobotAI::Seek(const D3DXVECTOR3 &dest, bool &rotate, bool end_path, bool back, const D3DXVECTOR3 *along,
@@ -4581,9 +4501,8 @@ void CMatrixRobotAI::CalcRobotMass() {
 // enemy it saw for 5 s at a time, and every enemy ignored it, point-blank. Seen and in reach is enough there
 // with the LiftSight switch (Planetary Battles Online mod); the original game keeps the check.
 bool CMatrixRobotAI::OffMoveGrid(const CPoint &from, const CPoint &to) {
-    if (!Mods::switches().lift_sight) return false;
-    const byte mm = m_Unit[0].u1.s1.m_Kind - 1;  // as the path check takes it
-    return g_MatrixMap->FindNearPlace(mm, from) < 0 || g_MatrixMap->FindNearPlace(mm, to) < 0;
+    const auto off = ModHooks::hooks().off_move_grid;  // the Planetary Battles Online mod's
+    return Mods::switches().lift_sight && off && off(*this, from, to);
 }
 
 void CMatrixRobotAI::GatherInfo(int type) {
@@ -5610,6 +5529,10 @@ void CMatrixRobotAI::CreateTextures() {
     // A robot made while the device is lost (a shared battle goes on then) is drawn later.
     m_TexturesLater = CMatrixMap::m_DeviceLost;
     if (m_TexturesLater) return;
+    if (m_DecorTopSet)
+        DecorHeadPlace(m_DecorTop);  // the Reparator's head in the picture too
+    if (m_DecorHead)
+        m_DecorHead->BeforeDraw();  // its buffers, before its first drawing
 #ifdef USE_SMALL_TEXTURE_IN_ROBOT_ICON
     SRenderTexture rt[3];
     rt[0].ts = TEXSIZE_256;

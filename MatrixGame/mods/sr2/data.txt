@@ -1,0 +1,32 @@
+Weapons {
+	Cooldown {
+		WEAPON_VOLCANO=70
+		WEAPON_GUN=500
+		WEAPON_HOMING_MISSILE=1000
+		WEAPON_REPAIR=27
+	}
+	Overheat {
+		WEAPON_GUN_HEAT=200
+		WEAPON_HOMING_MISSILE_HEAT=500
+	}
+	Damages {
+		Cannon {
+			WEAPON_BOMB=300
+		}
+	}
+}
+Price {
+	Head {
+		HEAD4_PLASM=40
+	}
+	Weapon {
+		WEAPON3_ELECTRONICS=10
+	}
+}
+Chars {
+	Heads {
+		S {
+			HIT_POINT_ADD=300
+		}
+	}
+}

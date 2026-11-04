@@ -120,6 +120,8 @@ public:
         m_PosY = y;
         SetVisible(true);
     }
+    // Drawn over every other hint (they are drawn in the order they were made).
+    void ToTop();
 
     int GetCopyPosCnt(void) const { return m_CopyPos.size(); }
     const CPoint &GetCopyPos(int i) const { return m_CopyPos[i]; }

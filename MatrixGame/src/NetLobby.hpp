@@ -20,11 +20,11 @@ class Host {
 public:
     // Opens the lobby on address:port; false when the port cannot be used.
     // data and build: this PC's fingerprints; people with others are refused. name: the host's PlayerName;
-    // a person with a name already in the lobby is refused.
+    // a person with a name already in the lobby is refused. personal: the host's own mods on.
     bool open(const std::string &address, int port, BattleChoice::Bonus bonus, std::string data, std::string build,
-              std::wstring name = {});
+              std::wstring name = {}, std::vector<Lobby::ModRef> personal = {});
     // The lobby without a network: the host alone, nobody can join (poll does nothing).
-    void open_local(BattleChoice::Bonus bonus, std::wstring name);
+    void open_local(BattleChoice::Bonus bonus, std::wstring name, std::vector<Lobby::ModRef> personal = {});
     // Takes in new people, reads what the clients say, notices who left. True when the state changed.
     bool poll();
     const Lobby::State &state() const { return m_State; }
@@ -46,6 +46,8 @@ public:
     void set_dropped_ai(bool ai);
     // The battle's mods; other mods make every client not ready.
     void set_mods(const std::vector<Lobby::ModRef> &mods);
+    // Only verified personal mods play (Lobby::State::verified_only); a change makes every client not ready.
+    void set_verified_only(bool only);
     // Sends a client away (person >= 1); the same name is refused until the lobby closes.
     void kick(int person);
     // Tells the clients that the host is loading and gives up the connections: person i + 1's at index i.
@@ -106,8 +108,9 @@ public:
     // ComeBack: the battle has started and this person (by name) may come back to it.
     enum class Failure { None, Unreachable, Full, Version, Build, Data, Name, Started, ComeBack, HostLeft, Lost, Kicked };
 
+    // personal: this person's own mods on, told the host in the hello.
     void connect(const std::string &address, int port, BattleChoice::Bonus bonus, int timeout_ms, std::string data,
-                 std::string build, std::wstring name = {});
+                 std::string build, std::wstring name = {}, std::vector<Lobby::ModRef> personal = {});
     // True when something changed.
     bool poll();
     Phase phase() const { return m_Phase; }
@@ -141,6 +144,7 @@ private:
     int m_Port = 0;
     std::string m_Data, m_Build;
     std::wstring m_Name;
+    std::vector<Lobby::ModRef> m_Personal;
     BattleChoice::Bonus m_Bonus = BattleChoice::Bonus::None;
     Phase m_Phase = Phase::Failed;
     Failure m_Failure = Failure::None;

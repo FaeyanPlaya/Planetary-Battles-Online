@@ -7,6 +7,7 @@
 #include "MatrixMap.hpp"
 #include "MatrixRobot.hpp"
 #include "Mods.hpp"
+#include "ModHooks.hpp"
 #include "BattleNotice.hpp"
 #include "MatrixObjectBuilding.hpp"
 #include "MatrixFormGame.hpp"
@@ -443,21 +444,11 @@ void CMatrixSideUnit::BuildCrazyBot(void) {
 void CMatrixSideUnit::LogicTakt(int ms) {
     DTRACE();
 
-    // RallyPoint: the selected base's point is marked while it is selected (what this person sees only).
-    if (Mods::switches().rally_point && this == g_MatrixMap->GetPlayerSide() && m_CurrSel == BASE_SELECTED &&
-        m_ActiveObject && m_ActiveObject->IsBuilding() && m_ActiveObject->AsBuilding()->m_HasRally &&
-        m_ActiveObject->GetSide() == m_Id) {
-        m_RallyMarkerTime -= ms;
-        if (m_RallyMarkerTime <= 0) {
-            m_RallyMarkerTime = 400;
-            random::CosmeticScope cosmetic;
-            const D3DXVECTOR2 &at = m_ActiveObject->AsBuilding()->m_Rally;
-            CMatrixEffect::CreateMoveto(D3DXVECTOR3(at.x, at.y, g_MatrixMap->GetZ(at.x, at.y)));
-        }
-    }
-    else {
+    // RallyPoint (the rally point mod): the selected base's point marked (what this person sees only).
+    if (const auto marker = ModHooks::hooks().rally_marker; Mods::switches().rally_point && marker)
+        marker(*this, ms);
+    else
         m_RallyMarkerTime = 0;
-    }
 
     if (GetStatus() != SS_NONE && FLAG(g_Config.m_DIFlags, DI_SIDEINFO)) {
         g_MatrixMap->m_DI.T(utils::format(L"Side %d", m_Id).c_str(),
@@ -704,13 +695,13 @@ void CMatrixSideUnit::OnLButtonDown(const CPoint &) {
             IssueGroupOrder(Commands::Type::Move, tpos, NULL);
         }
         else if (FLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE)) {
-            // A turret fires at an enemy unit only: a click elsewhere leaves the order open.
+            // A turret fires, as robots do, at any live object or the ground point clicked (in its reach).
             if (m_CurrSel == TURRET_SELECTED) {
-                if (IS_TRACE_STOP_OBJECT(pObject) && (IsLiveUnit(pObject) || pObject->IsFlyer()) &&
-                    pObject->GetSide() != m_Id) {
-                    RESETFLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE | ORDERING_MODE);
+                RESETFLAG(g_IFaceList->m_IfListFlags, PREORDER_FIRE | ORDERING_MODE);
+                if (CMatrixCannon::OrderableTarget(pObject))
                     IssueTurretOrder(Commands::Type::TurretAttack, pObject);
-                }
+                else if (pObject == TRACE_STOP_LANDSCAPE || pObject == TRACE_STOP_WATER)
+                    IssueTurretPoint(tpos);
                 return;
             }
             // Fire: at a live object, otherwise at the ground point
@@ -840,9 +831,9 @@ void CMatrixSideUnit::OnRButtonDown(const CPoint &) {
     if (!IS_PREORDERING && IssueRally(pObject, tpos))
         return;
 
-    // The selected turret fires at the enemy unit clicked.
+    // The selected turret fires at the live object of another side clicked (a neutral one too).
     if (!IS_PREORDERING && m_CurrSel == TURRET_SELECTED) {
-        if (IS_TRACE_STOP_OBJECT(pObject) && (IsLiveUnit(pObject) || pObject->IsFlyer()) && pObject->GetSide() != m_Id)
+        if (CMatrixCannon::OrderableTarget(pObject) && pObject->GetSide() != m_Id)
             IssueTurretOrder(Commands::Type::TurretAttack, pObject);
         return;
     }
@@ -1355,7 +1346,9 @@ void CMatrixSideUnit::SetArcadedObject(CMatrixMapStatic *o) {
     if (IsRobotMode()) {
         if (bonus) {
             m_Arcaded->AsRobot()->SetMaxSpeed(m_Arcaded->AsRobot()->GetMaxSpeed() / SPEED_BOOST);
-            if (Mods::switches().drive_reach_reset || (o && o != m_Arcaded && o->GetObjectType() == OBJECT_TYPE_ROBOTAI))
+            const auto reset = ModHooks::hooks().drive_reach_reset;
+            if ((Mods::switches().drive_reach_reset && reset && reset()) ||
+                (o && o != m_Arcaded && o->GetObjectType() == OBJECT_TYPE_ROBOTAI))
                 m_Arcaded->AsRobot()->SetWeaponToDefaultCoeff();
         }
         if (local) {
@@ -1474,13 +1467,8 @@ void CMatrixSideUnit::SampleDrive() {
         keys |= DRIVE_LEFT;
     if (Input::isKeyPressed(KA_UNIT_RIGHT) || Input::isKeyPressed(KA_UNIT_RIGHT_ALT))
         keys |= DRIVE_RIGHT;
-    if (Mods::switches().manual_extras && IsRobotMode()) {
-        if (Input::isKeyPressed(KA_UNIT_STRAFE_LEFT))
-            keys |= DRIVE_STRAFE_LEFT;
-        if (Input::isKeyPressed(KA_UNIT_STRAFE_RIGHT))
-            keys |= DRIVE_STRAFE_RIGHT;
-        keys |= m_DriveSlotsOff;
-    }
+    if (const auto extra = ModHooks::hooks().drive_keys; Mods::switches().manual_extras && extra && IsRobotMode())
+        keys |= extra(*this);  // ManualExtras (the manual control+ mod): sideways, slots off
     if (m_MouseTurn && g_MatrixMap->GetTime() < m_MouseTurnUntil && g_MatrixMap->IsMouseCam())
         keys |= m_MouseTurn < 0 ? DRIVE_LEFT : DRIVE_RIGHT;
     else
@@ -1491,8 +1479,8 @@ void CMatrixSideUnit::SampleDrive() {
     // Over the sky or over water past the map's edge the cursor's trace finds nothing and keeps its last point, so the
     // robot went on aiming there; the DriveAimFar switch (the interface fixes mod) aims along the cursor's ray.
     D3DXVECTOR3 aim = g_MatrixMap->m_TraceStopPos;
-    if (Mods::switches().drive_aim_far && g_MatrixMap->m_TraceStopObj == TRACE_STOP_NONE)
-        aim = DriveFarAim(g_MatrixMap->m_Camera.GetFrustumCenter(), g_MatrixMap->m_MouseDir);
+    if (const auto aim_far = ModHooks::hooks().drive_aim; Mods::switches().drive_aim_far && aim_far)
+        aim_far(aim);
     IssueDrive(keys, over_battle ? aim : m_DriveSentAim);
 }
 
@@ -1506,17 +1494,10 @@ bool CMatrixSideUnit::DriveKindOff(const CMatrixRobotAI *robot, ERobotUnitKind k
     return false;
 }
 
+// ManualExtras (the manual control+ mod): a weapon slot of the robot driven off or on.
 void CMatrixSideUnit::ToggleDriveSlot(int slot) {
-    if (!Mods::switches().manual_extras || !IsRobotMode() || slot < 1 || slot > MAX_WEAPON_CNT)
-        return;
-    const CMatrixRobotAI *robot = GetArcadedObject()->AsRobot();
-    for (int i = 0; i < robot->m_UnitCnt; ++i)
-        if (robot->m_Unit[i].m_Type == MRT_WEAPON && robot->m_Unit[i].u1.s1.m_Slot == slot) {
-            m_DriveSlotsOff ^= Commands::DRIVE_SLOT_OFF << (slot - 1);
-            if (g_IFaceList)
-                g_IFaceList->CreateWeaponDynamicStatics();
-            return;
-        }
+    if (const auto toggle = ModHooks::hooks().toggle_drive_slot; Mods::switches().manual_extras && toggle)
+        toggle(*this, slot);
 }
 
 D3DXVECTOR3 CMatrixSideUnit::DriveFarAim(const D3DXVECTOR3 &eye, const D3DXVECTOR3 &dir) {
@@ -1623,12 +1604,13 @@ void CMatrixSideUnit::ExecuteDrive(const Commands::Command &command, CMatrixMapS
 
 void CMatrixSideUnit::ExecuteTurretDrive(const Commands::Command &command, CMatrixCannon *cannon) {
     using Commands::DriveAction;
-    if (cannon->GetSide() != m_Id || !Mods::switches().turret_control)
+    // TurretControl (the turret control mod): which turrets may be entered is its own.
+    const auto enter = ModHooks::hooks().turret_enter;
+    if (cannon->GetSide() != m_Id || !Mods::switches().turret_control || !enter)
         return;
     switch (DriveAction(command.params[0])) {
         case DriveAction::Enter:
-            // A built turret, as a robot standing on the ground; another person's side never has it.
-            if (!BattleRules::manual_control() || !cannon->IsBuilt() || m_Arcaded == cannon) {
+            if (!enter(*this, *cannon)) {
                 if (IsLocalSide())
                     CSound::Play(S_CANTBE, SL_INTERFACE);
                 return;
@@ -9284,6 +9266,20 @@ void CMatrixSideUnit::IssueTurretOrder(Commands::Type type, CMatrixMapStatic *ta
     Commands::issue(command);
 }
 
+void CMatrixSideUnit::IssueTurretPoint(const D3DXVECTOR3 &at) {
+    if (m_CurrSel != TURRET_SELECTED || m_SelTurrets.empty())
+        return;
+    Commands::Command command;
+    command.side = m_Id;
+    command.type = Commands::Type::TurretAttack;
+    command.x = at.x;
+    command.y = at.y;
+    command.params = {Commands::TURRET_AT_POINT};
+    for (CMatrixCannon *turret : m_SelTurrets)
+        command.units.push_back(turret->GetSimId());
+    Commands::issue(command);
+}
+
 void CMatrixSideUnit::SelectTurrets(const std::vector<CMatrixCannon *> &turrets, bool add) {
     std::vector<CMatrixCannon *> chosen;
     if (add && m_CurrSel == TURRET_SELECTED)
@@ -9338,77 +9334,34 @@ void CMatrixSideUnit::ForgetTurret(CMatrixCannon *turret) {
         SelectTurrets(rest, false);
 }
 
+// RallyPoint (the rally point mod): a right click with a base selected.
 bool CMatrixSideUnit::IssueRally(CMatrixMapStatic *clicked, const D3DXVECTOR3 &at) {
-    if (!Mods::switches().rally_point || m_CurrSel != BASE_SELECTED || !m_ActiveObject || !m_ActiveObject->IsBuilding() ||
-        !m_ActiveObject->IsBase() || m_ActiveObject->GetSide() != m_Id)
-        return false;
-    const bool clear = clicked == m_ActiveObject;
-    if (!clear && clicked != TRACE_STOP_LANDSCAPE)
-        return false;
-    Commands::Command command;
-    command.side = m_Id;
-    command.type = Commands::Type::Rally;
-    command.target = m_ActiveObject->GetSimId();
-    command.x = at.x;
-    command.y = at.y;
-    command.params = {clear ? 0 : 1};
-    Commands::issue(command);
-    BattleNotice::show(clear ? L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0441\u043d\u044f\u0442\u0430"
-                             : L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0437\u0430\u0434\u0430\u043d\u0430");
-    if (!clear) {
-        // This client's interface only: the effect's randoms come from the cosmetic stream.
-        random::CosmeticScope cosmetic;
-        CMatrixEffect::CreateMoveto(at);
-    }
-    return true;
+    const auto issue = ModHooks::hooks().issue_rally;
+    return Mods::switches().rally_point && issue && issue(*this, clicked, at);
 }
 
+// BuildingGroups (the interface fixes mod): its code.
 void CMatrixSideUnit::AssignBuildingGroup(int vk) {
-    const bool building = m_CurrSel == BUILDING_SELECTED || m_CurrSel == BASE_SELECTED || m_CurrSel == TURRET_SELECTED;
-    m_BuildingGroups[vk - '0'] = Mods::switches().building_groups && building && m_ActiveObject ? m_ActiveObject->GetSimId() : 0;
+    if (const auto assign = ModHooks::hooks().assign_building_group; Mods::switches().building_groups && assign)
+        assign(*this, vk);
+    else
+        m_BuildingGroups[vk - '0'] = 0;
 }
 
 CMatrixMapStatic *CMatrixSideUnit::BuildingInGroup(int vk) {
-    const int id = m_BuildingGroups[vk - '0'];
-    if (!Mods::switches().building_groups || !id)
-        return nullptr;
-    for (CMatrixMapStatic *o = CMatrixMapStatic::GetFirstLogic(); o; o = o->GetNextLogic())
-        if (o->GetSimId() == id)
-            return o->GetSide() == m_Id && (o->IsLiveBuilding() || o->IsLiveCannon()) ? o : nullptr;
-    return nullptr;
+    const auto found = ModHooks::hooks().building_in_group;
+    return Mods::switches().building_groups && found ? found(*this, vk) : nullptr;
 }
 
+// AutoBoom (the auto detonation mod): the selection's switch; without the mod, nothing to turn.
 bool CMatrixSideUnit::ToggleAutoBoom(void) {
-    // Off when every selected bomber has it on, else on for all of them.
-    Commands::Command command;
-    command.side = m_Id;
-    command.type = Commands::Type::AutoBoom;
-    bool all_on = true;
-    if (GetCurGroup()) {
-        for (CMatrixGroupObject *objs = GetCurGroup()->m_FirstObject; objs; objs = objs->m_NextObject) {
-            CMatrixMapStatic *o = objs->GetObject();
-            if (o && o->IsLiveRobot() && o->AsRobot()->HaveBomb()) {
-                command.units.push_back(o->GetSimId());
-                all_on = all_on && o->AsRobot()->m_AutoBoom;
-            }
-        }
-    }
-    if (command.units.empty())
-        return false;
-    command.params = {all_on ? 0 : 1};
-    Commands::issue(command);
-    return !all_on;
+    const auto toggle = ModHooks::hooks().toggle_auto_boom;
+    return Mods::switches().auto_boom && toggle && toggle(*this);
 }
 
 bool CMatrixSideUnit::SelectedAutoBoom(void) {
-    if (GetCurGroup()) {
-        for (CMatrixGroupObject *objs = GetCurGroup()->m_FirstObject; objs; objs = objs->m_NextObject) {
-            CMatrixMapStatic *o = objs->GetObject();
-            if (o && o->IsLiveRobot() && o->AsRobot()->HaveBomb() && !o->AsRobot()->m_AutoBoom)
-                return false;
-        }
-    }
-    return true;
+    const auto selected = ModHooks::hooks().selected_auto_boom;
+    return !Mods::switches().auto_boom || !selected || selected(*this);
 }
 
 void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
@@ -9440,25 +9393,10 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
                 AddResourceAmount(ERes(r), -res[r] * count);
             return;
         }
-        case Type::Rally: {
-            if (!Mods::switches().rally_point || !target || !target->IsLiveBuilding() || target->GetSide() != m_Id ||
-                !target->AsBuilding()->IsBase() || command.params.size() != 1)
-                return;
-            CMatrixBuilding *base = target->AsBuilding();
-            if (command.params[0] == 0) {
-                base->m_HasRally = false;
-                return;
-            }
-            // On the map's land: an order to the water or past the edge would send the robots nowhere.
-            const int x = TruncFloat(command.x * INVERT(GLOBAL_SCALE)), y = TruncFloat(command.y * INVERT(GLOBAL_SCALE));
-            SMatrixMapUnit *unit = command.x < 0 || command.y < 0 ? NULL : g_MatrixMap->UnitGetTest(x, y);
-            if (!unit || !unit->IsLand())
-                return;
-            base->m_HasRally = true;
-            base->m_Rally = D3DXVECTOR2(command.x, command.y);
-            base->m_RallySide = m_Id;
+        case Type::Rally:
+            if (const auto rally = ModHooks::hooks().rally_command; Mods::switches().rally_point && rally)
+                rally(*this, command, target);
             return;
-        }
         case Type::BuildTurret: {
             // params: cannon kind, road-network place, wanted angle (float bits)
             if (!target || !target->IsLiveBuilding() || target->GetSide() != m_Id || command.params.size() != 3)
@@ -9516,34 +9454,13 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
             ExecuteDrive(command, target);
             return;
         case Type::AutoBoom:
-            if (!Mods::switches().auto_boom || command.params.size() != 1)
-                return;
-            for (int id : command.units) {
-                CMatrixMapStatic *o = Commands::find(id);
-                if (o && o->IsLiveRobot() && o->GetSide() == m_Id)
-                    o->AsRobot()->m_AutoBoom = command.params[0] != 0;
-            }
+            if (const auto boom = ModHooks::hooks().auto_boom_command; Mods::switches().auto_boom && boom)
+                boom(*this, command);
             return;
         case Type::TurretAttack:
         case Type::TurretDismantle:
-            if (!Mods::switches().turret_control)
-                return;
-            for (int id : command.units) {
-                CMatrixMapStatic *o = Commands::find(id);
-                if (!o || !o->IsCannon() || o->GetSide() != m_Id || !o->AsCannon()->IsBuilt())
-                    continue;
-                CMatrixCannon *cannon = o->AsCannon();
-                if (command.type == Type::TurretAttack) {
-                    cannon->OrderAttack(target);
-                    continue;
-                }
-                // Half the price back, times the share of hit points left; whole units, rounded down.
-                const SCannonProps &props = g_Config.m_CannonsProps[cannon->m_Num - 1];
-                const float share = std::clamp(cannon->GetHitPoint() / cannon->GetMaxHitPoint(), 0.0f, 1.0f);
-                for (int r = 0; r < MAX_RESOURCES; r++)
-                    AddResourceAmount(ERes(r), int(float(props.m_Resources[r]) * 0.5f * share));
-                cannon->Dismantle();
-            }
+            if (const auto turrets = ModHooks::hooks().turret_command; Mods::switches().turret_control && turrets)
+                turrets(*this, command, target);
             return;
         default:
             break;
@@ -9681,20 +9598,9 @@ void CMatrixSideUnit::PGOrderStop(int no) {
 
     PGRemoveAllPassive(no, m_PlayerGroup[no].m_Obj);
 
-    if (Mods::switches().stop_in_place) {
-        // StopInPlace switch (the battle fixes mod): each robot halts where it stands and keeps that spot as its
-        // place. The original game spread the group over the free places round its centre, so robots walked on.
-        for (CMatrixMapStatic *obj = CMatrixMapStatic::GetFirstLogic(); obj; obj = obj->GetNextLogic()) {
-            if (!obj->IsLiveRobot() || obj->GetSide() != m_Id || obj->AsRobot()->GetGroupLogic() != no ||
-                obj->AsRobot()->IsDisableManual() || !PrepareBreakOrder(obj))
-                continue;
-            CMatrixRobotAI *robot = obj->AsRobot();
-            robot->StopCapture();
-            robot->RemoveOrder(ROT_MOVE_RETURN);
-            robot->StopMoving();
-            robot->GetEnv()->m_Place = -1;
-            robot->GetEnv()->m_PlaceAdd = CPoint(robot->GetMapPosX(), robot->GetMapPosY());
-        }
+    if (const auto in_place = ModHooks::hooks().stop_in_place;
+        Mods::switches().stop_in_place && in_place && in_place(*this, no)) {
+        // (StopInPlace, the battle fixes mod: the robots halted where they stand.)
     }
     else if (m_PlayerGroup[no].m_To.Dist2(PGCalcPlaceCenter(no)) > POW2(10)) {
         PGAssignPlacePlayer(no, m_PlayerGroup[no].m_To);

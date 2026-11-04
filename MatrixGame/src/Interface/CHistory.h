@@ -30,6 +30,8 @@ public:
     // constructor by the first step back. Lines it cannot take are left out.
     void Load(const std::wstring &file);
     const SRobotConfig *CurrentConfig() const { return m_CurrentConfig; }
+    // A loaded design not in the constructor yet: the battle's first opening of the constructor puts it in.
+    bool LoadedUnshown() const { return m_CurrentConfig && !m_Shown; }
     // The design a step back puts into the constructor (PrevConfig puts it in); NULL: none.
     const SRobotConfig *StepBack();
     void __stdcall PrevConfig(void *object);

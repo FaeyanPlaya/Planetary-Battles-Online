@@ -1094,6 +1094,9 @@ void CConstructorPanel::ActivateAndSelect() {
     m_Active = 1;
 
     g_IFaceList->CreateSummPrice();
+    // The last design kept from the battles before (CHistory::Load) instead of the base's own, as "<" would put it.
+    if (g_ConfigHistory && g_ConfigHistory->LoadedUnshown())
+        g_ConfigHistory->PrevConfig(nullptr);
     g_MatrixMap->Pause(true);
 }
 // void CConstructorPanel::FocusElement(void* object)

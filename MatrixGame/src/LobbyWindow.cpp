@@ -9,6 +9,8 @@
 #include "MapPreview.hpp"
 #include "MapSides.hpp"
 #include "Mods.hpp"
+#include "ModInfoWindow.hpp"
+#include "GameArt.hpp"
 #include "MapPacks.hpp"
 #include "PlayerName.hpp"
 #include "GameData.hpp"
@@ -97,6 +99,7 @@ std::map<std::wstring, std::vector<std::wstring>> map_lacks;  // MapPacks::missi
 std::vector<std::unique_ptr<CBitmap>> lines;  // LobbyModel::separators(), made for lines_scale
 double lines_scale = 0;
 std::unique_ptr<CBitmap> toggles[2];  // a mod's switch, off and on, made for toggles_scale
+std::unique_ptr<CBitmap> info_button;  // a mod's "i", made for toggles_scale
 double toggles_scale = 0;
 
 LobbyModel::MapSort load_sort() {
@@ -160,41 +163,16 @@ void prepare_lines(double scale) {
     }
 }
 
-// A mod's switch: a round button in a dark rim, lit blue when on, dark when off (a sphere's shading, smoothed edges).
-std::unique_ptr<CBitmap> toggle(int size, bool on) {
-    auto out = std::make_unique<CBitmap>();
-    out->CreateRGBA(size, size);
-    const float r = size * 0.5f, rim = std::max(1.5f, size * 0.12f);
-    for (int y = 0; y < size; ++y)
-        for (int x = 0; x < size; ++x) {
-            const float dx = x + 0.5f - r, dy = y + 0.5f - r, d = std::sqrt(dx * dx + dy * dy);
-            const float alpha = std::clamp(r - d, 0.0f, 1.0f);  // the edge's coverage
-            // The rim: metal, lighter at the top; inside: the light, brightest a little above the centre.
-            float red, green, blue;
-            if (d > r - rim) {
-                const float k = 0.55f - 0.25f * dy / r;
-                red = 70 * k + 30, green = 80 * k + 34, blue = 90 * k + 38;
-            }
-            else {
-                const float hx = dx + r * 0.2f, hy = dy + r * 0.3f;
-                const float t = std::clamp(1.0f - std::sqrt(hx * hx + hy * hy) / (r - rim), 0.0f, 1.0f);
-                if (on) red = 20 + 200 * t * t, green = 110 + 140 * t, blue = 200 + 55 * t;
-                else red = 38 + 40 * t * t, green = 42 + 44 * t * t, blue = 48 + 48 * t * t;
-            }
-            const uint32_t pixel = (uint32_t(alpha * 255) << 24) | (uint32_t(std::min(red, 255.0f)) << 16) |
-                                   (uint32_t(std::min(green, 255.0f)) << 8) | uint32_t(std::min(blue, 255.0f));
-            std::memcpy(out->Data() + y * out->Pitch() + x * 4, &pixel, 4);
-        }
-    return out;
-}
-
 void prepare_toggles(double scale) {
     if (toggles[0] && toggles_scale == scale) return;
     toggles_scale = scale;
+    const int size = LobbyModel::px(scale, LobbyModel::Layout::toggle_size);
     for (int on = 0; on < 2; ++on) {
-        toggles[on] = toggle(LobbyModel::px(scale, LobbyModel::Layout::toggle_size), on != 0);
+        toggles[on] = GameArt::bitmap(GameArt::picture(on ? GameArt::Button::SwitchOn : GameArt::Button::SwitchOff, size));
         CMatrixHint::SetRuntimeBitmap(LobbyModel::toggle_bitmap(on != 0), toggles[on].get());
     }
+    info_button = GameArt::bitmap(GameArt::picture(GameArt::Button::Info, LobbyModel::px(scale, LobbyModel::Layout::info_size)));
+    CMatrixHint::SetRuntimeBitmap(LobbyModel::info_bitmap(), info_button.get());
 }
 
 // The map file's fingerprint: the same name with other contents must not play together.
@@ -316,6 +294,11 @@ std::vector<LobbyModel::ModRow> mod_rows(const State &s) {
         const auto chosen = std::find_if(st.mods.begin(), st.mods.end(), [&](const Lobby::ModRef &r) { return r.id == m.id; });
         LobbyModel::ModRow row{ru ? m.name : m.name_en, ru ? m.description : m.description_en, chosen != st.mods.end()};
         if (row.on && s.mode != Mode::Host && chosen->hash != m.hash) row.problem = LobbyModel::ModRow::Problem::Differs;
+        row.id = m.id;
+        const auto window = ModInfo::of(m, Mods::installed(), s.language);
+        row.author = window.author;
+        row.depends = window.depends;
+        row.conflicts = window.conflicts;
         rows.push_back(std::move(row));
     }
     if (s.mode != Mode::Host)
@@ -324,7 +307,54 @@ std::vector<LobbyModel::ModRow> mod_rows(const State &s) {
             if (!m || m->kind != Mods::Kind::Battle)
                 rows.push_back({utils::to_wstring(r.id), {}, true, LobbyModel::ModRow::Problem::Missing});
         }
+    if (s.mode == Mode::Host && s.local) return rows;  // nobody else to see
+    // The host's switch, then one row of everyone's own mods: its "i" has a line a person who has some (names where
+    // this PC has the mod; ones not built in marked).
+    LobbyModel::ModRow verified{ru ? L"Только встроенные личные моды" : L"Only built-in personal mods",
+                                ru ? L"В бою работают только те личные моды, что встроены в игру (в её папке mods, как "
+                                     L"их собрала эта версия). Другие личные моды и изменённые встроенные у всех "
+                                     L"игроков сами выключаются на этот бой; в настройках они остаются включёнными."
+                                   : L"Only the personal mods built into the game (in its mods folder, as this version "
+                                     L"built them) work in the battle. Everyone's other personal mods, and built-in "
+                                     L"ones changed, are switched off for this battle by themselves; the settings keep "
+                                     L"them on.",
+                                st.verified_only};
+    verified.kind = LobbyModel::ModRow::Kind::Verified;
+    rows.push_back(std::move(verified));
+    std::wstring people;
+    for (std::size_t i = 0; i < st.people.size(); ++i) {
+        const Lobby::Person &p = st.people[i];
+        if (p.personal.empty()) continue;
+        std::wstring list;
+        const auto refused = Lobby::unverified(p);
+        for (const Lobby::ModRef &r : p.personal) {
+            const Mods::Mod *m = Mods::find(Mods::installed(), r.id);
+            std::wstring name = m ? (ru ? m->name : m->name_en) : utils::to_wstring(r.id);
+            if (std::find(refused.begin(), refused.end(), r) != refused.end())
+                name += st.verified_only ? (ru ? L" (не встроенный, в бою выключится)" : L" (not built-in, off in the battle)")
+                                         : (ru ? L" (не встроенный)" : L" (not built-in)");
+            list += (list.empty() ? L"" : L", ") + name;
+        }
+        people += (people.empty() ? L"" : L"\n") +
+                  (p.name.empty() ? (ru ? L"Игрок " : L"Person ") + std::to_wstring(i + 1) : p.name) + L": " + list;
+    }
+    LobbyModel::ModRow row{ru ? L"Личные моды игроков" : L"Players' personal mods",
+                           people.empty() ? std::wstring(ru ? L"Ни у кого нет личных модов." : L"Nobody has personal mods.")
+                                          : people};
+    row.kind = LobbyModel::ModRow::Kind::People;
+    rows.push_back(std::move(row));
     return rows;
+}
+
+// This person's own mods on, with this PC's fingerprints: told the lobby.
+std::vector<Lobby::ModRef> own_personal(const StandaloneSettings::Values &values) {
+    const auto ids = values.personal_mods ? *values.personal_mods : Mods::default_personal(Mods::installed());
+    std::vector<Lobby::ModRef> refs;
+    for (const Mods::Mod &m : Mods::installed())
+        if (m.kind == Mods::Kind::Personal && m.problem == Mods::Problem::None &&
+            std::find(ids.begin(), ids.end(), m.id) != ids.end())
+            refs.push_back({m.id, m.hash});
+    return refs;
 }
 
 // Installed battle mods with these ids, in the catalogue's order, with this PC's fingerprints.
@@ -354,6 +384,21 @@ LobbyModel::Screen screen(State &s) {
     view.auto_delay = st.auto_delay;
     view.dropped_ai = st.dropped_ai;
     view.mods = mod_rows(s);
+    // Mods on that cannot be on together, the battle's and this person's own: marked, and no start or ready.
+    std::vector<std::string> on;
+    for (const Lobby::ModRef &r : st.mods) on.push_back(r.id);
+    for (const Lobby::ModRef &r : own_personal(s.values)) on.push_back(r.id);
+    const auto name = [&](const std::string &id) {
+        const Mods::Mod *m = Mods::find(Mods::installed(), id);
+        return m ? (s.language == Language::Russian ? m->name : m->name_en) : utils::to_wstring(id);
+    };
+    for (const auto &[a, b] : Mods::conflicting(Mods::installed(), on)) {
+        view.conflicts.push_back({name(a), name(b)});
+        for (auto &row : view.mods)
+            if (row.kind == LobbyModel::ModRow::Kind::Battle && row.on && (row.id == a || row.id == b) &&
+                row.problem == LobbyModel::ModRow::Problem::None)
+                row.problem = LobbyModel::ModRow::Problem::Conflict;
+    }
     view.mods_view = s.mods_view;
     view.mods_page = std::clamp(s.mods_page, 0, LobbyModel::mods_page_count(view) - 1);
     view.scale = LobbyModel::scale_for(g_ScreenX, g_ScreenY);
@@ -409,6 +454,7 @@ void rebuild() {
     built->Show((g_ScreenX - built->m_Width) / 2, (g_ScreenY - built->m_Height) / 2);
     release_hint();
     hint = built;
+    ModInfoWindow::raise();
     s.dirty = false;
 }
 
@@ -432,6 +478,7 @@ void finish() {
     battle_started = true;
     if (!BattleLoading::show(g_Wnd, state->language == Language::Russian))
         lgr.warning("Cannot create the loading screen; continuing battle initialization");
+    ModInfoWindow::close();
     release_hint();
     MapPreview::release();
     state.reset();
@@ -537,7 +584,7 @@ void connect() {
     // minutes (Back stops waiting).
     s.client.connect(endpoint->address, endpoint->port, s.bonus, s.options.lobby_return ? 600000 : connect_timeout_ms,
                      GameData::data_fingerprint(),
-                     GameData::build_fingerprint(), own_name(s));
+                     GameData::build_fingerprint(), own_name(s), own_personal(s.values));
     s.error = JoinError::None;
     s.dirty = true;
 }
@@ -606,24 +653,44 @@ void set_bonus(State &s, int index) {
     s.dirty = true;
 }
 
-// The host switches a battle mod (the row's place among the installed battle mods) and keeps the choice for its
-// next lobbies and own battles.
-void toggle_mod(State &s, int row) {
-    std::vector<std::string> ids;
-    for (const auto &r : s.host.state().mods) ids.push_back(r.id);
-    int index = 0;
-    for (const Mods::Mod &m : Mods::installed()) {
-        if (m.kind != Mods::Kind::Battle) continue;
-        if (index++ != row) continue;
-        if (const auto at = std::find(ids.begin(), ids.end(), m.id); at != ids.end()) ids.erase(at);
-        else ids.push_back(m.id);
-    }
+// The host's battle mods now these, kept for its next lobbies and own battles.
+void set_mods(State &s, const std::vector<std::string> &ids) {
     s.host.set_mods(mod_refs(ids));
     s.values.mods = ids;
     std::string error;
     if (!StandaloneSettings::save(s.values, error)) lgr.warning("Lobby: cannot keep the mods chosen: {}")(error);
     lgr.notice("Lobby: battle mods {}")(Mods::join(ids));
     s.dirty = true;
+}
+
+// The host switches a battle mod (the row's place among the installed battle mods). Off, what needs it goes too;
+// on, when it needs mods that are off, the host is asked to switch them on with it (no: it stays off). Mods that
+// conflict may be on together: the lobby then names them and does not start (Screen::conflicts).
+void toggle_mod(State &s, int row) {
+    std::vector<std::string> ids;
+    for (const auto &r : s.host.state().mods) ids.push_back(r.id);
+    const Mods::Mod *mod = nullptr;
+    int index = 0;
+    for (const Mods::Mod &m : Mods::installed())
+        if (m.kind == Mods::Kind::Battle && index++ == row) mod = &m;
+    if (!mod) return;
+    const auto needed = Mods::needs(Mods::installed(), ids, mod->id);
+    if (std::find(ids.begin(), ids.end(), mod->id) != ids.end() || needed.empty()) {
+        set_mods(s, Mods::toggled(Mods::installed(), ids, mod->id));
+        return;
+    }
+    const bool ru = s.language == Language::Russian;
+    ModInfo::Question question{ru ? mod->name : mod->name_en};
+    for (const auto &id : needed) {
+        const Mods::Mod *need = Mods::find(Mods::installed(), id);
+        question.needs.push_back(ru ? need->name : need->name_en);
+    }
+    ModInfoWindow::ask(question, s.language, LobbyModel::scale_for(g_ScreenX, g_ScreenY), [id = mod->id](bool yes) {
+        if (!yes || !state || state->mode != Mode::Host) return;
+        std::vector<std::string> now;
+        for (const auto &r : state->host.state().mods) now.push_back(r.id);
+        if (std::find(now.begin(), now.end(), id) == now.end()) set_mods(*state, Mods::toggled(Mods::installed(), now, id));
+    });
 }
 
 void primary(State &s) {
@@ -859,7 +926,8 @@ bool open_host(const StandaloneSettings::Values &values, const NetBattle::Option
     State &s = *state;
     const std::string address = options.lobby ? options.address : "0.0.0.0";
     const int port = options.lobby ? options.port : Lobby::default_port;
-    if (!s.host.open(address, port, s.bonus, GameData::data_fingerprint(), GameData::build_fingerprint(), own_name(s))) {
+    if (!s.host.open(address, port, s.bonus, GameData::data_fingerprint(), GameData::build_fingerprint(), own_name(s),
+                     own_personal(values))) {
         lgr.error("Lobby: cannot listen on {}:{}")(address, port);
         state.reset();
         return false;
@@ -888,7 +956,7 @@ bool open_host(const StandaloneSettings::Values &values, const NetBattle::Option
 void open_local(const StandaloneSettings::Values &values, const NetBattle::Options &options) {
     open(Mode::Host, values, options, true);
     State &s = *state;
-    s.host.open_local(s.bonus, own_name(s));
+    s.host.open_local(s.bonus, own_name(s), own_personal(values));
     lgr.notice("Lobby: a battle against the AI");
     first_choices(s, values, options);
     rebuild();
@@ -946,6 +1014,10 @@ bool keyboard(uint8_t vk, bool down) {
     if (!active()) return false;
     State &s = *state;
     if (!s.actions.accept(vk, down)) return true;
+    if (ModInfoWindow::open()) {  // a mod's window or its question: nothing else happens meanwhile
+        ModInfoWindow::key(vk);
+        return true;
+    }
     if (s.mode == Mode::Name) {
         if (vk == VK_ESCAPE) {
             if (!s.name_forced) shutdown();
@@ -1009,6 +1081,10 @@ bool keyboard(uint8_t vk, bool down) {
 bool mouse_down(int x, int y) {
     if (!active()) return false;
     State &s = *state;
+    if (ModInfoWindow::open()) {  // any click closes a mod's window; a question takes its buttons only
+        ModInfoWindow::click(x, y);
+        return true;
+    }
     x -= hint->m_PosX;
     y -= hint->m_PosY;
     if (s.mode == Mode::Name || s.mode == Mode::Join) {  // drawn at the lobby's scale: hits in the layout's units
@@ -1042,8 +1118,19 @@ bool mouse_down(int x, int y) {
         s.dirty = true;
     }
     else if (view.mods_view && target.page) page_mods(s, target.page);
+    else if (target.mod >= 0 && target.info) {
+        ModInfoWindow::show(LobbyModel::mod_info(view, target.mod), s.language, view.scale);
+    }
     else if (target.mod >= 0) {
-        if (s.mode == Mode::Host) toggle_mod(s, target.mod);
+        const auto rows = mod_rows(s);
+        if (s.mode == Mode::Host && target.mod < int(rows.size())) {
+            if (rows[std::size_t(target.mod)].kind == LobbyModel::ModRow::Kind::Battle) toggle_mod(s, target.mod);
+            else if (rows[std::size_t(target.mod)].kind == LobbyModel::ModRow::Kind::Verified) {
+                s.host.set_verified_only(!s.host.state().verified_only);
+                lgr.notice("Lobby: only built-in personal mods {}")(s.host.state().verified_only ? "on" : "off");
+                s.dirty = true;
+            }
+        }
     }
     else if (target.bonus >= 0) set_bonus(s, target.bonus);
     else if (target.side) cycle_side(s, target.side);
@@ -1084,7 +1171,7 @@ bool mouse_down(int x, int y) {
 }
 
 void mouse_wheel(int steps, int x, int y) {
-    if (!active() || (state->mode != Mode::Host && !state->mods_view)) return;
+    if (!active() || (state->mode != Mode::Host && !state->mods_view) || ModInfoWindow::open()) return;
     (void)y;  // anywhere down the list's column
     const double scale = LobbyModel::scale_for(g_ScreenX, g_ScreenY);
     x = int(std::floor((x - hint->m_PosX) / scale));
@@ -1102,6 +1189,7 @@ void relayout() {
 }
 
 void shutdown() {
+    ModInfoWindow::close();
     release_hint();
     MapPreview::release();
     if (state) {

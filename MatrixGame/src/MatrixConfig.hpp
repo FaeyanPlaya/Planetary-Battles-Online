@@ -559,8 +559,8 @@ public:
 
     void SetDefaults(void);
     void ReadParams(void);
-    // The Баланс КР2 mod (SR2Balance) over the data's values, or the data's without it: after the mods are applied.
-    void ApplyBalance(void);
+    // The battle's values from the data (ReadParams reads them too): again once battle mods' data is laid on it.
+    void ReadBattleParams(void);
     void ApplySettings(SRobotsSettings *set);
 
     void ApplyGammaRamp(void);

@@ -1,0 +1,20 @@
+# HomingMissiles: a missile (a robot's or a missile turret's) flies straight for HOMING_DELAY, then seeks the
+# enemy unit most ahead within 45 degrees (the original: 10 degrees, and only nudged its course; bases and
+# factories too) and keeps it while it is ahead. It turns to it at HOMING_TURN_RATE.
+Name=Самонаведение ракет
+NameEn=Homing missiles
+Description=Ракеты наводятся на цель увереннее.
+Description=- Первые 0,4 секунды после пуска ракета летит прямо, затем ищет врага впереди в конусе 45° (в оригинале 10°, и курс лишь слегка поправлялся).
+Description=- Найденную цель ракета держит, пока та впереди, и плавно доворачивает к ней.
+Description=- Базы и заводы ракету не отвлекают: она ищет только роботов, вертолёты и турели.
+Description=- Касается ракет роботов и ракетных турелей.
+DescriptionEn=Missiles home in more surely.
+DescriptionEn=- For 0.4 seconds after launch a missile flies straight, then seeks an enemy ahead within 45 degrees (the original: 10, and only nudged its course).
+DescriptionEn=- It keeps the enemy it found while it is ahead and turns to it smoothly.
+DescriptionEn=- Bases and factories don't draw it off: it seeks robots, flyers and turrets only.
+DescriptionEn=- For robots' and missile turrets' missiles.
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=homing.dll
+Switches=HomingMissiles

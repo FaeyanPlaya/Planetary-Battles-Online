@@ -17,8 +17,6 @@
 #define FLAME_PUFF_TTL 2000
 
 #define LASER_WIDTH               10
-#define TURRET_LASER_GLOW         15  // the laser turret's muzzle glow (TurretLaserGlow); a robot's is 5
-#define TURRET_LASER_GLOW_AHEAD   3   // how far before the muzzle point, out of the barrel
 #define VOLCANO_FIRE_LENGHT       15
 #define VOLCANO_FIRE_WIDTH        10
 #define VOLCANO_FIRE_KONUS_RADIUS 5

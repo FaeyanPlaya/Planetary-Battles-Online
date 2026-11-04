@@ -1,0 +1,18 @@
+# AutoBoom: a robot of a person's side with a bomb sets it off as it dies (the original did it only for
+# the AI's robots, and only with more enemy than own strength in the blast). Each robot keeps its own
+# choice, on when built; a right click on the bomb order turns it for the selected bombers (a command).
+Name=Автоподрыв
+NameEn=Auto detonation
+Description=Робот с бомбой взрывает её в момент гибели и забирает врагов с собой.
+Description=- В оригинале так делали только роботы ИИ, и то лишь когда в радиусе взрыва врагов было больше, чем своих.
+Description=- Теперь это делают и роботы игроков; при постройке автоподрыв включён.
+Description=- У каждого робота свой выбор: правый щелчок по кнопке бомбы выключает или включает автоподрыв у выделенных роботов.
+DescriptionEn=A robot with a bomb sets it off as it dies, taking enemies with it.
+DescriptionEn=- In the original only the AI's robots did it, and only with more enemies than friends in the blast.
+DescriptionEn=- Now people's robots do it too; it is on when a robot is built.
+DescriptionEn=- Each robot keeps its own choice: a right click on the bomb order turns it off or on for the selected robots.
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=autoboom.dll
+Switches=AutoBoom

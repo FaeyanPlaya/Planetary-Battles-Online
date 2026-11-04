@@ -30,7 +30,7 @@ void refuse(NetLink::Connection &link, const std::string &reason) {
 }  // namespace
 
 bool Host::open(const std::string &address, int port, BattleChoice::Bonus bonus, std::string data, std::string build,
-                std::wstring name) {
+                std::wstring name, std::vector<Lobby::ModRef> personal) {
     m_Data = std::move(data);
     m_Build = std::move(build);
     m_Listener = std::make_unique<NetLink::Listener>(address, port);
@@ -40,13 +40,15 @@ bool Host::open(const std::string &address, int port, BattleChoice::Bonus bonus,
     }
     m_State = {};
     m_State.people.push_back({bonus, true, 0, std::move(name)});
+    m_State.people.back().personal = std::move(personal);
     measure_again();
     return true;
 }
 
-void Host::open_local(BattleChoice::Bonus bonus, std::wstring name) {
+void Host::open_local(BattleChoice::Bonus bonus, std::wstring name, std::vector<Lobby::ModRef> personal) {
     close();
     m_State.people.push_back({bonus, true, 0, std::move(name)});
+    m_State.people.back().personal = std::move(personal);
 }
 
 bool Host::poll() {
@@ -92,6 +94,7 @@ bool Host::poll() {
             }
             else {
                 m_State.people.push_back({hello->bonus, false, 0, hello->name});
+                m_State.people.back().personal = hello->personal;
                 m_Clients.push_back(std::move(m_Pending[i].link));
                 m_Pings.push_back({});
                 m_Sending.push_back(std::nullopt);
@@ -376,6 +379,13 @@ void Host::set_mods(const std::vector<Lobby::ModRef> &mods) {
     publish();
 }
 
+void Host::set_verified_only(bool only) {
+    if (only == m_State.verified_only) return;
+    m_State.verified_only = only;
+    for (std::size_t i = 1; i < m_State.people.size(); ++i) m_State.people[i].ready = false;
+    publish();
+}
+
 void Host::set_bonus(BattleChoice::Bonus bonus) {
     if (bonus == m_State.people[0].bonus) return;
     m_State.people[0].bonus = bonus;
@@ -414,11 +424,12 @@ void Host::close() {
 std::vector<std::string> Host::take_events() { return std::exchange(m_Events, {}); }
 
 void Client::connect(const std::string &address, int port, BattleChoice::Bonus bonus, int timeout_ms, std::string data,
-                     std::string build, std::wstring name) {
+                     std::string build, std::wstring name, std::vector<Lobby::ModRef> personal) {
     close();
     m_Data = std::move(data);
     m_Build = std::move(build);
     m_Name = std::move(name);
+    m_Personal = std::move(personal);
     m_Connector = std::make_unique<NetLink::Connector>(address, port);
     m_Until = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     m_Bonus = bonus;
@@ -442,7 +453,7 @@ bool Client::poll() {
             if (auto link = m_Connector->poll()) {
                 m_Link = std::move(link);
                 m_Connector.reset();
-                m_Link->send_line(Lobby::hello_line(m_Bonus, m_Data, m_Build, m_Name));
+                m_Link->send_line(Lobby::hello_line(m_Bonus, m_Data, m_Build, m_Name, {}, m_Personal));
             }
             else if (m_Connector->failed()) {
                 m_Connector.reset();

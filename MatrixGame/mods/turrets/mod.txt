@@ -1,0 +1,23 @@
+# TurretControl: a person selects their side's turret with a click. An order to attack, as a robot's, at
+# anything live (a robot, flyer, turret, base or factory of any side) or a point of the ground in reach makes the turret fire at it while it stays in the turret's reach, then the turret
+# chooses its targets again. A person enters a built turret as a robot: the turret turns to the cursor at
+# its own speed within its own angles and fires while the button is held; the lobby's manual control bonus
+# lengthens its reach as a robot's. Dismantling a built turret frees its place and returns half its price,
+# times the share of its hit points left.
+Name=Управление турелями
+NameEn=Turret control
+Description=Управление своими турелями.
+Description=- Турель выделяется щелчком, как робот.
+Description=- Приказ атаковать, как у роботов: целью может быть что угодно — робот, вертолёт, турель, база или завод любой стороны (в том числе ничейный), или точка на земле. Турель стреляет по цели, пока та в пределах досягаемости, потом снова выбирает цели сама; по точке — пока не дан другой приказ.
+Description=- В построенную турель можно сесть, как в робота: она поворачивается за курсором со своей скоростью и в своих углах и стреляет, пока нажата кнопка; бонус ручного управления из лобби увеличивает её дальность.
+Description=- Построенную турель можно разобрать: место освобождается, и возвращается половина цены, умноженная на долю оставшейся прочности.
+DescriptionEn=Control of your turrets.
+DescriptionEn=- A turret is selected with a click, as a robot.
+DescriptionEn=- An order to attack, as a robot's: anything can be the target, a robot, flyer, turret, base or factory of any side (a neutral one too), or a point of the ground. The turret fires at it while it is in reach, then chooses its targets again; at a point, until another order.
+DescriptionEn=- A built turret can be driven as a robot: it turns to the cursor at its own speed within its own angles and fires while the button is held; the lobby's manual control bonus lengthens its reach.
+DescriptionEn=- A built turret can be dismantled: its place is freed and half its price comes back, times the share of its hit points left.
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=turrets.dll
+Switches=TurretControl

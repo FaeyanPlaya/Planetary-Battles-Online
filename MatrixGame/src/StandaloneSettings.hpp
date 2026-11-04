@@ -2,6 +2,7 @@
 #pragma once
 
 #include "DisplaySettings.hpp"
+#include "UiTheme.hpp"
 #include "BattleChoice.hpp"
 #include "random.hpp"
 
@@ -17,6 +18,7 @@ namespace Base { class CBlockPar; }
 namespace StandaloneSettings {
 
 enum class Skybox { Off, Low, High };
+using Theme = UiTheme::Choice;  // Theme=System|Light|Dark: this project's windows
 // Attribution of ablaze and shorted pulses; Original restores the original game's behaviour.
 enum class DamageAttribution { Corrected, Original };
 // Cached AI group counts after regrouping; Original restores the original game's behaviour.
@@ -49,6 +51,7 @@ struct Values {
     std::optional<std::vector<std::string>> personal_mods;
     int far_view_scale = 200;  // FarViewScale=: how far the far view reaches, percent of the original's (150-300)
     int saved_designs = 20;    // SavedDesigns=: how many robot designs built are kept between battles (1-50)
+    Theme theme = Theme::System;
     bool operator==(const Values &) const = default;
 };
 
@@ -71,6 +74,7 @@ std::wstring update_text(const std::wstring &text, const Values &values);
 bool save(const Values &values, std::string &error, const wchar_t *path = L"CFG\\standalone.txt");
 
 const char *name(Skybox skybox);
+const char *name(Theme theme);
 const char *name(DamageAttribution attribution);
 const char *name(GroupCountMode mode);
 const char *name(PlaceContainmentMode mode);

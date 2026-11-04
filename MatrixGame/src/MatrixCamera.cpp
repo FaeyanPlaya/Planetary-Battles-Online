@@ -11,6 +11,7 @@
 #include "MatrixRobot.hpp"
 #include "MatrixObjectCannon.hpp"
 #include "Mods.hpp"
+#include "ModHooks.hpp"
 #include <input.hpp>
 
 #include "Effects/MatrixEffectBigBoom.hpp"
@@ -672,12 +673,8 @@ CMatrixCamera::~CMatrixCamera(void) {
 }
 
 float CMatrixCamera::MaxDistParam(int index) const {
-    if (!Mods::switches().zoom_far)
-        return 4.0f;
-    // Twice the distance at 4: min + p * (max - min) = 2 * (min + 4 * (max - min)).
-    const SCamParam &cp = g_Config.m_CamParams[index];
-    const float span = cp.m_CamDistMax - cp.m_CamDistMin;
-    return span > 0.001f ? 8.0f + cp.m_CamDistMin / span : 8.0f;
+    const auto hook = ModHooks::hooks().max_zoom;  // ZoomFar (the interface fixes mod)
+    return Mods::switches().zoom_far && hook ? hook(index) : 4.0f;
 }
 
 void CMatrixCamera::ZoomOutStep(void) {
@@ -690,12 +687,9 @@ void CMatrixCamera::ZoomOutStep(void) {
 }
 
 void CMatrixCamera::ZoomInStep(void) {
-    if (m_ModeIndex == CAMERA_INROBOT && Mods::switches().first_person && m_DistParam[m_ModeIndex] <= 0.25f) {
-        if (!m_FirstPerson)
-            m_FirstPersonBlend = 0;
-        m_FirstPerson = true;  // all the way in already
+    const auto first_person = ModHooks::hooks().first_person_in;  // the first person mod's
+    if (Mods::switches().first_person && first_person && first_person(*this))
         return;
-    }
     m_DistParam[m_ModeIndex] -= g_Config.m_CamParams[m_ModeIndex].m_CamMouseWheelStep * 4.5f;  // 1.5f;
     m_DistParam[m_ModeIndex] = std::clamp(m_DistParam[m_ModeIndex], 0.25f, MaxDistParam(m_ModeIndex));
 }
@@ -1034,9 +1028,10 @@ void CMatrixCamera::Takt(float ms) {
     else {
         m_TurretView = nullptr;
     }
-    if (!g_MatrixMap->GetPlayerSide()->IsRobotMode() || !Mods::switches().manual_extras)
+    if (const auto rear = ModHooks::hooks().rear_view; !(Mods::switches().manual_extras && rear && rear()))
         m_RearView = false;
-    if (index != CAMERA_INROBOT || !Mods::switches().first_person || !g_MatrixMap->GetPlayerSide()->GetArcadedObject())
+    const auto keeps = ModHooks::hooks().first_person_keeps;
+    if (!Mods::switches().first_person || !keeps || !keeps(*this, index))
         m_FirstPerson = false;
     if (m_FirstPerson) {
         newdist = 0;  // the eye at the link point
@@ -1112,8 +1107,8 @@ void CMatrixCamera::Takt(float ms) {
             D3DXVec2Normalize(&dir, &dir);
 
             // CameraShift: twice as fast while Shift is held (by the keys or the screen's edge).
-            const bool fast = Mods::switches().camera_shift && Input::isKeyPressed(KA_SHIFT);
-            dir *= g_Config.m_CamMoveSpeed * ms * (fast ? 2.0f : 1.0f);
+            const auto speed = ModHooks::hooks().camera_speed;
+            dir *= g_Config.m_CamMoveSpeed * ms * (Mods::switches().camera_shift && speed ? speed() : 1.0f);
 
             D3DXVECTOR2 lDir(dir.y, -dir.x);
             D3DXVECTOR2 rDir(-dir.y, dir.x);

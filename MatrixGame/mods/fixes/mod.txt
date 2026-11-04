@@ -1,0 +1,17 @@
+# CaptureNoTimeout: the 10 s limit of a robot with a base (for a new robot stuck on its lift) no longer kills
+# a robot whose capture is held up (the original killed it and closed the base).
+# StopInPlace: Stop halts each robot where it stands (the original sent the group on to free places round
+# its centre).
+Name=Исправления боя
+NameEn=Battle fixes
+Description=Исправления ошибок оригинального боя.
+Description=- Робот, захватывающий базу, больше не погибает через 10 секунд, если захват задержался (в оригинале его убивал лимит для застрявших на лифте новых роботов, а база закрывалась).
+Description=- По команде «Стоп» каждый робот останавливается там, где стоит (в оригинале группа разъезжалась по свободным местам вокруг своего центра).
+DescriptionEn=Fixes of the original battle's mistakes.
+DescriptionEn=- A robot capturing a base no longer dies after 10 seconds when the capture is held up (the original's limit for new robots stuck on a lift killed it and closed the base).
+DescriptionEn=- On Stop each robot halts where it stands (the original sent the group on to free places round its centre).
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=fixes.dll
+Switches=CaptureNoTimeout,StopInPlace

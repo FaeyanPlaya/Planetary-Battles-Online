@@ -35,11 +35,11 @@ std::string encode_name(const std::wstring &name) {
     return PlayerName::valid(name) ? utils::from_wstring(name) : std::string("-");
 }
 
-std::optional<std::vector<ModRef>> parse_mods(std::string_view list) {
+std::optional<std::vector<ModRef>> parse_mods(std::string_view list, char separator = ',') {
     std::vector<ModRef> mods;
     if (list == "-") return mods;
     while (!list.empty()) {
-        const auto comma = list.find(',');
+        const auto comma = list.find(separator);
         const auto item = list.substr(0, comma);
         list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
         const auto colon = item.find(':');
@@ -49,6 +49,12 @@ std::optional<std::vector<ModRef>> parse_mods(std::string_view list) {
         mods.push_back(std::move(mod));
     }
     return mods;
+}
+
+std::string mods_text(const std::vector<ModRef> &mods, char separator) {
+    std::string text;
+    for (const ModRef &m : mods) text += (text.empty() ? "" : std::string(1, separator)) + m.id + ":" + m.hash;
+    return text.empty() ? std::string("-") : text;
 }
 
 std::optional<std::vector<Person>> parse_people(std::string_view list) {
@@ -85,18 +91,26 @@ std::optional<std::vector<Person>> parse_people(std::string_view list) {
 }  // namespace
 
 std::string to_line(const State &state, int you) {
-    std::string people, pings, mods;
-    for (const ModRef &m : state.mods) mods += (mods.empty() ? "" : ",") + m.id + ":" + m.hash;
+    std::string people, pings, personal;
     for (const Person &p : state.people) {
         people += std::format("{}{}:{}:{}:{}", people.empty() ? "" : ",", BattleRules::bonus_name(p.bonus),
                               p.ready ? 1 : 0, p.side, encode_name(p.name));
         pings += (pings.empty() ? "" : ",") + (p.ping >= 0 ? std::to_string(p.ping) : std::string("-"));
+        personal += (personal.empty() ? "" : "|") + mods_text(p.personal, ';');
     }
-    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} auto={} people={} pings={} maphash={} mods={} mappack={} map={}",
+    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} auto={} people={} pings={} maphash={} mods={} mappack={} verified={} personal={} map={}",
                        you, state.ai_resources, state.manual_control ? 1 : 0, state.manual_bonus ? 1 : 0, state.delay,
                        state.dropped_ai ? "ai" : "idle", state.auto_delay, people, pings,
-                       state.map_hash.empty() ? "-" : state.map_hash, mods.empty() ? "-" : mods,
-                       state.map_pack.empty() ? "-" : state.map_pack, utils::from_wstring(state.map));
+                       state.map_hash.empty() ? "-" : state.map_hash, mods_text(state.mods, ','),
+                       state.map_pack.empty() ? "-" : state.map_pack, state.verified_only ? 1 : 0,
+                       personal.empty() ? "-" : personal, utils::from_wstring(state.map));
+}
+
+std::vector<ModRef> unverified(const Person &person) {
+    std::vector<ModRef> out;
+    for (const ModRef &m : person.personal)
+        if (!Mods::verified(m.id, m.hash)) out.push_back(m);
+    return out;
 }
 
 int auto_delay_for(int slowest, int turn_ms) {
@@ -136,7 +150,7 @@ std::optional<Received> from_line(std::string_view line) {
     Received r;
     r.state.map = utils::to_wstring(line.substr(map_at + 5));
     std::string_view fields = line.substr(head.size(), map_at - head.size());
-    std::string_view pings;
+    std::string_view pings, personal;
     int seen = 0;
     while (!fields.empty()) {
         const auto space = fields.find(' ');
@@ -190,6 +204,15 @@ std::optional<Received> from_line(std::string_view line) {
             r.state.mods = std::move(*mods);
             continue;  // optional
         }
+        else if (key == "verified") {
+            if (value != "0" && value != "1") return std::nullopt;
+            r.state.verified_only = value == "1";
+            continue;  // optional
+        }
+        else if (key == "personal") {
+            personal = value;
+            continue;  // optional
+        }
         else if (key == "people") {
             auto people = parse_people(value);
             if (!people) return std::nullopt;
@@ -197,6 +220,14 @@ std::optional<Received> from_line(std::string_view line) {
         }
         else continue;
         ++seen;
+    }
+    for (Person &p : r.state.people) {
+        if (personal.empty()) break;
+        const auto bar = personal.find('|');
+        auto mods = parse_mods(personal.substr(0, bar), ';');
+        if (!mods) return std::nullopt;
+        p.personal = std::move(*mods);
+        personal = bar == std::string_view::npos ? std::string_view{} : personal.substr(bar + 1);
     }
     for (Person &p : r.state.people) {
         if (pings.empty()) break;
@@ -213,9 +244,10 @@ std::optional<Received> from_line(std::string_view line) {
 }
 
 std::string hello_line(BattleChoice::Bonus bonus, const std::string &data, const std::string &build,
-                       const std::wstring &name, const std::string &rejoin) {
-    return std::format("hello pbo {} bonus={} data={} build={} name={}{}", protocol_version, BattleRules::bonus_name(bonus),
-                       data, build, encode_name(name), rejoin.empty() ? std::string() : " rejoin=" + rejoin);
+                       const std::wstring &name, const std::string &rejoin, const std::vector<ModRef> &personal) {
+    return std::format("hello pbo {} bonus={} data={} build={} name={}{}{}", protocol_version, BattleRules::bonus_name(bonus),
+                       data, build, encode_name(name), rejoin.empty() ? std::string() : " rejoin=" + rejoin,
+                       personal.empty() ? std::string() : " personal=" + mods_text(personal, ';'));
 }
 
 std::optional<Hello> parse_hello(std::string_view line) {
@@ -237,6 +269,9 @@ std::optional<Hello> parse_hello(std::string_view line) {
         else if (pair.starts_with("build=")) hello.build = pair.substr(6);
         else if (pair.starts_with("name=")) hello.name = decode_name(pair.substr(5));
         else if (pair.starts_with("rejoin=")) hello.rejoin = pair.substr(7);
+        else if (pair.starts_with("personal=")) {
+            if (auto mods = parse_mods(pair.substr(9), ';')) hello.personal = std::move(*mods);
+        }
     }
     return hello;
 }

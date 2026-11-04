@@ -812,11 +812,10 @@ static bool FindTarget(const D3DXVECTOR3 &center, CMatrixMapStatic *ms, uintptr_
     return true;
 }
 
-// A unit a person may order a turret of `side` to fire at: a live enemy robot, flyer or built turret.
-static bool OrderableTarget(CMatrixMapStatic *o, int side) {
-    if (!o || o->GetSide() == side)
+bool CMatrixCannon::OrderableTarget(CMatrixMapStatic *o) {
+    if (!IS_TRACE_STOP_OBJECT(o))
         return false;
-    return o->IsLiveRobot() || o->IsLiveActiveCannon() || (o->IsFlyer() && ((CMatrixFlyer *)o)->GetHitPoint() > 0);
+    return o->IsLive() || o->IsSpecial() || (o->IsFlyer() && ((CMatrixFlyer *)o)->GetHitPoint() > 0);
 }
 
 // The turret sees `target` within `radius`: neither the ground nor a building or a map object stands between.
@@ -825,6 +824,12 @@ static bool SeesTarget(CMatrixCannon *cannon, CMatrixMapStatic *target, float ra
     const D3DXVECTOR3 to = target->GetGeoCenter() - center;
     if (D3DXVec3LengthSq(&to) > POW2(radius))
         return false;
+    // A building or a map object: the first thing on the way is the target itself (its centre is inside it).
+    if (!target->IsRobot() && !target->IsFlyer() && !target->IsCannon())
+        return g_MatrixMap->Trace(NULL, center, target->GetGeoCenter(),
+                                  TRACE_OBJECTSPHERE | TRACE_ROBOT | TRACE_FLYER | TRACE_CANNON | TRACE_LANDSCAPE |
+                                          TRACE_BUILDING | TRACE_OBJECT,
+                                  cannon) == target;
     CMatrixMapStatic *cel =
             g_MatrixMap->Trace(NULL, center, target->GetGeoCenter(),
                                TRACE_OBJECTSPHERE | TRACE_ROBOT | TRACE_FLYER | TRACE_CANNON | TRACE_LANDSCAPE, cannon);
@@ -1007,6 +1012,16 @@ void CMatrixCannon::LogicTakt(int takt) {
         DriveTakt(takt, *driver);
         return;
     }
+    // A person's order to fire at a point of the ground, while it is in reach (TurretControl).
+    if (m_OrderAtPoint) {
+        const D3DXVECTOR3 to = m_OrderPoint - m_FireCenter;
+        if (D3DXVec3LengthSq(&to) > POW2(GetFireRadius()))
+            OrderAttack(nullptr);
+        else {
+            PointTakt(takt);
+            return;
+        }
+    }
 
     // cannon logic!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -1045,10 +1060,10 @@ void CMatrixCannon::LogicTakt(int takt) {
         g_MatrixMap->FindObjects(GetGeoCenter(), props->seek_radius, 1, TRACE_ROBOT | TRACE_FLYER, NULL, FindTarget,
                                  (uintptr_t)&data);
 
-        // The unit a person ordered goes first whenever the turret sees it in its seek radius; the order lasts
-        // while the unit lives as an enemy (TurretControl).
+        // What a person ordered goes first whenever the turret sees it in its seek radius; the order lasts while the
+        // target lives (TurretControl).
         if (CMatrixMapStatic *order = OrderTarget()) {
-            if (!OrderableTarget(order, m_Side))
+            if (!OrderableTarget(order))
                 OrderAttack(nullptr);
             else if (SeesTarget(this, order, props->seek_radius))
                 tgt = order;
@@ -1651,8 +1666,40 @@ void CMatrixCannon::OrderAttack(CMatrixMapStatic *target) {
         m_OrderCore->Release();
         m_OrderCore = nullptr;
     }
-    if (OrderableTarget(target, m_Side))
+    if (m_OrderAtPoint) {
+        m_OrderAtPoint = false;
+        DriveFireEnd();  // its fire ends with it
+    }
+    if (OrderableTarget(target))
         m_OrderCore = target->GetCore(DEBUG_CALL_INFO);
+}
+
+void CMatrixCannon::OrderFireAt(const D3DXVECTOR3 &point) {
+    OrderAttack(nullptr);
+    const D3DXVECTOR3 to = point - m_FireCenter;
+    if (D3DXVec3LengthSq(&to) > POW2(GetFireRadius()))
+        return;  // out of reach: the turret cannot go nearer
+    if (m_TargetCore) {
+        m_TargetCore->Release();
+        m_TargetCore = NULL;
+    }
+    m_OrderAtPoint = true;
+    m_OrderPoint = point;
+}
+
+void CMatrixCannon::PointTakt(int takt) {
+    // As a person in the turret aiming there and holding the button once the barrel points there.
+    const bool aimed = TurnTo(m_OrderPoint, takt);
+    for (int i = 0; i < m_WeaponCnt; ++i)
+        if (m_Weapons[i])
+            m_Weapons[i]->Modify(m_FireFrom[i], m_FireDir[i], D3DXVECTOR3(0, 0, 0));
+    if (aimed) {
+        m_NullTargetTime = CANNON_NULL_TARGET_TIME;  // firing (DriveFireEnd ends it)
+        for (int i = 0; i < m_WeaponCnt; ++i)
+            if (m_Weapons[i])
+                m_Weapons[i]->FireBegin(D3DXVECTOR3(0, 0, 0), this);
+    }
+    WeaponsTakt(takt);
 }
 
 void CMatrixCannon::SetDriveBonus(bool on) {

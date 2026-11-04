@@ -17,6 +17,7 @@
 #include "MatrixEffect.hpp"
 #include "MatrixEffectLightening.hpp"
 #include "../Mods.hpp"
+#include "../ModHooks.hpp"
 #include "MatrixEffectFlame.hpp"
 #include "MatrixEffectPointLight.hpp"
 #include "MatrixEffectMovingObject.hpp"
@@ -31,8 +32,9 @@ void CMatrixEffectWeapon::WeaponHit(CMatrixMapStatic *hiti, const D3DXVECTOR3 &p
     const bool missile = w->m_Type == WEAPON_HOMING_MISSILE || w->m_Type == WEAPON_CANNON3;
     if (missile || w->m_Type == WEAPON_GUN || w->m_Type == WEAPON_CANNON0 || w->m_Type == WEAPON_CANNON1) {
         // MissileBallistics: a missile hurts at any distance.
+        const auto far_hits = ModHooks::hooks().missile_hurts_far;
         if (POW2(w->m_WeaponDist * w->m_WeaponCoefficient) < m_Dist2 &&
-            !(missile && Mods::switches().missile_ballistics))
+            !(missile && Mods::switches().missile_ballistics && far_hits && far_hits()))
             give_damage = false;
     }
 
@@ -810,9 +812,13 @@ void CLaser::SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1) {
 void CLaser::BeforeDraw()
 {
     // The laser turret's muzzle point is inside its thick barrel, which hid the robot's small glow there.
-    const bool glow = m_Turret && Mods::switches().turret_laser_glow;
-    m_end.m_Pos = glow ? m_From + m_Dir * TURRET_LASER_GLOW_AHEAD : m_From;
-    m_end.SetScale(glow ? TURRET_LASER_GLOW : LASER_WIDTH * 0.5f);
+    // (TurretLaserGlow, the interface fixes mod, sets it out.)
+    D3DXVECTOR3 at = m_From;
+    float size = LASER_WIDTH * 0.5f;
+    if (const auto glow = ModHooks::hooks().laser_glow; m_Turret && Mods::switches().turret_laser_glow && glow)
+        glow(m_From, m_Dir, at, size);
+    m_end.m_Pos = at;
+    m_end.SetScale(size);
     BYTE a = g_MatrixMap->IsPaused() ? 240 : (BYTE(FRND(128) + 128));
     m_bl.SetAlpha(a);
     m_end.SetAlpha(a);

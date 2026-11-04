@@ -140,8 +140,10 @@ public:
     int m_FireMatrix[2];
 
     SObjectCore *m_TargetCore;
-    // TurretControl: the unit a person ordered the turret to fire at (null: the turret chooses).
+    // TurretControl: what a person ordered the turret to fire at (null: the turret chooses), or a point of the ground.
     SObjectCore *m_OrderCore = nullptr;
+    bool m_OrderAtPoint = false;
+    D3DXVECTOR3 m_OrderPoint{0, 0, 0};
     // Dismantled (TurretControl): no wreck, the turret sinks into its place and goes.
     bool m_Dismantled = false;
     // Selected by this client's person (TurretControl): the ring around it.
@@ -161,6 +163,8 @@ public:
     bool TurnTo(const D3DXVECTOR3 &pos, int takt);
     // The weapons' step: fire effects, the hits' bookkeeping and the fire animation.
     void WeaponsTakt(int takt);
+    // The ordered point: the barrel turns to it, and fires once it points there.
+    void PointTakt(int takt);
 
 public:
     CMatrixCannon(void);
@@ -245,6 +249,13 @@ public:
     float HeadAngle() const { return m_Unit[1].u1.s1.m_Angle + m_Angle; }
     // Fire at `target` while it is in reach (null: choose targets again).
     void OrderAttack(CMatrixMapStatic *target);
+    // Fire at a point of the ground while it is in reach (it is the person's to end: another order or none).
+    void OrderFireAt(const D3DXVECTOR3 &point);
+    bool OrderedAtPoint() const { return m_OrderAtPoint; }
+    const D3DXVECTOR3 &OrderPoint() const { return m_OrderPoint; }
+    // What a person may order a turret to fire at, as a robot: a live object of any side (a robot, flyer, turret,
+    // base or factory) or a special map object.
+    static bool OrderableTarget(CMatrixMapStatic *o);
     CMatrixMapStatic *OrderTarget() const { return m_OrderCore ? m_OrderCore->m_Object : nullptr; }
     // The manual control bonus: the weapons reach farther while a person is in the turret.
     void SetDriveBonus(bool on);

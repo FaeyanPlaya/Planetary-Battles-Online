@@ -72,10 +72,9 @@ enum EFlyerKind : unsigned int {
 };
 
 class CMatrixFlyer;
-// The reinforcements' templates (FlyerOrders/GiveBot): the data's, or HelpFromAbove's (GiveBotAbove, made beside
-// them once) with the mod.
+// The reinforcements' templates (FlyerOrders/GiveBot): the data's, or a battle mod's data laid on it (ModData).
 CBlockPar *ReinforcementTemplates();
-// How many points a call's robots are worth (it may go 30 over to take a last one).
+// How many points a call's robots are worth (it may go 30 over to take a last one): 100, or the data's CallPoints=.
 int ReinforcementPoints();
 
 struct SMatrixFlyerUnit {

@@ -1,0 +1,22 @@
+# MissileBallistics: a missile's (a robot's or a missile turret's) engine burns out when it is as far from
+# where it was fired as its weapon reaches; it then goes on unpowered, slowed by the air and pulled down,
+# and nothing steers it. It hurts whatever it hits at any distance (the original hurt only within the
+# weapon's reach) and bursts only on hitting something (the original burst in the air 1500 ahead when it
+# locked on nothing).
+Name=Баллистика ракет
+NameEn=Missile ballistics
+Description=Ракеты летят как настоящие снаряды.
+Description=- На дальности оружия двигатель ракеты гаснет: дальше она летит по инерции, её тормозит воздух и тянет вниз, и она больше не наводится.
+Description=- Ракета ранит всё, во что попадёт, на любом расстоянии (в оригинале только в пределах дальности оружия).
+Description=- Ракета взрывается только от попадания (в оригинале, не захватив цель, она взрывалась в воздухе).
+Description=- Касается ракет роботов и ракетных турелей.
+DescriptionEn=Missiles fly as real shells do.
+DescriptionEn=- At its weapon's reach a missile's engine burns out: it goes on unpowered, slowed by the air and pulled down, and no longer steers.
+DescriptionEn=- A missile hurts whatever it hits at any distance (the original: only within its weapon's reach).
+DescriptionEn=- A missile bursts only on hitting something (the original burst in the air when it locked on nothing).
+DescriptionEn=- For robots' and missile turrets' missiles.
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=ballistics.dll
+Switches=MissileBallistics

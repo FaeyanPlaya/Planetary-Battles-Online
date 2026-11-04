@@ -1,0 +1,222 @@
+FlyerOrders {
+	GiveBot {
+		ReplaceBlocks=1
+		CallPoints=150
+		SelfRepairHead=%MOD%\reparator.vo
+		SelfRepairHeadTexture=Matrix\Robot\Weapon10
+		90 {
+			BotArmor=5
+			BotChassis=5
+			BotHead=3
+			BotHitpoint=4500
+			BotStrength=0
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=5
+			Flyer=3
+		}
+		90 {
+			BotArmor=5
+			BotChassis=5
+			BotHead=4
+			BotHitpoint=8000
+			BotStrength=0
+			BotWeapon=2
+			BotWeapon=2
+			BotWeapon=2
+			BotWeapon=9
+			BotWeapon=5
+			Flyer=3
+		}
+		90 {
+			BotArmor=5
+			BotChassis=5
+			BotHead=0
+			BotHitpoint=5800
+			BotStrength=0
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=5
+			Flyer=3
+			SelfRepair=3
+		}
+		75 {
+			BotArmor=5
+			BotChassis=4
+			BotHead=3
+			BotHitpoint=3500
+			BotStrength=0
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=5
+			Flyer=3
+		}
+		75 {
+			BotArmor=5
+			BotChassis=4
+			BotHead=4
+			BotHitpoint=6000
+			BotStrength=0
+			BotWeapon=2
+			BotWeapon=2
+			BotWeapon=2
+			BotWeapon=9
+			BotWeapon=5
+			Flyer=3
+		}
+		75 {
+			BotArmor=5
+			BotChassis=4
+			BotHead=0
+			BotHitpoint=4800
+			BotStrength=0
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=5
+			Flyer=3
+			SelfRepair=3
+		}
+		65 {
+			BotArmor=5
+			BotChassis=3
+			BotHead=4
+			BotHitpoint=4000
+			BotStrength=0
+			BotWeapon=2
+			BotWeapon=2
+			BotWeapon=2
+			BotWeapon=2
+			BotWeapon=5
+		}
+		60 {
+			BotArmor=4
+			BotChassis=5
+			BotHead=4
+			BotHitpoint=4000
+			BotStrength=0
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=9
+		}
+		60 {
+			BotArmor=4
+			BotChassis=5
+			BotHead=4
+			BotHitpoint=4000
+			BotStrength=0
+			BotWeapon=3
+			BotWeapon=3
+			BotWeapon=3
+		}
+		60 {
+			BotArmor=4
+			BotChassis=5
+			BotHead=0
+			BotHitpoint=4000
+			BotStrength=0
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=10
+			SelfRepair=3
+		}
+		50 {
+			BotArmor=4
+			BotChassis=4
+			BotHead=4
+			BotHitpoint=3500
+			BotStrength=0
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=9
+		}
+		50 {
+			BotArmor=4
+			BotChassis=4
+			BotHead=4
+			BotHitpoint=3500
+			BotStrength=0
+			BotWeapon=3
+			BotWeapon=3
+			BotWeapon=3
+		}
+		50 {
+			BotArmor=4
+			BotChassis=4
+			BotHead=0
+			BotHitpoint=3500
+			BotStrength=0
+			BotWeapon=10
+			BotWeapon=10
+			BotWeapon=10
+			SelfRepair=3
+		}
+		40 {
+			BotArmor=3
+			BotChassis=4
+			BotHead=4
+			BotHitpoint=3300
+			BotStrength=0
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=7
+		}
+		40 {
+			BotArmor=3
+			BotChassis=5
+			BotHead=4
+			BotHitpoint=3300
+			BotStrength=0
+			BotWeapon=3
+			BotWeapon=9
+			BotWeapon=7
+		}
+		40 {
+			BotArmor=3
+			BotChassis=4
+			BotHead=4
+			BotHitpoint=3300
+			BotStrength=0
+			BotWeapon=4
+			BotWeapon=4
+			BotWeapon=7
+		}
+		30 {
+			BotArmor=3
+			BotChassis=4
+			BotHead=3
+			BotHitpoint=2800
+			BotStrength=0
+			BotWeapon=8
+			BotWeapon=8
+			BotWeapon=5
+		}
+		30 {
+			BotArmor=3
+			BotChassis=5
+			BotHead=3
+			BotHitpoint=2800
+			BotStrength=0
+			BotWeapon=3
+			BotWeapon=3
+			BotWeapon=5
+		}
+		30 {
+			BotArmor=3
+			BotChassis=4
+			BotHead=3
+			BotHitpoint=2800
+			BotStrength=0
+			BotWeapon=6
+			BotWeapon=6
+			BotWeapon=5
+		}
+	}
+}

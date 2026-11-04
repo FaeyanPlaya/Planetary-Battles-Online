@@ -36,6 +36,11 @@ private:
 
 Font& GetFont(IDirect3DDevice9* device, std::wstring_view font_name);
 
+// Releases the fonts (and their hold on the device) before the device goes. The engine is a DLL: whatever is left
+// for its static destructors is released while Windows unloads it, after the driver's threads have stopped, and the
+// process then never ends. The next GetFont makes them again.
+void Shutdown();
+
 void OnLostDevice();
 void OnResetDevice();
 

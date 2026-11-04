@@ -9,6 +9,7 @@
 #include "../MatrixSampleStateManager.hpp"
 #include "../Text/Render.hpp"
 #include "../SettingsModel.hpp"
+#include "UiTheme.hpp"
 
 #include "MatrixSoundManager.hpp"
 #include "StringConstants.hpp"
@@ -36,6 +37,11 @@ CMatrixHint::CMatrixHint(CTextureManaged *tex, int w, int h, const std::wstring 
     m_hints.push_back(this);
 };
 
+void CMatrixHint::ToTop() {
+    m_hints.remove(this);
+    m_hints.push_back(this);
+}
+
 CMatrixHint::~CMatrixHint()
 {
     m_hints.remove(this);
@@ -51,11 +57,12 @@ CMatrixHint *CMatrixHint::Build(int border, const std::wstring &soundin, const s
         bph = hints->BlockGetNE(utils::format(L"%d", border));
         // This project's windows (SettingsModel::window_border): the game's large panel (border 2) without the help
         // mark low in its left top corner. LeftTopPlain=x,y: from there on the left piece's panel covers the corner (its
-        // rounded edge, left of x, and its top, above y, stay).
-        if (!bph && border == SettingsModel::window_border && hints->BlockGetNE(L"2")) {
+        // rounded edge, left of x, and its top, above y, stay). The dark look's (UiTheme::dark_border): the same, Dark.
+        if (!bph && (border == SettingsModel::window_border || border == UiTheme::dark_border) && hints->BlockGetNE(L"2")) {
             bph = hints->BlockGetAdd(utils::format(L"%d", border));
             bph->CopyFrom(*hints->BlockGet(L"2"));
             bph->ParSetAdd(L"LeftTopPlain", L"20,39");  // the mark is right and below; 75 - 39 keeps the 3-row stripes
+            if (border == UiTheme::dark_border) bph->ParSetAdd(L"Dark", L"1");
         }
 
         if (bph) {
@@ -64,6 +71,7 @@ CMatrixHint *CMatrixHint::Build(int border, const std::wstring &soundin, const s
             {
                 bmps.LoadFromPNG(src.c_str());
                 bmps.SwapByte(CPoint(0, 0), bmps.Size(), 0, 2);
+                if (bph->ParCount(L"Dark")) UiTheme::darken_panel(bmps.Data(), bmps.SizeX(), bmps.SizeY(), bmps.Pitch(), bmps.BytePP());
             }
         }
     }

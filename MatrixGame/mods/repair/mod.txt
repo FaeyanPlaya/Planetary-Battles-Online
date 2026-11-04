@@ -1,0 +1,17 @@
+# RepairPlant: a repair factory of a side keeps two repairer's beams from its probes, at the rate of a robot
+# with four repairers, on the nearest damaged robot of that side standing in its capture area; the
+# reinforcements' lift field reaches from its hatch to the robot meanwhile. A captured factory repairs for
+# its new side; a neutral one does nothing.
+Name=Ремонтные заводы
+NameEn=Repair factories
+Description=Ремонтные заводы чинят роботов.
+Description=- Завод чинит ближайшего повреждённого робота своей стороны в зоне захвата двумя лучами, как робот с четырьмя ремонтниками.
+Description=- Захваченный завод чинит роботов своей новой стороны; нейтральный не чинит никого.
+DescriptionEn=Repair factories repair robots.
+DescriptionEn=- A factory repairs the nearest damaged robot of its side in its capture area with two beams, as a robot with four repairers.
+DescriptionEn=- A captured factory repairs for its new side; a neutral one repairs nobody.
+Author=Planetary Battles Online
+Kind=battle
+Default=on
+Dll=repair.dll
+Switches=RepairPlant

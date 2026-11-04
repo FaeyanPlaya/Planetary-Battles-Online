@@ -1,0 +1,18 @@
+# FirstPerson (as Universe's PBFirstPerson, which gets there by its camera's numbers): in a robot or a turret
+# the wheel zoomed all the way in once more looks from it: from above the robot's hull (drawn) along its
+# heading, or from the turret's head (not drawn); a step out goes back. Drawing only.
+Name=Вид от первого лица
+NameEn=First person view
+Description=Вид из робота или турели, как в PBFirstPerson для Universe.
+Description=- Управляя роботом или турелью, прокрутите колесо к себе до упора и ещё раз: камера встанет над корпусом робота и смотрит по его ходу, у турели — с её головы.
+Description=- Шаг колесом от себя возвращает обычную камеру.
+Description=- Меняет только картинку.
+DescriptionEn=The view from a robot or a turret, as Universe's PBFirstPerson.
+DescriptionEn=- Driving a robot or a turret, roll the wheel all the way in and once more: the camera sits over the robot's hull looking where it goes, on a turret on its head.
+DescriptionEn=- A step of the wheel out brings the usual camera back.
+DescriptionEn=- Only the picture.
+Author=Planetary Battles Online, по PBFirstPerson для Universe
+Kind=personal
+Default=on
+Dll=firstperson.dll
+Switches=FirstPerson

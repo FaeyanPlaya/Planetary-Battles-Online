@@ -1,0 +1,17 @@
+# NewSky: the game's own skies at 2048 (the game's are 1024) from Universe's PBNewSky (by Klaxons), read in
+# place where the game has it (MapPacks::new_sky_folder); nothing of it is shipped. Without it: the game's.
+Name=Небо высокого разрешения
+NameEn=High resolution sky
+Description=Небо в высоком разрешении.
+Description=- Небо игры в 2048 точек вместо 1024 из мода PBNewSky для Universe (автор Klaxons).
+Description=- Берётся из папки игры, если мод там установлен; без него — обычное небо.
+Description=- Меняет только картинку.
+DescriptionEn=A high resolution sky.
+DescriptionEn=- The game's skies at 2048 instead of 1024 from Universe's PBNewSky (by Klaxons).
+DescriptionEn=- Read from the game's folder when the mod is there; without it, the usual sky.
+DescriptionEn=- Only the picture.
+Author=Planetary Battles Online; небо: PBNewSky для Universe (Klaxons)
+Kind=personal
+Default=on
+Dll=newsky.dll
+Switches=NewSky

@@ -12,7 +12,8 @@
 // The host decides the map and the AI economy and sends the whole state on every change; each
 // person chooses only their own side, bonus and whether they are ready.
 //
-// Client to host: hello pbo <version> bonus=<name> data=<fp> build=<fp> name=<nick> [rejoin=<key>] | bonus <name> | ready 0|1 |
+// Client to host: hello pbo <version> bonus=<name> data=<fp> build=<fp> name=<nick> [rejoin=<key>] [personal=<id:fp;...>] |
+//   bonus <name> | ready 0|1 |
 //   side <n> | pong <n> | mapget <hash> | bye
 // (rejoin: a person back to the battle under way that lost its connection, with the key its start line gave it.)
 // Host to client: lobby you=<index> ... (to_line) | refused version|build|data|full|name|kicked|started |
@@ -24,12 +25,20 @@
 // (data and build: GameData fingerprints of the game files and of the program; both must match.)
 // (The lobby line's mods: the battle mods the host chose with the fingerprints of its folders; a person with a mod
 //  missing or different cannot be ready. mappack: the map mod the host's map comes from (MapPacks), the same.)
+// (personal: the person's own mods on, with their fingerprints; everyone sees them in the lobby, and the host may let
+//  only built-in ones play: the battle leaves out the others (State::verified_only, Mods::verified).)
 // (rules and start are NetBattle's, sent once the host has loaded the map.)
 namespace Lobby {
 
-constexpr int protocol_version = 11;
+constexpr int protocol_version = 12;
 constexpr int max_people = 4;
 constexpr int default_port = 27960;
+
+// A mod: its id and the fingerprint of the folder (Mods::Mod): a battle mod the host chose, a person's own mod.
+struct ModRef {
+    std::string id, hash;
+    bool operator==(const ModRef &) const = default;
+};
 
 struct Person {
     BattleChoice::Bonus bonus = BattleChoice::Bonus::None;
@@ -37,14 +46,10 @@ struct Person {
     int side = 0;        // the side this person chose; 0: any. Several may choose one side: the start draws.
     std::wstring name;   // PlayerName; empty: none given
     int ping = -1;       // ms, the host's measure of the round trip to this person; -1 unknown (and the host's own)
+    std::vector<ModRef> personal{};  // this person's own mods on (hello)
     bool operator==(const Person &) const = default;
 };
 
-// A battle mod the host chose: its id and the fingerprint of the host's folder (Mods::Mod).
-struct ModRef {
-    std::string id, hash;
-    bool operator==(const ModRef &) const = default;
-};
 
 struct State {
     std::wstring map;            // Matrix\Map\<file>; empty: none chosen
@@ -58,6 +63,7 @@ struct State {
     int auto_delay = 0;          // ms: auto's delay, measured after the people last changed (auto_delay_for); 0: measuring
     std::vector<ModRef> mods{};  // the battle's mods (BattleRules::Rules::mods)
     std::string map_pack{};      // the map's map mod, "<id>:<fingerprint>" (MapPacks::ref); empty: the game's map
+    bool verified_only = false;  // the host's: only verified personal mods play (BattleRules::Rules::verified_personal)
     bool operator==(const State &) const = default;
 };
 
@@ -78,7 +84,8 @@ constexpr int delay_choices[] = {0, 200, 300, 400, 500};  // 0: auto; one turn (
 int next_delay(int delay, int step);
 
 // "lobby you=1 ai=0 manual=1 manual_bonus=1 delay=0 dropped=ai people=None:1:0:Host,AirSupport:0:3:- pings=-,85 maphash=<hex>
-//  mods=pbo:<hex>,... mappack=<id>:<hex> map=Matrix\Map\x.cmap" (bonus:ready:chosen side:name, "-" for no name; the manual keys 0 or 1,
+//  mods=pbo:<hex>,... mappack=<id>:<hex> verified=0 personal=interface:<hex>;farview:<hex>|- map=Matrix\Map\x.cmap"
+// (personal: each person's own mods in people's order, | between people, - none; bonus:ready:chosen side:name, "-" for no name; the manual keys 0 or 1,
 // missing: 1; delay, dropped (ai or idle), auto (auto_delay), pings, mods and mappack ("-": none) may be missing: auto, ai,
 // measuring, unknown, none);
 // you: the receiver's index.
@@ -90,14 +97,19 @@ struct Received {
 std::optional<Received> from_line(std::string_view line);
 
 std::string hello_line(BattleChoice::Bonus bonus, const std::string &data, const std::string &build,
-                       const std::wstring &name = {}, const std::string &rejoin = {});
+                       const std::wstring &name = {}, const std::string &rejoin = {},
+                       const std::vector<ModRef> &personal = {});
 struct Hello {
     int version = 0;
     BattleChoice::Bonus bonus = BattleChoice::Bonus::None;
     std::string data, build;
     std::wstring name;  // empty or not PlayerName::valid: none
     std::string rejoin;  // the key of a person back to the battle; empty: joins the lobby
+    std::vector<ModRef> personal;
 };
+
+// A person's own mods that this build does not vouch for (Mods::verified).
+std::vector<ModRef> unverified(const Person &person);
 // nullopt when the line is not a hello.
 std::optional<Hello> parse_hello(std::string_view line);
 

@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "StandaloneRuntime.hpp"
+#include "UiTheme.hpp"
 
 #include "MatrixConfig.hpp"
 #include "MatrixGameDll.hpp"
@@ -60,6 +61,7 @@ void initialize_runtime(const Values &values) {
 
 void apply_runtime(const Values &values) {
     apply_immediate(values);
+    UiTheme::choose(values.theme);
     if (Display::enabled()) {
         Display::request(values.display.mode, values.display.fullscreen);
         Display::request_size(values.display.width, values.display.height);

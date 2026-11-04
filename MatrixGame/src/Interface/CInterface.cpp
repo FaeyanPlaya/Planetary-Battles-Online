@@ -28,6 +28,7 @@
 #include "../BattleRules.hpp"
 #include "../SettingsModel.hpp"
 #include "../Mods.hpp"
+#include "../ModHooks.hpp"
 #include "../BattleNotice.hpp"
 
 #include "../Text/Render.hpp"
@@ -1252,18 +1253,9 @@ bool CInterface::OnMouseRBDown() {
                             SETFLAG(g_IFaceList->m_IfListFlags, MINIMAP_BUTTON_DOWN);
                         }
                     }
-                    else if (pObjectsList->m_strName == IF_ORDER_BOMB && Mods::switches().auto_boom) {
-                        // AutoBoom: the selected bombers' auto detonation turns; the hint shows it anew.
-                        const bool on = g_MatrixMap->GetPlayerSide()->ToggleAutoBoom();
-                        const std::wstring setup = g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup");
-                        const bool ru = SettingsModel::detect_language(setup) == SettingsModel::Language::Russian;
-                        BattleNotice::show(on ? (ru ? L"Автоподрыв включён" : L"Auto detonation on")
-                                              : (ru ? L"Автоподрыв выключен" : L"Auto detonation off"));
-                        if (g_IFaceList->m_CurrentHint && g_IFaceList->m_CurrentHintControlName == IF_ORDER_BOMB) {
-                            g_IFaceList->m_CurrentHint->Release();
-                            g_IFaceList->m_CurrentHint = NULL;
-                            g_IFaceList->m_CurrentHintControlName = L"";
-                        }
+                    else if (pObjectsList->m_strName == IF_ORDER_BOMB && Mods::switches().auto_boom &&
+                             ModHooks::hooks().bomb_right_click) {
+                        ModHooks::hooks().bomb_right_click();  // the auto detonation mod's
                     }
                     else {
                         // other elements
@@ -3764,9 +3756,9 @@ void CIFaceList::LogicTakt(int ms) {
                 //устанавливаем курсор CROSS_BLUE
                 g_MatrixMap->m_Cursor.Select(CURSOR_CROSS_BLUE);
             }
-            else if (Mods::switches().minimap_cursor && CursorOnMinimap()) {
-                // MinimapCursor: a place on the map is pointed at there, as by a Move order.
-                g_MatrixMap->m_Cursor.Select(CURSOR_CROSS_BLUE);
+            else if (Mods::switches().minimap_cursor && ModHooks::hooks().minimap_cursor &&
+                     ModHooks::hooks().minimap_cursor()) {
+                // MinimapCursor (the interface fixes mod) chose it.
             }
             else {
                 //устанавливаем курсор ARROW
@@ -5375,14 +5367,9 @@ std::wstring CIFaceList::ModHint(const std::wstring &element) {
     CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
     const bool ru = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
                     SettingsModel::Language::Russian;
-    if (element == IF_ORDER_BOMB && Mods::switches().auto_boom && !ps->IsArcadeMode()) {
-        const wchar_t *text = ps->SelectedAutoBoom()
-            ? (ru ? L"Взорвать бомбу. Автоподрыв при гибели: включён. Правый щелчок: выключить."
-                  : L"Set the bomb off. Auto detonation as it dies: on. Right click: turn off.")
-            : (ru ? L"Взорвать бомбу. Автоподрыв при гибели: выключен. Правый щелчок: включить."
-                  : L"Set the bomb off. Auto detonation as it dies: off. Right click: turn on.");
-        return std::format(L"0|_COLOR:FFCBCCCE|_FONT:Font.2Small|_WIDTH:175|_ALIGN:0:0|_TEXT:{}", text);
-    }
+    if (const auto bomb = ModHooks::hooks().bomb_hint;
+        element == IF_ORDER_BOMB && Mods::switches().auto_boom && bomb && !ps->IsArcadeMode())
+        return bomb(ru);  // the auto detonation mod's
     const bool in_turret = ps->IsTurretMode();
     if (!in_turret && (ps->m_CurrSel != TURRET_SELECTED || ps->IsArcadeMode()))
         return {};

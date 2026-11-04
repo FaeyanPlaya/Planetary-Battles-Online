@@ -11,6 +11,7 @@
 #include "MatrixGameDll.hpp"
 #include "MatrixGame.h"
 #include "Mods.hpp"
+#include "ModHooks.hpp"
 #include "KeyBindings.hpp"
 #include <stupid_logger.hpp>
 
@@ -250,8 +251,200 @@ void CMatrixConfig::ReadParams(void) {
             m_RobotShadow = SHADOW_STENCIL;
     }
 
+    // The battle's values (damages, reach, timings, prices, characteristics): read again once mods' data is laid.
+    ReadBattleParams();
+
+    int n;
+    // Items labels
+    CBlockPar *bpl = g_MatrixData->BlockGet(IF_LABELS_BLOCKPAR);
+    bp_tmp = bpl->BlockGetNE(PAR_SOURCE_ITEMS_LABELS);
+
+    m_Labels = (std::wstring*)HAlloc(sizeof(std::wstring) * LABELS_LAST, g_MatrixHeap);
+    for (int i = 0; i < LABELS_LAST; i++) {
+        new(&m_Labels[i]) std::wstring();
+    }
+    m_Labels[W1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W1_CHAR);
+    m_Labels[W2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W2_CHAR);
+    m_Labels[W3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W3_CHAR);
+    m_Labels[W4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W4_CHAR);
+    m_Labels[W5_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W5_CHAR);
+    m_Labels[W6_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W6_CHAR);
+    m_Labels[W7_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W7_CHAR);
+    m_Labels[W8_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W8_CHAR);
+    m_Labels[W9_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W9_CHAR);
+    m_Labels[W10_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W10_CHAR);
+
+    m_Labels[HE1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE1_CHAR);
+    m_Labels[HE2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE2_CHAR);
+    m_Labels[HE3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE3_CHAR);
+    m_Labels[HE4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE4_CHAR);
+
+    m_Labels[HU1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU1_CHAR);
+    m_Labels[HU2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU2_CHAR);
+    m_Labels[HU3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU3_CHAR);
+    m_Labels[HU4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU4_CHAR);
+    m_Labels[HU5_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU5_CHAR);
+    m_Labels[HU6_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU6_CHAR);
+
+    m_Labels[CH1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH1_CHAR);
+    m_Labels[CH2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH2_CHAR);
+    m_Labels[CH3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH3_CHAR);
+    m_Labels[CH4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH4_CHAR);
+    m_Labels[CH5_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH5_CHAR);
+
+    // Items descriptions
+    bp_tmp = bpl->BlockGetNE(PAR_SOURCE_ITEMS_DESCRIPTIONS);
+
+    m_Descriptions = (std::wstring*)HAlloc(sizeof(std::wstring) * DESCRIPTIONS_LAST, g_MatrixHeap);
+    for (int i = 0; i < DESCRIPTIONS_LAST; i++) {
+        new(&m_Descriptions[i]) std::wstring();
+    }
+    m_Descriptions[W1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W1_DESCR);
+    m_Descriptions[W2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W2_DESCR);
+    m_Descriptions[W3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W3_DESCR);
+    m_Descriptions[W4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W4_DESCR);
+    m_Descriptions[W5_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W5_DESCR);
+    m_Descriptions[W6_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W6_DESCR);
+    m_Descriptions[W7_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W7_DESCR);
+    m_Descriptions[W8_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W8_DESCR);
+    m_Descriptions[W9_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W9_DESCR);
+    m_Descriptions[W10_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W10_DESCR);
+
+    m_Descriptions[HE1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE1_DESCR);
+    m_Descriptions[HE2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE2_DESCR);
+    m_Descriptions[HE3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE3_DESCR);
+    m_Descriptions[HE4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE4_DESCR);
+
+    m_Descriptions[HU1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU1_DESCR);
+    m_Descriptions[HU2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU2_DESCR);
+    m_Descriptions[HU3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU3_DESCR);
+    m_Descriptions[HU4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU4_DESCR);
+    m_Descriptions[HU5_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU5_DESCR);
+    m_Descriptions[HU6_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU6_DESCR);
+
+    m_Descriptions[CH1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH1_DESCR);
+    m_Descriptions[CH2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH2_DESCR);
+    m_Descriptions[CH3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH3_DESCR);
+    m_Descriptions[CH4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH4_DESCR);
+    m_Descriptions[CH5_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH5_DESCR);
+
+    // camera properties
+    bp_tmp = g_MatrixData->BlockGetNE(PAR_SOURCE_CAMERA);
+    if (bp_tmp) {
+        int cnt = bp_tmp->ParCount();
+        for (int i = 0; i < cnt; ++i) {
+            if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_BASEANGLEZ)
+                m_CamBaseAngleZ = GRAD2RAD((float)bp_tmp->ParGet(i).GetDouble());
+            else if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_INROBOTFWD0)
+                m_CamInRobotForward0 = (float)bp_tmp->ParGet(i).GetDouble();
+            else if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_INROBOTFWD1)
+                m_CamInRobotForward1 = (float)bp_tmp->ParGet(i).GetDouble();
+            else if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_MOVESPEED)
+                m_CamMoveSpeed = (float)bp_tmp->ParGet(i).GetDouble();
+        }
+
+        cnt = bp_tmp->BlockCount();
+        for (int i = 0; i < cnt; ++i) {
+            int index = -1;
+            if (bp_tmp->BlockGetName(i) == PAR_SOURCE_CAMERA_STRATEGY)
+                index = CAMERA_STRATEGY;
+            else if (bp_tmp->BlockGetName(i) == PAR_SOURCE_CAMERA_INROBOT)
+                index = CAMERA_INROBOT;
+            if (index >= 0) {
+                CBlockPar *bp_c = bp_tmp->BlockGet(i);
+
+                int cnt2 = bp_c->ParCount();
+                for (int j = 0; j < cnt2; ++j) {
+                    if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTSPEEDX)
+                        m_CamParams[index].m_CamRotSpeedX = (float)bp_c->ParGet(j).GetDouble();
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTSPEEDZ)
+                        m_CamParams[index].m_CamRotSpeedZ = (float)bp_c->ParGet(j).GetDouble();
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_WHEELSTEP)
+                        m_CamParams[index].m_CamMouseWheelStep = (float)bp_c->ParGet(j).GetDouble();
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTANGLEMIN)
+                        m_CamParams[index].m_CamRotAngleMin = GRAD2RAD(std::min(94.0f, (float)bp_c->ParGet(j).GetDouble()));
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTANGLEMAX)
+                        m_CamParams[index].m_CamRotAngleMax = GRAD2RAD((float)bp_c->ParGet(j).GetDouble());
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_DISTMIN)
+                        m_CamParams[index].m_CamDistMin = (float)bp_c->ParGet(j).GetDouble();
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_DISTMAX)
+                        m_CamParams[index].m_CamDistMax = (float)bp_c->ParGet(j).GetDouble();
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ANGLEPARAM)
+                        m_CamParams[index].m_CamAngleParam = (float)bp_c->ParGet(j).GetDouble();
+                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_HEIGHT)
+                        m_CamParams[index].m_CamHeight = (float)bp_c->ParGet(j).GetDouble();
+                }
+            }
+        }
+    }
+
+    bp_tmp = g_MatrixData->BlockGet(L"Models")->BlockGet(PAR_SOURCE_CANNONS);
+    {
+        int cnt = bp_tmp->BlockCount();
+        ASSERT(cnt == CANNON_TYPE_CNT);
+        for (int i = 0; i < cnt; ++i) {
+            CBlockPar *bp = bp_tmp->BlockGet(i);
+
+            m_CannonsProps[i].max_top_angle = GRAD2RAD((float)bp->ParGet(PAR_SOURCE_CANNONS_MAX_TOP_ANGLE).GetDouble());
+            m_CannonsProps[i].max_bottom_angle =
+                    GRAD2RAD((float)bp->ParGet(PAR_SOURCE_CANNONS_MAX_BOTTOM_ANGLE).GetDouble());
+            m_CannonsProps[i].seek_radius = (float)bp->ParGet(PAR_SOURCE_CANNONS_RADIUS).GetDouble();
+            m_CannonsProps[i].max_da = GRAD2RAD((float)bp->ParGet(PAR_SOURCE_CANNONS_ROTATION).GetDouble());
+            m_CannonsProps[i].weapon = WeapName2Weap(bp->ParGet(PAR_SOURCE_CANNONS_WEAPON).c_str());
+            // m_CannonsProps[i].cooldown = bp->ParGet(PAR_SOURCE_CANNONS_COOLDOWN).GetInt();
+            m_CannonsProps[i].m_Resources[TITAN] = bp->ParGet(L"Titan").GetInt();
+            m_CannonsProps[i].m_Resources[ENERGY] = bp->ParGet(L"Energy").GetInt();
+            m_CannonsProps[i].m_Resources[PLASMA] = bp->ParGet(L"Plasm").GetInt();
+            m_CannonsProps[i].m_Resources[ELECTRONICS] = bp->ParGet(L"Electronics").GetInt();
+            m_CannonsProps[i].m_Strength = float(bp->ParGet(L"Strength").GetDouble());
+            m_CannonsProps[i].m_Hitpoint = float(bp->ParGet(L"Hitpoint").GetDouble());
+        }
+    }
+}
+
+static void GenRamp(WORD *out, SGammaVals &vals) {
+    const float brk = 1;
+    const float cok = 1;
+
+    float contrast = (vals.contrast - 0.5f) * cok;
+    float brightness = (vals.brightness - 0.5f) * brk;
+
+    float x = (contrast + 0.5f) * 0.45f;
+    float y = 0.45f - x;
+    float mu = (-x) / (0.5f - x);
+
+    y += mu * (0.5f - y);
+    mu = (0.5f - y) / 128.0f;
+
+    for (int i = 0; i < 256; i++) {
+        float f = (float)pow((float)y, 1.0f / vals.gamma) + brightness;
+        y += mu;
+
+        int v = Float2Int(f * 65535.0f);
+        if (v < 0)
+            v = 0;
+        if (v > 65535)
+            v = 65535;
+        out[i] = (WORD)v;
+    }
+}
+
+void CMatrixConfig::ApplyGammaRamp(void) {
+    D3DGAMMARAMP newramp;
+    GenRamp(newramp.red, m_GammaR);
+    GenRamp(newramp.green, m_GammaG);
+    GenRamp(newramp.blue, m_GammaB);
+
+    g_D3DD->SetGammaRamp(0, D3DSGR_CALIBRATE, &newramp);
+    // g_D3DD->SetGammaRamp(1, D3DSGR_CALIBRATE, &newramp);
+}
+
+void CMatrixConfig::ReadBattleParams(void) {
+    DTRACE();
+
     // load damages
 
+    CBlockPar *bp_tmp;
     int n;
     // cannons
     bp_tmp = g_MatrixData->BlockGet(PAR_SOURCE_WEAPONS)
@@ -721,212 +914,6 @@ void CMatrixConfig::ReadParams(void) {
     m_WeaponStrengthAI[RUK_WEAPON_ELECTRIC] = (float)(bp_tmp->ParGet(L"Electric").GetDouble());
     m_WeaponStrengthAI[RUK_WEAPON_REPAIR] = (float)(bp_tmp->ParGet(L"Repair").GetDouble());
 
-    // Items labels
-    CBlockPar *bpl = g_MatrixData->BlockGet(IF_LABELS_BLOCKPAR);
-    bp_tmp = bpl->BlockGetNE(PAR_SOURCE_ITEMS_LABELS);
-
-    m_Labels = (std::wstring*)HAlloc(sizeof(std::wstring) * LABELS_LAST, g_MatrixHeap);
-    for (int i = 0; i < LABELS_LAST; i++) {
-        new(&m_Labels[i]) std::wstring();
-    }
-    m_Labels[W1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W1_CHAR);
-    m_Labels[W2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W2_CHAR);
-    m_Labels[W3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W3_CHAR);
-    m_Labels[W4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W4_CHAR);
-    m_Labels[W5_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W5_CHAR);
-    m_Labels[W6_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W6_CHAR);
-    m_Labels[W7_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W7_CHAR);
-    m_Labels[W8_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W8_CHAR);
-    m_Labels[W9_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W9_CHAR);
-    m_Labels[W10_CHAR] = bp_tmp->ParGet(PAR_SOURCE_W10_CHAR);
-
-    m_Labels[HE1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE1_CHAR);
-    m_Labels[HE2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE2_CHAR);
-    m_Labels[HE3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE3_CHAR);
-    m_Labels[HE4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HE4_CHAR);
-
-    m_Labels[HU1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU1_CHAR);
-    m_Labels[HU2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU2_CHAR);
-    m_Labels[HU3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU3_CHAR);
-    m_Labels[HU4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU4_CHAR);
-    m_Labels[HU5_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU5_CHAR);
-    m_Labels[HU6_CHAR] = bp_tmp->ParGet(PAR_SOURCE_HU6_CHAR);
-
-    m_Labels[CH1_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH1_CHAR);
-    m_Labels[CH2_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH2_CHAR);
-    m_Labels[CH3_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH3_CHAR);
-    m_Labels[CH4_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH4_CHAR);
-    m_Labels[CH5_CHAR] = bp_tmp->ParGet(PAR_SOURCE_CH5_CHAR);
-
-    // Items descriptions
-    bp_tmp = bpl->BlockGetNE(PAR_SOURCE_ITEMS_DESCRIPTIONS);
-
-    m_Descriptions = (std::wstring*)HAlloc(sizeof(std::wstring) * DESCRIPTIONS_LAST, g_MatrixHeap);
-    for (int i = 0; i < DESCRIPTIONS_LAST; i++) {
-        new(&m_Descriptions[i]) std::wstring();
-    }
-    m_Descriptions[W1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W1_DESCR);
-    m_Descriptions[W2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W2_DESCR);
-    m_Descriptions[W3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W3_DESCR);
-    m_Descriptions[W4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W4_DESCR);
-    m_Descriptions[W5_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W5_DESCR);
-    m_Descriptions[W6_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W6_DESCR);
-    m_Descriptions[W7_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W7_DESCR);
-    m_Descriptions[W8_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W8_DESCR);
-    m_Descriptions[W9_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W9_DESCR);
-    m_Descriptions[W10_DESCR] = bp_tmp->ParGet(PAR_SOURCE_W10_DESCR);
-
-    m_Descriptions[HE1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE1_DESCR);
-    m_Descriptions[HE2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE2_DESCR);
-    m_Descriptions[HE3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE3_DESCR);
-    m_Descriptions[HE4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HE4_DESCR);
-
-    m_Descriptions[HU1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU1_DESCR);
-    m_Descriptions[HU2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU2_DESCR);
-    m_Descriptions[HU3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU3_DESCR);
-    m_Descriptions[HU4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU4_DESCR);
-    m_Descriptions[HU5_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU5_DESCR);
-    m_Descriptions[HU6_DESCR] = bp_tmp->ParGet(PAR_SOURCE_HU6_DESCR);
-
-    m_Descriptions[CH1_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH1_DESCR);
-    m_Descriptions[CH2_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH2_DESCR);
-    m_Descriptions[CH3_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH3_DESCR);
-    m_Descriptions[CH4_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH4_DESCR);
-    m_Descriptions[CH5_DESCR] = bp_tmp->ParGet(PAR_SOURCE_CH5_DESCR);
-
-    // camera properties
-    bp_tmp = g_MatrixData->BlockGetNE(PAR_SOURCE_CAMERA);
-    if (bp_tmp) {
-        int cnt = bp_tmp->ParCount();
-        for (int i = 0; i < cnt; ++i) {
-            if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_BASEANGLEZ)
-                m_CamBaseAngleZ = GRAD2RAD((float)bp_tmp->ParGet(i).GetDouble());
-            else if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_INROBOTFWD0)
-                m_CamInRobotForward0 = (float)bp_tmp->ParGet(i).GetDouble();
-            else if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_INROBOTFWD1)
-                m_CamInRobotForward1 = (float)bp_tmp->ParGet(i).GetDouble();
-            else if (bp_tmp->ParGetName(i) == PAR_SOURCE_CAMERA_MOVESPEED)
-                m_CamMoveSpeed = (float)bp_tmp->ParGet(i).GetDouble();
-        }
-
-        cnt = bp_tmp->BlockCount();
-        for (int i = 0; i < cnt; ++i) {
-            int index = -1;
-            if (bp_tmp->BlockGetName(i) == PAR_SOURCE_CAMERA_STRATEGY)
-                index = CAMERA_STRATEGY;
-            else if (bp_tmp->BlockGetName(i) == PAR_SOURCE_CAMERA_INROBOT)
-                index = CAMERA_INROBOT;
-            if (index >= 0) {
-                CBlockPar *bp_c = bp_tmp->BlockGet(i);
-
-                int cnt2 = bp_c->ParCount();
-                for (int j = 0; j < cnt2; ++j) {
-                    if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTSPEEDX)
-                        m_CamParams[index].m_CamRotSpeedX = (float)bp_c->ParGet(j).GetDouble();
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTSPEEDZ)
-                        m_CamParams[index].m_CamRotSpeedZ = (float)bp_c->ParGet(j).GetDouble();
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_WHEELSTEP)
-                        m_CamParams[index].m_CamMouseWheelStep = (float)bp_c->ParGet(j).GetDouble();
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTANGLEMIN)
-                        m_CamParams[index].m_CamRotAngleMin = GRAD2RAD(std::min(94.0f, (float)bp_c->ParGet(j).GetDouble()));
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ROTANGLEMAX)
-                        m_CamParams[index].m_CamRotAngleMax = GRAD2RAD((float)bp_c->ParGet(j).GetDouble());
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_DISTMIN)
-                        m_CamParams[index].m_CamDistMin = (float)bp_c->ParGet(j).GetDouble();
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_DISTMAX)
-                        m_CamParams[index].m_CamDistMax = (float)bp_c->ParGet(j).GetDouble();
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_ANGLEPARAM)
-                        m_CamParams[index].m_CamAngleParam = (float)bp_c->ParGet(j).GetDouble();
-                    else if (bp_c->ParGetName(j) == PAR_SOURCE_CAMERA_HEIGHT)
-                        m_CamParams[index].m_CamHeight = (float)bp_c->ParGet(j).GetDouble();
-                }
-            }
-        }
-    }
-
-    bp_tmp = g_MatrixData->BlockGet(L"Models")->BlockGet(PAR_SOURCE_CANNONS);
-    {
-        int cnt = bp_tmp->BlockCount();
-        ASSERT(cnt == CANNON_TYPE_CNT);
-        for (int i = 0; i < cnt; ++i) {
-            CBlockPar *bp = bp_tmp->BlockGet(i);
-
-            m_CannonsProps[i].max_top_angle = GRAD2RAD((float)bp->ParGet(PAR_SOURCE_CANNONS_MAX_TOP_ANGLE).GetDouble());
-            m_CannonsProps[i].max_bottom_angle =
-                    GRAD2RAD((float)bp->ParGet(PAR_SOURCE_CANNONS_MAX_BOTTOM_ANGLE).GetDouble());
-            m_CannonsProps[i].seek_radius = (float)bp->ParGet(PAR_SOURCE_CANNONS_RADIUS).GetDouble();
-            m_CannonsProps[i].max_da = GRAD2RAD((float)bp->ParGet(PAR_SOURCE_CANNONS_ROTATION).GetDouble());
-            m_CannonsProps[i].weapon = WeapName2Weap(bp->ParGet(PAR_SOURCE_CANNONS_WEAPON).c_str());
-            // m_CannonsProps[i].cooldown = bp->ParGet(PAR_SOURCE_CANNONS_COOLDOWN).GetInt();
-            m_CannonsProps[i].m_Resources[TITAN] = bp->ParGet(L"Titan").GetInt();
-            m_CannonsProps[i].m_Resources[ENERGY] = bp->ParGet(L"Energy").GetInt();
-            m_CannonsProps[i].m_Resources[PLASMA] = bp->ParGet(L"Plasm").GetInt();
-            m_CannonsProps[i].m_Resources[ELECTRONICS] = bp->ParGet(L"Electronics").GetInt();
-            m_CannonsProps[i].m_Strength = float(bp->ParGet(L"Strength").GetDouble());
-            m_CannonsProps[i].m_Hitpoint = float(bp->ParGet(L"Hitpoint").GetDouble());
-        }
-    }
-}
-
-static void GenRamp(WORD *out, SGammaVals &vals) {
-    const float brk = 1;
-    const float cok = 1;
-
-    float contrast = (vals.contrast - 0.5f) * cok;
-    float brightness = (vals.brightness - 0.5f) * brk;
-
-    float x = (contrast + 0.5f) * 0.45f;
-    float y = 0.45f - x;
-    float mu = (-x) / (0.5f - x);
-
-    y += mu * (0.5f - y);
-    mu = (0.5f - y) / 128.0f;
-
-    for (int i = 0; i < 256; i++) {
-        float f = (float)pow((float)y, 1.0f / vals.gamma) + brightness;
-        y += mu;
-
-        int v = Float2Int(f * 65535.0f);
-        if (v < 0)
-            v = 0;
-        if (v > 65535)
-            v = 65535;
-        out[i] = (WORD)v;
-    }
-}
-
-void CMatrixConfig::ApplyGammaRamp(void) {
-    D3DGAMMARAMP newramp;
-    GenRamp(newramp.red, m_GammaR);
-    GenRamp(newramp.green, m_GammaG);
-    GenRamp(newramp.blue, m_GammaB);
-
-    g_D3DD->SetGammaRamp(0, D3DSGR_CALIBRATE, &newramp);
-    // g_D3DD->SetGammaRamp(1, D3DSGR_CALIBRATE, &newramp);
-}
-
-void CMatrixConfig::ApplyBalance(void) {
-    // The blocker head's hit points are read from the data where a robot is made: kept there, the data's own value
-    // restored without the mod (the data stays loaded from battle to battle; ReadParams restores the rest).
-    CBlockPar *blocker = g_MatrixData->BlockGet(PAR_SOURCE_CHARS)->BlockGet(L"Heads")->BlockGetNE(L"S");
-    static std::wstring blocker_hp;
-    if (blocker && blocker_hp.empty())
-        blocker_hp = blocker->ParGetNE(L"HIT_POINT_ADD");
-    if (blocker)
-        blocker->ParSetAdd(L"HIT_POINT_ADD", Mods::switches().sr2_balance ? std::wstring(L"300") : blocker_hp);
-    if (!Mods::switches().sr2_balance)
-        return;
-    m_WeaponCooldown[Weap2Index(WEAPON_VOLCANO)] = 70;
-    m_WeaponCooldown[Weap2Index(WEAPON_GUN)] = 500;
-    m_WeaponCooldown[Weap2Index(WEAPON_HOMING_MISSILE)] = 1000;
-    m_WeaponCooldown[Weap2Index(WEAPON_REPAIR)] = 27;
-    m_Overheat[WEAPON_GUN_HEAT] = 200;
-    m_Overheat[WEAPON_HOMING_MISSILE_HEAT] = 500;
-    m_CannonDamages[Weap2Index(WEAPON_BOMB)].damage = 300;
-    m_CannonDamages[Weap2Index(WEAPON_BOMB)].friend_damage = 300;
-    m_Price[HEAD4_PLASM] = 40;
-    m_Price[WEAPON3_ELECTRONICS] = 10;
-    lgr.notice("Balance: Space Rangers 2 values (SR2Balance)")();
 }
 
 CMatrixConfig g_Config;

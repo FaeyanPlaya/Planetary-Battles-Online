@@ -14,6 +14,7 @@
 #include "MatrixEffectPointLight.hpp"
 #include "MatrixEffectExplosion.hpp"
 #include "../Mods.hpp"
+#include "../ModHooks.hpp"
 
 void UnloadObject(CVectorObjectAnim *o, CHeap *heap);
 
@@ -214,41 +215,25 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
 
     float dtime = 0.1f * float(takt);
     const Mods::Switches &mods = Mods::switches();
+    // The missiles' mods: MissileBallistics (the engine burns out, the missile falls) and HomingMissiles (it seeks and
+    // turns to its target), each its mod's code (ModHooks.hpp).
+    const auto &hooks = ModHooks::hooks();
+    const bool ballistics = mods.missile_ballistics && hooks.missile_burn && hooks.missile_fall && hooks.missile_ends;
+    const bool guided = mods.homing_missiles && hooks.homing_keep && hooks.homing_seek && hooks.homing_waits &&
+                        hooks.homing_turn;
 
-    // MissileBallistics: the engine burns out as far from where the missile was fired as its weapon reaches.
-    if (mods.missile_ballistics && !props.common.hm.burnt) {
-        auto flown = props.curpos - props.startpos;
-        if (D3DXVec3LengthSq(&flown) >= props.common.hm.reach * props.common.hm.reach) {
-            props.common.hm.burnt = 1;
-            if (props.common.hm.target) {
-                props.common.hm.target->Release();
-                props.common.hm.target = NULL;
-            }
-        }
-    }
+    if (ballistics && !props.common.hm.burnt)
+        hooks.missile_burn(props);
     const bool burnt = props.common.hm.burnt != 0;
-    const bool homing = mods.homing_missiles && !burnt;
+    const bool homing = guided && !burnt;
 
     // calc target
 
     HMData data;
 
     D3DXVec3Normalize(&data.dir, &props.velocity);
-    // HomingMissiles: the target is kept while it lives and is ahead.
-    if (homing && props.common.hm.target) {
-        bool keep = props.common.hm.target->m_Object != NULL;
-        if (keep) {
-            auto to = props.common.hm.target->m_GeoCenter - props.curpos;
-            keep = D3DXVec3Dot(&data.dir, &to) > 0;
-        }
-        if (keep) {
-            props.target = props.common.hm.target->m_GeoCenter;
-        }
-        else {
-            props.common.hm.target->Release();
-            props.common.hm.target = NULL;
-        }
-    }
+    if (homing && props.common.hm.target)
+        hooks.homing_keep(props, data.dir);
     D3DXVECTOR3 seekcenter;
     if (props.common.hm.target) {
         auto tmp = props.target - props.curpos;
@@ -258,12 +243,14 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
     else {
         data.maxcos = 0;
     }
-    const float seek_radius =
-            homing && props.common.hm.reach > 0 ? HOMING_SEEK_REACHES * props.common.hm.reach : HOMING_RADIUS;
+    float seek_radius = HOMING_RADIUS;
+    data.mincos = 0.98480775301220806f;
+    int seek_mask = TRACE_BUILDING | TRACE_ROBOT | TRACE_CANNON | TRACE_FLYER;
+    if (homing)
+        hooks.homing_seek(props, seek_radius, data.mincos, seek_mask);
     seekcenter = (props.curpos + data.dir * seek_radius);
 
     data.to_tgt = data.dir;
-    data.mincos = homing ? HOMING_SEEK_COS : 0.98480775301220806f;
 
     if (props.time > props.common.hm.next_seek_time) {
         props.common.hm.next_seek_time = HM_SEEK_TIME_PERIOD + props.time;
@@ -271,15 +258,14 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
     else {
         goto skip_obj_seek;
     }
-    // Burnt out nothing is sought; a homing missile seeks only without a target, and not before HOMING_DELAY.
-    if (burnt || (homing && (props.common.hm.target || props.time < HOMING_DELAY)))
+    // Burnt out nothing is sought; a homing missile waits as its mod says.
+    if (burnt || (homing && hooks.homing_waits(props)))
         goto skip_obj_seek;
 
     data.props = &props;
     data.found = false;
 
-    g_MatrixMap->FindObjects(seekcenter, seek_radius, 1, TRACE_BUILDING | TRACE_ROBOT | TRACE_CANNON | TRACE_FLYER,
-                             props.skip, HMEnum, (uintptr_t)&data);
+    g_MatrixMap->FindObjects(seekcenter, seek_radius, 1, seek_mask, props.skip, HMEnum, (uintptr_t)&data);
 
     if (data.found == false) {
         if (props.common.hm.target)
@@ -293,23 +279,11 @@ void MO_Homing_Missile_Takt(D3DXMATRIX &m, SMOProps &props, float takt) {
 skip_obj_seek:
 
     if (burnt) {
-        // MissileBallistics: unpowered, slowed by the air and pulled down.
-        float keep = 1.0f - MISSILE_DRAG * float(takt);
-        props.velocity *= keep > 0 ? keep : 0;
-        props.velocity.z -= MISSILE_GRAVITY * float(takt);
+        if (ballistics)  // (only its mod burns a missile out)
+            hooks.missile_fall(props, float(takt));
     }
     else if (homing) {
-        // HomingMissiles: after HOMING_DELAY turns to its target every takt (the original only nudged its course as
-        // it sought), and speeds up as the original.
-        D3DXVECTOR3 to = data.dir;
-        if (props.common.hm.target) {
-            auto tmp = props.target - props.curpos;
-            D3DXVec3Normalize(&to, &tmp);
-        }
-        float turn = props.time < HOMING_DELAY ? 0 : HOMING_TURN_RATE * float(takt);
-        D3DXVECTOR3 dir = data.dir + (to - data.dir) * (turn < 1 ? turn : 1);
-        D3DXVec3Normalize(&dir, &dir);
-        props.velocity = dir * (D3DXVec3Length(&props.velocity) + 0.1f * dtime);
+        hooks.homing_turn(props, data.dir, float(takt));
     }
     else {
         props.velocity += data.to_tgt * 0.1f * dtime;
@@ -411,8 +385,7 @@ skip_obj_seek:
     }
     // MissileBallistics: one fallen past the map's edge (nothing there to hit) goes below the water's level, which
     // covers any ground lower.
-    else if (props.time > (mods.missile_ballistics ? MISSILE_LIFETIME : 10000) ||
-             (burnt && props.curpos.z < WATER_LEVEL - MISSILE_BELOW)) {
+    else if (ballistics ? hooks.missile_ends(props) : props.time > 10000) {
         // time to die...
         props.endoflife = true;
         if (props.endhandler) {
