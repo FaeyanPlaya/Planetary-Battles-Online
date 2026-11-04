@@ -1,1 +1,4 @@
 *.bat text eol=crlf
+# Our mods' fingerprints (Mods::folder_hash) take their files' bytes: the same on every checkout.
+MatrixGame/mods/*/*.txt text eol=lf
+MatrixGame/mods/*/*.vo binary
