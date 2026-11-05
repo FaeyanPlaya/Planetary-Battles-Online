@@ -316,6 +316,7 @@ Hit hit(const Screen &s, int x, int y) {
         if (y >= Layout::manual_y && y < Layout::manual_y + Layout::row_height) return {.manual = 1};
         if (y >= Layout::manual_bonus_y && y < Layout::manual_bonus_y + Layout::row_height) return {.manual = 2};
         if (!s.local && y >= Layout::dropped_y && y < Layout::dropped_y + Layout::row_height) return {.manual = 3};
+        if (!s.local && y >= Layout::resync_y && y < Layout::resync_y + Layout::row_height) return {.manual = 4};
         return {};
     }
     if (x < Layout::list_x || x >= Layout::list_x + Layout::list_width) return {};
@@ -596,6 +597,10 @@ std::wstring hint_template(const Screen &s) {
                                             : text(l, L"Dropped player: no orders", L"\u0412\u044b\u043b\u0435\u0442\u0435\u0432\u0448\u0438\u0439: \u0431\u0435\u0437 \u043f\u0440\u0438\u043a\u0430\u0437\u043e\u0432"),
                             L"Font.2Small", width),
                      L"Font.2Small", s.host ? selected_color() : text_color(), Layout::preview_x, Layout::dropped_y, width, 0);
+        result += el(s, fit(s, s.auto_resync ? text(l, L"Desync: repaired", L"Рассинхрон: исправлять")
+                                             : text(l, L"Desync: reported only", L"Рассинхрон: только сообщать"),
+                            L"Font.2Small", width),
+                     L"Font.2Small", s.host ? selected_color() : text_color(), Layout::preview_x, Layout::resync_y, width, 0);
     }
 
     // People, under the columns' names.

@@ -374,7 +374,8 @@ public:
     // Turns the listed sides into human sides after the map is loaded.
     void SetHumanSides(DWORD sides);
     // A person gave up or left (Commands::Type::Surrender, `how` its param: 0 gave up, 1 left, 2 lost the
-    // connection, 3 the host did not wait): the side plays on under the AI, or for 2 and 3 with
+    // connection, 3 the host did not wait, 4 kicked out, 5 replaying after a desync): the side plays on under the AI, or for
+    // 2, 3 and 5 with
     // BattleRules::dropped_ai off it stays the person's with no orders (absent). On the client of that person:
     // after leaving the battle ends for them (statistics, then the menu); after giving up they watch the battle
     // without control until their side's end or Exit.

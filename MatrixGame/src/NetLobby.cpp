@@ -371,6 +371,12 @@ void Host::set_dropped_ai(bool ai) {
     publish();
 }
 
+void Host::set_auto_resync(bool on) {
+    if (on == m_State.auto_resync) return;
+    m_State.auto_resync = on;
+    publish();
+}
+
 void Host::set_mods(const std::vector<Lobby::ModRef> &mods) {
     if (mods == m_State.mods) return;
     m_State.mods = mods;

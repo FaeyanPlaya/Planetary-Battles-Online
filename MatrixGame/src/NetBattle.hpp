@@ -45,8 +45,23 @@
 //   --net-rejoin-key <key>  that key instead of the file's (tests)
 //   --net-test-crash <ms>  end this process at this game time without a word to the others (tests)
 //   --net-dropped ai|idle  host: a dropped person's side is played by the AI (default) or gets no orders
+//   --net-resync on|off  host: a person whose battle went apart from the host's replays it (default) or it is reported only
 //   --net-test-dump <ms>  write the world's text at this game time next to the trace (tests: finding a desync)
 //   --net-test-remove <ms>  host: go on without a person who kept the battle waiting so long, as its button does (tests)
+//   --net-test-kick <ms>  host: kick the first client out for good at this game time, as Tab's Kick does (tests)
+//   --net-test-leave <ms>  leave the battle at this game time as the menu's Exit does, and end there (tests)
+//   --net-test-history <ms>,<lines>  say 25 chat lines at this game time and open the history panel as right Ctrl does,
+//                        scrolled that many lines up (tests)
+//   --net-test-lag <ms>,<lag>  from this game time on, every line this peer sends goes <lag> real ms late (tests the
+//                        delay during the battle)
+//   --net-test-lag-end <ms>  the lag of --net-test-lag ends at this game time
+//   --net-test-desync-again  the battle started again after a resync spoils itself at --net-test-desync's time too
+//                        (tests a desync that cannot be repaired)
+//   --net-test-no-deputy  client: never listens for the others with the host gone (as a PC that takes no connections)
+//   --net-test-go-on     with the host gone: agree to play on (or play on alone) as soon as it is allowed (tests)
+//   --net-go-on-after <s>  with the host gone: going on without it is allowed after this long; default 60
+//   --net-host-back      the host comes back to its battle after it went (CFG\host-back.txt): to the deputy in its
+//                        place, else it rebuilds the battle from the people waiting for it on its port
 // The address defaults to 127.0.0.1 (this PC only).
 //
 // The lobby (LobbyWindow) starts the same battles from the startup menu; for tests it opens at once with
@@ -97,11 +112,22 @@ struct Options {
     int manual_control = 1, manual_bonus = 1;
     int wait_s = 300;  // how long the host waits for people and a client for the host
     bool rejoin = false;  // --net-rejoin
+    bool host_back = false;  // --net-host-back
     std::string rejoin_key;
     int test_crash_ms = -1;
     int test_remove_ms = -1;
+    int test_kick_ms = -1;
+    int test_leave_ms = -1;
+    int test_history_ms = -1;
+    int test_history_lines = 0;
+    int test_lag_ms = -1, test_lag = 0, test_lag_end_ms = -1;
+    bool test_desync_again = false;
+    bool test_no_deputy = false;
+    bool test_go_on = false;
+    int go_on_after_s = 0;  // test: --net-test-go-on presses Play on alone this long after the host is gone
     int test_dump_ms = -1;
     int dropped_ai = 1;  // --net-dropped: 1 ai, 0 idle
+    int auto_resync = 1;  // --net-resync: 1 on, 0 off
     std::optional<std::vector<std::string>> mods;  // --net-mods pbo,... or -: the host's battle mods (else its settings')
 };
 
@@ -120,6 +146,8 @@ struct Start {
     std::string key;  // a client's: proves it is this side's person when coming back (rejoin); empty: none
     std::string map_hash;  // the host's map file (Lobby::State::map_hash): a client that lacks it reads its copy
                            // (MapShare); empty: not given
+    // Host: the lobby's delay was Auto: in the battle it follows the pings both ways; else config.delay is the least.
+    bool delay_auto = true;
 };
 
 // A client's way back to its battle (CFG\rejoin.txt, written when the battle starts, forgotten when the
@@ -133,7 +161,10 @@ struct RejoinTicket {
 };
 std::optional<RejoinTicket> rejoin_ticket();
 void forget_rejoin_ticket();
-// The startup menu's "Back to the battle": the game starts again with --net-rejoin (restart_to_menu).
+// The host's way back to its battle (CFG\host-back.txt, written when it starts, forgotten once it is decided).
+bool host_back_ticket();
+// The startup menu's "Back to the battle": the game starts again with --net-rejoin, or --net-host-back for the latest
+// ticket being the host's (restart_to_menu).
 void request_rejoin(const std::wstring &name);
 // The same for a battle found by joining its host's lobby ("refused started back"): the host knows the person by name.
 void request_rejoin_at(const std::string &address, int port, const std::wstring &name);

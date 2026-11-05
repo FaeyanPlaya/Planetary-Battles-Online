@@ -27,8 +27,8 @@ const std::wstring line_font = L"Font.2Normal";
 int seconds(int ms) { return std::max(0, (ms + 999) / 1000); }
 
 std::wstring button_text(const Window &window, std::size_t i, bool ru) {
-    if (window.host_lost) return i == 0 ? text(ru, L"Reconnect", L"Переподключиться") : text(ru, L"Play on alone", L"Играть дальше одному");
-    if (window.dropped) return i == 0 ? text(ru, L"Back to the battle", L"Вернуться в бой") : text(ru, L"Exit", L"Выйти");
+    if (window.host_gone) return text(ru, L"Play on alone", L"Играть дальше одному");
+    if (window.dropped) return i == 0 && window.dropped != 3 ? text(ru, L"Back to the battle", L"Вернуться в бой") : text(ru, L"Exit", L"Выйти");
     const Person &p = window.people[i];
     return text(ru, L"Go on without ", L"Продолжить без игрока ") +
            (p.name.empty() ? std::wstring(Factions::name(p.side, ru)) : p.name);
@@ -47,7 +47,9 @@ Shown g;
 
 bool same(const Window &a, const Window &b) {
     if (a.drop_in_ms / 1000 != b.drop_in_ms / 1000 || a.can_remove != b.can_remove || a.dropped != b.dropped ||
-        a.host_lost != b.host_lost || a.catching_up != b.catching_up || a.people.size() != b.people.size())
+        a.host_gone != b.host_gone || a.relay != b.relay || a.host_back != b.host_back || a.dropped_ai != b.dropped_ai ||
+        a.others != b.others || a.catching_up != b.catching_up ||
+        a.people.size() != b.people.size())
         return false;
     for (std::size_t i = 0; i < a.people.size(); ++i) {
         const Person &x = a.people[i], &y = b.people[i];
@@ -109,16 +111,41 @@ Templates compose(const Window &window, bool ru, int hover,
         title = text(ru, L"Back to the battle", L"Возвращение в бой");
         lines.push_back(std::format(L"{}{}%", text(ru, L"Catching up with the battle: ", L"Догоняем бой: "), window.catching_up));
     }
-    else if (window.host_lost) {
-        title = text(ru, L"The connection to the host is lost", L"Связь с хостом потеряна");
-        lines.push_back(text(ru, L"The host left the game or the network is down", L"Хост вышел из игры или пропала сеть"));
+    else if (window.host_gone) {
+        title = text(ru, L"The host is not answering", L"Хост не отвечает");
+        if (window.host_gone == 1) {
+            lines.push_back(text(ru, L"Looking for a player to take the host's place...", L"Ищем, кто из игроков заменит хоста..."));
+        }
+        else if (window.host_back) {
+            lines.push_back(text(ru, L"The host is back and rebuilds the battle", L"Хост вернулся и восстанавливает бой"));
+        }
+        else if (window.host_gone == 2) {
+            lines.push_back(window.relay.empty() ? std::wstring(text(ru, L"You pass on the turns in the host's place", L"Ходы вместо хоста передаёте вы"))
+                                                 : text(ru, L"Passing on the turns in the host's place: ", L"Ходы вместо хоста передаёт ") + window.relay);
+            lines.push_back(text(ru, L"The battle goes on once the others are in", L"Бой продолжится, как только подключатся остальные"));
+            lines.push_back(window.dropped_ai ? text(ru, L"The AI plays the host's side", L"Сторону хоста ведёт ИИ")
+                                              : text(ru, L"The host's side gets no orders", L"Сторона хоста стоит без приказов"));
+        }
+        else {
+            if (window.others) {
+                lines.push_back(text(ru, L"Nobody could take the host's place:", L"Заменить хоста не удалось:"));
+                lines.push_back(text(ru, L"the players wait for the host or play a single-player battle, not together",
+                                     L"игроки ждут хоста или играют одиночный бой, а не друг с другом"));
+            }
+            else {
+                lines.push_back(text(ru, L"Waiting for the host to come back", L"Ждём, пока хост вернётся"));
+            }
+        }
     }
     else if (window.dropped) {
         title = text(ru, L"You are out of the battle", L"Вы отключены от боя");
-        lines.push_back(window.dropped == 2
-                            ? text(ru, L"The host went on without you", L"Хост продолжил бой без вас")
-                            : text(ru, L"You did not answer for too long", L"Вы слишком долго не отвечали"));
-        lines.push_back(window.dropped_ai
+        lines.push_back(window.dropped == 3   ? text(ru, L"The host kicked you out of the battle", L"Хост выгнал вас из боя")
+                        : window.dropped == 2 ? text(ru, L"The host went on without you", L"Хост продолжил бой без вас")
+                                              : text(ru, L"You did not answer for too long", L"Вы слишком долго не отвечали"));
+        if (window.dropped == 3)
+            lines.push_back(text(ru, L"You cannot come back to it", L"Вернуться в него нельзя"));
+        else
+            lines.push_back(window.dropped_ai
                             ? text(ru, L"The AI plays your side until you are back", L"Пока вас нет, вашей стороной играет ИИ")
                             : text(ru, L"Your side gets no orders until you are back", L"Пока вас нет, ваша сторона стоит без приказов"));
     }
@@ -136,9 +163,13 @@ Templates compose(const Window &window, bool ru, int hover,
     std::vector<std::wstring> buttons;
     if (window.catching_up >= 0) {
     }
-    else if (window.host_lost || window.dropped) {
+    else if (window.host_gone) {
+        // (Looking for a relay, or one found: no choice.)
+        if (window.host_gone == 3) buttons.push_back(button_text(window, 0, ru));
+    }
+    else if (window.dropped) {
         buttons.push_back(button_text(window, 0, ru));
-        buttons.push_back(button_text(window, 1, ru));
+        if (window.dropped != 3) buttons.push_back(button_text(window, 1, ru));
     }
     else if (window.can_remove)
         for (std::size_t i = 0; i < window.people.size(); ++i)
@@ -181,14 +212,14 @@ void hide() {
 }
 
 bool shown() {
-    return g.frame != nullptr || !g.window.people.empty() || g.window.dropped || g.window.host_lost || g.window.catching_up >= 0;
+    return g.frame != nullptr || !g.window.people.empty() || g.window.dropped || g.window.host_gone || g.window.catching_up >= 0;
 }
 
 int button_at(int x, int y) {
     for (std::size_t i = 0; i < g.rects.size(); ++i) {
         const auto &r = g.rects[i];
         if (x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]) {
-            if (g.window.dropped || g.window.host_lost) return int(i);
+            if (g.window.dropped || g.window.host_gone) return int(i);
             // The i-th removable person.
             int n = -1;
             for (std::size_t p = 0; p < g.window.people.size(); ++p)

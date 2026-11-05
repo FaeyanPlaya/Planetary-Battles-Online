@@ -31,10 +31,17 @@ struct Window {
     std::vector<Person> people;
     int drop_in_ms = -1;      // when the longest waited for is removed; -1: no time limit (loading)
     bool can_remove = false;  // the host: a Remove button per person
-    // This person was removed: 1 for not answering (Rejoin, Exit), 2 by the host (Exit).
+    // This person was removed: 1 for not answering, 2 the host went on without them (Rejoin, Exit each), 3 kicked out
+    // for good (Exit).
     int dropped = 0;
     bool dropped_ai = true;  // BattleRules::dropped_ai: who plays a side while its person is away
-    bool host_lost = false;   // the connection to the host was lost: Rejoin, Play on alone
+    // The host is gone (a client's window), the battle holds: 1 looking for a player to take its place; 2 one does
+    // (relay: who, empty: this person), the others coming in before the battle goes on (the host's side as dropped_ai
+    // says); 3 nobody could: each waits for the host or plays on alone (others: there are other people).
+    int host_gone = 0;
+    std::wstring relay;
+    bool host_back = false;  // 2: the relay is the host itself, started again and rebuilding the battle
+    bool others = true;
     int catching_up = -1;     // back in the battle, replaying it: how far, in percent; no buttons
 };
 
@@ -63,7 +70,7 @@ void hide();
 bool shown();
 // The mouse is at (x, y) on the screen: the button under it lights up.
 void hover(int x, int y);
-// The button at (x, y): the person's Person::peer for Remove; for a removed person or a lost host the
+// The button at (x, y): the person's Person::peer for Remove; for a removed person or a gone host the
 // button's index (0 the first); -1: none.
 int button_at(int x, int y);
 // Screen rectangles of the shown buttons, for tests: x, y, width, height each.

@@ -6,6 +6,7 @@
 #include "MatrixFormGame.hpp"
 #include "Interface/CHistory.h"
 #include "BattleNotice.hpp"
+#include "BattleHistory.hpp"
 #include "BattleStats.hpp"
 #include "SettingsWindow.hpp"
 #include "NewBattle.hpp"
@@ -413,6 +414,7 @@ void CFormMatrixGame::Takt(int step) {
     // (Tab may go up while the window is in the background.)
     if (!Input::isVKeyPressed(VK_TAB)) BattleStats::hold(false);
     BattleStats::update();
+    BattleHistory::update();
 
     if (CMultiSelection::m_GameSelection) {
         SCallback cbs;
@@ -594,6 +596,7 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
 
     if (status == B_DOWN)
     {
+        BattleHistory::key(uint8_t(key), true);  // Ctrl+click is not right Ctrl alone
         Input::onKeyDown(key);
     }
     else if (status == B_UP)
@@ -608,6 +611,7 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
 
     if (status == B_WHEEL) {
         if (SettingsWindow::mouse_wheel(key)) return;  // the keys page scrolls, the camera stays
+        if (BattleHistory::wheel(key)) return;          // so does the battle's history
         while (key > 0) {
             g_MatrixMap->m_Camera.ZoomInStep();
             --key;
@@ -839,6 +843,9 @@ void SurrenderRequestHandler(void);
 void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
 {
     DTRACE();
+
+    // The battle's history: right Ctrl alone opens and closes it; while open it takes its scroll keys and Esc.
+    if (BattleHistory::key(vk, down)) return;
 
     if (down)
     {

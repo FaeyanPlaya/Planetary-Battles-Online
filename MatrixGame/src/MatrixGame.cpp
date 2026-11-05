@@ -44,6 +44,7 @@
 #include "SimLab.hpp"
 #include "NetBattle.hpp"
 #include "GameData.hpp"
+#include "BattleHistory.hpp"
 #include "BattleStats.hpp"
 #include "MapMetadata.hpp"
 #include "CrashReport.hpp"
@@ -1009,6 +1010,7 @@ void CGame::Deinit(void) {
 
     SettingsWindow::shutdown();
     BattleStats::clear();
+    BattleHistory::clear();
     ScreenLayout::laid_out(0, 0);
     CMatrixHint::ClearAll();
 

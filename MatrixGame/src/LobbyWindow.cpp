@@ -383,6 +383,7 @@ LobbyModel::Screen screen(State &s) {
     view.delay = st.delay;
     view.auto_delay = st.auto_delay;
     view.dropped_ai = st.dropped_ai;
+    view.auto_resync = st.auto_resync;
     view.mods = mod_rows(s);
     // Mods on that cannot be on together, the battle's and this person's own: marked, and no start or ready.
     std::vector<std::string> on;
@@ -949,6 +950,7 @@ bool open_host(const StandaloneSettings::Values &values, const NetBattle::Option
     first_choices(s, values, options);
     if (options.delay > 0) s.host.set_delay(options.delay * Lockstep::Config{}.turn_ms);  // --net-delay
     s.host.set_dropped_ai(options.dropped_ai != 0);                                       // --net-dropped
+    s.host.set_auto_resync(options.auto_resync != 0);                                     // --net-resync
     rebuild();
     return true;
 }
@@ -1164,6 +1166,7 @@ bool mouse_down(int x, int y) {
         const auto &st = s.host.state();
         if (target.manual == 1) s.host.set_manual(!st.manual_control, st.manual_bonus);
         else if (target.manual == 3) s.host.set_dropped_ai(!st.dropped_ai);
+        else if (target.manual == 4) s.host.set_auto_resync(!st.auto_resync);
         else if (st.manual_control) s.host.set_manual(true, !st.manual_bonus);
         s.dirty = true;
     }

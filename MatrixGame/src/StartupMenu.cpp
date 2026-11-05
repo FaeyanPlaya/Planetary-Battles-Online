@@ -146,7 +146,7 @@ public:
         m_Name = L"Startup menu";
         russian = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
                   SettingsModel::Language::Russian;
-        can_rejoin = NetBattle::rejoin_ticket().has_value();
+        can_rejoin = NetBattle::rejoin_ticket().has_value() || NetBattle::host_back_ticket();
         item = first_item();
     }
     ~Form() {

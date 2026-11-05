@@ -98,9 +98,9 @@ std::string to_line(const State &state, int you) {
         pings += (pings.empty() ? "" : ",") + (p.ping >= 0 ? std::to_string(p.ping) : std::string("-"));
         personal += (personal.empty() ? "" : "|") + mods_text(p.personal, ';');
     }
-    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} auto={} people={} pings={} maphash={} mods={} mappack={} verified={} personal={} map={}",
+    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} resync={} auto={} people={} pings={} maphash={} mods={} mappack={} verified={} personal={} map={}",
                        you, state.ai_resources, state.manual_control ? 1 : 0, state.manual_bonus ? 1 : 0, state.delay,
-                       state.dropped_ai ? "ai" : "idle", state.auto_delay, people, pings,
+                       state.dropped_ai ? "ai" : "idle", state.auto_resync ? "on" : "off", state.auto_delay, people, pings,
                        state.map_hash.empty() ? "-" : state.map_hash, mods_text(state.mods, ','),
                        state.map_pack.empty() ? "-" : state.map_pack, state.verified_only ? 1 : 0,
                        personal.empty() ? "-" : personal, utils::from_wstring(state.map));
@@ -181,6 +181,11 @@ std::optional<Received> from_line(std::string_view line) {
         else if (key == "dropped") {
             if (value != "ai" && value != "idle") return std::nullopt;
             r.state.dropped_ai = value == "ai";
+            continue;  // optional
+        }
+        else if (key == "resync") {
+            if (value != "on" && value != "off") return std::nullopt;
+            r.state.auto_resync = value == "on";
             continue;  // optional
         }
         else if (key == "pings") {

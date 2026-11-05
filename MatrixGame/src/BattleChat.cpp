@@ -1,6 +1,8 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "BattleChat.hpp"
 
+#include "BattleHistory.hpp"
+
 #include "Factions.hpp"
 #include "Interface/MatrixHint.hpp"
 #include "MatrixMap.hpp"
@@ -147,6 +149,7 @@ void show(int side, const std::wstring &name, const std::wstring &text, bool rus
         messages.erase(messages.begin());
     }
     Message m{line(side, name, clean_text, russian), Factions::bright_colour(side), std::chrono::steady_clock::now() + lifetime};
+    BattleHistory::add(m.text, m.colour);
     if (ready()) m.hint = build(m.text, m.colour);
     messages.push_back(std::move(m));
     place();

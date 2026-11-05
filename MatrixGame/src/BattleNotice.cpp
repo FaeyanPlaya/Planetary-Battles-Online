@@ -1,6 +1,8 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "BattleNotice.hpp"
 
+#include "BattleHistory.hpp"
+
 #include "Interface/MatrixHint.hpp"
 #include "MatrixMap.hpp"
 #include "3g.hpp"
@@ -29,6 +31,8 @@ std::vector<std::pair<std::wstring, std::uint32_t>> waiting;  // shown once the 
 
 bool ready() { return !CMatrixMap::m_DeviceLost; }
 
+void display(const std::wstring &text, std::uint32_t colour);
+
 void place() {
     int y = top;
     for (const Notice &n : notices) {
@@ -37,9 +41,7 @@ void place() {
     }
 }
 
-}  // namespace
-
-void show(const std::wstring &text, std::uint32_t colour) {
+void display(const std::wstring &text, std::uint32_t colour) {
     if (!ready()) {
         waiting.emplace_back(text, colour);
         return;
@@ -57,9 +59,16 @@ void show(const std::wstring &text, std::uint32_t colour) {
     place();
 }
 
+}  // namespace
+
+void show(const std::wstring &text, std::uint32_t colour) {
+    BattleHistory::add(text, colour);
+    display(text, colour);
+}
+
 void update() {
     if (!waiting.empty() && ready())
-        for (const auto &[text, colour] : std::exchange(waiting, {})) show(text, colour);
+        for (const auto &[text, colour] : std::exchange(waiting, {})) display(text, colour);
     if (notices.empty()) return;
     const auto now = std::chrono::steady_clock::now();
     bool changed = false;

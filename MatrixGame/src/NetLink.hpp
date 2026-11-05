@@ -31,6 +31,8 @@ public:
     bool open() const { return m_Open; }
     // Bytes queued and not yet sent.
     std::size_t queued() const { return m_Out.size(); }
+    // The other end's IPv4 address; empty: unknown.
+    std::string remote_address() const;
 
 private:
     std::uintptr_t m_Socket;

@@ -39,10 +39,11 @@ struct Layout {
     static constexpr int caption_y = 302;  // the map's whole name, in two lines when it needs them
     static constexpr int map_info_y = 346;
     // Under the preview: the host's switches of direct robot control and its bonus, and what the bonus is.
-    static constexpr int manual_y = 380;
-    static constexpr int manual_bonus_y = 402;
-    static constexpr int manual_note_y = 424;
-    static constexpr int dropped_y = 470;  // the host's switch: a dropped person's side to the AI or without orders
+    static constexpr int manual_y = 374;
+    static constexpr int manual_bonus_y = 396;
+    static constexpr int manual_note_y = 418;
+    static constexpr int dropped_y = 458;  // the host's switch: a dropped person's side to the AI or without orders
+    static constexpr int resync_y = 478;   // the host's switch: a desync repaired (the person's battle replayed) or reported
     static constexpr int people_x = 640;
     static constexpr int people_width = 390;
     static constexpr int people_title_y = 52;
@@ -152,6 +153,7 @@ struct Screen {
     int delay = 0;             // Lobby::State::delay: ms, 0 auto
     int auto_delay = 0;        // Lobby::State::auto_delay: ms, 0 measuring
     bool dropped_ai = true;    // Lobby::State::dropped_ai
+    bool auto_resync = true;   // Lobby::State::auto_resync
     std::vector<ModRow> mods;
     // The names of mods on that cannot be on together (the battle's, and this person's own): no start, no ready.
     std::vector<std::pair<std::wstring, std::wstring>> conflicts{};

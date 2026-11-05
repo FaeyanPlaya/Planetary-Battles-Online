@@ -46,6 +46,9 @@ struct Rules {
     std::vector<std::string> mods{};
     // Only verified personal mods play (the lobby host's choice, Mods::set_verified_only).
     bool verified_personal = false;
+    // A person whose battle went apart from the host's starts it again and replays the host's turns (the host is
+    // right); off: the desync is only reported.
+    bool auto_resync = true;
     bool operator==(const Rules &) const = default;
 };
 
@@ -64,6 +67,7 @@ bool manual_bonus();
 bool dropped_ai();
 const std::vector<std::string> &mods();
 bool verified_personal();
+bool auto_resync();
 
 // Rules the next battle uses whatever the person's settings say (a host's choice, a record being
 // replayed); the settings then neither choose nor change them. nullopt returns to the settings.
@@ -74,7 +78,8 @@ const std::optional<Rules> &prescribed();
 // place_containment=corrected zero_x_trace=corrected resources=equal ai_resources=map
 // bonus=None,AirSupport,None,None manual=on manual_bonus=on dropped=ai mods=pbo   (ai_resources: map or x1..x4;
 // the manual keys, dropped (ai or idle) and mods (ids or -) may be missing, as in records from before them: on, ai, none;
-// " personal=verified" follows only when verified_personal, so lines without it read as before)
+// " personal=verified" follows only when verified_personal and " resync=off" only without auto_resync, so lines without
+// them read as before)
 std::string to_text(const Rules &rules);
 // Reads to_text output; every key must be present once with a valid value.
 std::optional<Rules> from_text(std::string_view text);

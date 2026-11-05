@@ -52,6 +52,14 @@ Connection::Connection(std::uintptr_t socket) : m_Socket(socket) { non_blocking(
 
 Connection::~Connection() { closesocket(sock(m_Socket)); }
 
+std::string Connection::remote_address() const {
+    sockaddr_in addr{};
+    int length = sizeof(addr);
+    if (getpeername(sock(m_Socket), reinterpret_cast<sockaddr *>(&addr), &length) != 0 || addr.sin_family != AF_INET) return {};
+    const char *text = inet_ntoa(addr.sin_addr);
+    return text ? text : "";
+}
+
 void Connection::send_line(const std::string &line) {
     m_Out += line;
     m_Out += '\n';

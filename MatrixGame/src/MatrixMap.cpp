@@ -3579,9 +3579,14 @@ static void OkSurrenderHandler(void) {
 
 void CMatrixMap::SurrenderSide(int side, int how) {
     const DWORD bit = 1u << side;
-    if (!(m_HumanSides & bit) || (m_AbsentSides & bit))
+    if (!(m_HumanSides & bit))
         return;
-    if (how >= 2 && !BattleRules::dropped_ai()) {
+    if (m_AbsentSides & bit) {
+        if (how != 4)
+            return;
+        m_AbsentSides &= ~bit;  // kicked out (4): the AI plays the side from now on, though it stood without orders
+    }
+    if ((how == 2 || how == 3 || how == 5) && !BattleRules::dropped_ai()) {
         // Away with no orders: the driven robot stops being driven, the rest finish what they were told.
         m_AbsentSides |= bit;
         GetSideById(side)->LeaveRobot();

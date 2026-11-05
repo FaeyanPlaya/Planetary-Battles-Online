@@ -44,6 +44,7 @@ public:
     void set_delay(int delay);
     // Who plays a dropped person's side: the AI, or nobody (no orders) until they are back.
     void set_dropped_ai(bool ai);
+    void set_auto_resync(bool on);
     // The battle's mods; other mods make every client not ready.
     void set_mods(const std::vector<Lobby::ModRef> &mods);
     // Only verified personal mods play (Lobby::State::verified_only); a change makes every client not ready.

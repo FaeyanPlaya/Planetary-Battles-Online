@@ -60,6 +60,7 @@ struct State {
     bool manual_bonus = true;
     int delay = 0;               // ms between a command and its execution, whole turns; 0: auto (delay_turns)
     bool dropped_ai = true;      // BattleRules::Rules::dropped_ai
+    bool auto_resync = true;     // BattleRules::Rules::auto_resync
     int auto_delay = 0;          // ms: auto's delay, measured after the people last changed (auto_delay_for); 0: measuring
     std::vector<ModRef> mods{};  // the battle's mods (BattleRules::Rules::mods)
     std::string map_pack{};      // the map's map mod, "<id>:<fingerprint>" (MapPacks::ref); empty: the game's map

@@ -8,9 +8,11 @@
 #include "MatrixSide.hpp"
 #include "StringConstants.hpp"
 #include "Interface/MatrixHint.hpp"
+#include "UiTheme.hpp"
 #include "CBlockPar.hpp"
 #include "3g.hpp"
 #include "utils.hpp"
+#include "Text/Font.hpp"
 
 #include <chrono>
 #include <format>
@@ -26,7 +28,15 @@ constexpr const wchar_t *keys[] = {L"_p_", L"_r_", L"_g_", L"_b_"};
 
 std::optional<std::array<std::wstring, side_count>> g_names;
 std::array<bool, side_count> g_gave_up{};
-std::array<int, side_count> g_left{};  // 1 left, 2 lost the connection
+std::array<int, side_count> g_left{};  // 1 left, 2 lost the connection, 3 removed, 4 kicked out
+// The host's Kick buttons under the table.
+constexpr int kick_row = 22, kick_pad_x = 64, kick_pad_top = 22, kick_pad_bottom = 24, kick_min_width = 340;
+const std::wstring kick_title_font = L"Font.2Ranger", kick_line_font = L"Font.2Normal";
+std::vector<Kickable> g_kickable;
+int g_kick_armed = -1, g_kick_hover = -1;
+CMatrixHint *g_kick_frame = nullptr;
+std::vector<CMatrixHint *> g_kick_buttons;
+std::vector<std::array<int, 4>> g_kick_rects;
 CMatrixHint *g_hint = nullptr;
 bool g_held = false;
 unsigned g_seen = 0;    // sides that took part in the battle so far
@@ -42,9 +52,18 @@ bool russian() {
            SettingsModel::Language::Russian;
 }
 
+void release_kick() {
+    if (g_kick_frame) g_kick_frame->Release();
+    g_kick_frame = nullptr;
+    for (CMatrixHint *b : g_kick_buttons) b->Release();
+    g_kick_buttons.clear();
+    g_kick_rects.clear();
+}
+
 void release() {
     if (g_hint) g_hint->Release();
     g_hint = nullptr;
+    release_kick();
 }
 
 // GetSideById stops the game on a side the map lacks.
@@ -81,14 +100,17 @@ std::vector<Row> rows(bool ru) {
                           : left == 1 ? Status::DefeatedLeft
                           : left == 2 ? Status::DefeatedLost
                           : left == 3 ? Status::DefeatedRemoved
+                          : left == 4 ? Status::DefeatedKicked
                                       : Status::DefeatedWatching)
                    : gave_up     ? (left == 1   ? Status::GaveUpLeft
                                     : left == 2 ? Status::GaveUpLost
                                     : left == 3 ? Status::GaveUpRemoved
+                                    : left == 4 ? Status::GaveUpKicked
                                                 : Status::GaveUpWatching)
                    : left == 1   ? Status::Left
                    : left == 2   ? Status::Lost
                    : left == 3   ? Status::Removed
+                   : left == 4   ? Status::Kicked
                                  : Status::Fighting;
         if (g_names && !(*g_names)[side - 1].empty()) r.player = (*g_names)[side - 1];
         else if (!g_names && r.you) r.player = PlayerName::load();
@@ -147,6 +169,23 @@ void build() {
     g_hint = built;
     g_screen_x = g_ScreenX;
     g_screen_y = g_ScreenY;
+    if (g_kickable.empty()) return;
+    // The host's Kick buttons in a frame of their own under the table (above it when the screen is too short).
+    const KickTemplates t = kick_compose(g_kickable, g_kick_armed, g_kick_hover, ru, [](const std::wstring &line, const std::wstring &font) {
+        return int(Text::GetFont(g_D3DD, font).CalcTextWidth(line));
+    });
+    g_kick_frame = CMatrixHint::Build(t.window, static_cast<CBlockPar *>(nullptr));
+    const int x = (g_ScreenX - g_kick_frame->m_Width) / 2;
+    int y = centre.y + built->m_Height + 8;
+    if (y + g_kick_frame->m_Height > g_ScreenY) y = std::max(0, centre.y - g_kick_frame->m_Height - 8);
+    g_kick_frame->Show(x, y);
+    for (std::size_t i = 0; i < t.buttons.size(); ++i) {
+        CMatrixHint *b = CMatrixHint::Build(t.buttons[i], static_cast<CBlockPar *>(nullptr));
+        const int bx = x + kick_pad_x, by = y + t.buttons_y + int(i) * kick_row;
+        b->Show(bx, by);
+        g_kick_buttons.push_back(b);
+        g_kick_rects.push_back({bx, by, t.width - 2 * kick_pad_x, kick_row});
+    }
     g_next = std::chrono::steady_clock::now() + refresh_every;
 }
 
@@ -205,6 +244,9 @@ std::wstring fill_template(std::wstring templ, const std::vector<Row> &table, bo
                 case Status::DefeatedLeft: status = colour_tag(0xFFFF6060) + text(ru, L"defeated", L"\u0440\u0430\u0437\u0431\u0438\u0442") + L"</color><br>" + text(ru, L"(left)", L"(\u0432\u044b\u0448\u0435\u043b)"); break;
                 case Status::DefeatedLost: status = colour_tag(0xFFFF6060) + text(ru, L"defeated", L"\u0440\u0430\u0437\u0431\u0438\u0442") + L"</color><br>" + text(ru, L"(connection lost)", L"(\u043d\u0435\u0442 \u0441\u0432\u044f\u0437\u0438)"); break;
                 case Status::DefeatedRemoved: status = colour_tag(0xFFFF6060) + text(ru, L"defeated", L"\u0440\u0430\u0437\u0431\u0438\u0442") + L"</color><br>" + text(ru, L"(not waited for)", L"(\u043d\u0435 \u0434\u043e\u0436\u0434\u0430\u043b\u0438\u0441\u044c)"); break;
+                case Status::Kicked: status = text(ru, L"kicked out", L"выгнан"); break;
+                case Status::GaveUpKicked: status = text(ru, L"gave up<br>(kicked out)", L"сдался<br>(выгнан)"); break;
+                case Status::DefeatedKicked: status = colour_tag(0xFFFF6060) + text(ru, L"defeated", L"разбит") + L"</color><br>" + text(ru, L"(kicked out)", L"(выгнан)"); break;
             }
         }
         utils::replace(templ, cell + L"6]", status);
@@ -218,7 +260,7 @@ void clear_names() { g_names.reset(); }
 void set_gone(int side, int how) {
     if (side < 1 || side > side_count) return;
     if (how == 0) g_gave_up[side - 1] = true;
-    else if (!g_left[side - 1]) g_left[side - 1] = how;
+    else if (!g_left[side - 1] || how == 4) g_left[side - 1] = how == 5 ? 2 : how;  // a kick after leaving still shows
 }
 
 void set_back(int side) {
@@ -237,6 +279,7 @@ void hold(bool down) {
     if (down && g_MatrixMap && end_statistics_shown()) down = false;
     if (down == g_held) return;
     g_held = down;
+    g_kick_armed = g_kick_hover = -1;  // a kick asked again is forgotten with the table
     if (!down) release();
     else if (g_MatrixMap) {
         note_sides();
@@ -263,6 +306,78 @@ void clear() {
     g_people = 0;
     g_gave_up.fill(false);
     g_left.fill(0);
+    g_kickable.clear();
+    g_kick_armed = g_kick_hover = -1;
 }
+
+KickTemplates kick_compose(const std::vector<Kickable> &people, int armed, int hover, bool ru,
+                           const std::function<int(const std::wstring &text, const std::wstring &font)> &text_width) {
+    const std::wstring title = text(ru, L"Kick out of the battle", L"Выгнать из боя");
+    const std::wstring line = text(ru, L"For good: the AI plays their side to the end", L"Без возврата: его сторону до конца боя ведёт ИИ");
+    std::vector<std::wstring> buttons;
+    for (std::size_t i = 0; i < people.size(); ++i) {
+        const Kickable &p = people[i];
+        const std::wstring who = p.name.empty() ? std::wstring(Factions::name(p.side, ru)) : p.name;
+        buttons.push_back(int(i) == armed ? text(ru, L"Kick ", L"Выгнать ") + who + text(ru, L" for sure? Click again", L"? Щёлкните ещё раз")
+                                          : text(ru, L"Kick ", L"Выгнать ") + who);
+    }
+    int inner = std::max(text_width(title, kick_title_font), text_width(line, kick_line_font));
+    for (const std::wstring &b : buttons) inner = std::max(inner, text_width(b, kick_line_font));
+    KickTemplates t;
+    t.width = std::max(kick_min_width, inner + 16 + 2 * kick_pad_x);
+    inner = t.width - 2 * kick_pad_x;
+    const std::uint32_t colour = UiTheme::pick(0xFF000000, UiTheme::Dark::text);
+    t.window = std::format(L"{}|_BORDER:{}:{}:{}:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_TEXTP:L|_COLOR:{:08X}|_FONT:{}|_TEXT:{}",
+                           UiTheme::border(), kick_pad_x, kick_pad_top, kick_pad_x, kick_pad_bottom, inner, kick_row + 6, colour,
+                           kick_title_font, title);
+    t.window += std::format(L"|_HEIGHT:{}|_FONT:{}|_TEXT:{}", kick_row, kick_line_font, line);
+    t.window += std::format(L"|_DOWN:{}", 6 + int(buttons.size()) * kick_row);
+    t.buttons_y = kick_pad_top + kick_row + 6 + kick_row + 6;
+    for (std::size_t i = 0; i < buttons.size(); ++i) {
+        const std::uint32_t c = int(i) == hover || int(i) == armed ? UiTheme::pick(0xFFE00000, 0xFFFF9A8A)
+                                                                   : UiTheme::pick(0xFF8E0000, UiTheme::Dark::error);
+        t.buttons.push_back(std::format(L"-1|_FONT:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_COLOR:{:08X}|_TEXT:{}", kick_line_font, inner,
+                                        kick_row, c, buttons[i]));
+    }
+    return t;
+}
+
+void set_kickable(std::vector<Kickable> people) {
+    if (people == g_kickable) return;
+    g_kickable = std::move(people);
+    g_kick_armed = g_kick_hover = -1;
+    if (g_held && g_MatrixMap) build();
+}
+
+bool kick_shown() { return g_held && g_kick_frame != nullptr; }
+
+static int kick_index(int x, int y) {
+    for (std::size_t i = 0; i < g_kick_rects.size(); ++i) {
+        const auto &r = g_kick_rects[i];
+        if (x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]) return int(i);
+    }
+    return -1;
+}
+
+void kick_hover(int x, int y) {
+    const int now = kick_index(x, y);
+    if (now == g_kick_hover) return;
+    g_kick_hover = now;
+    if (kick_shown()) build();
+}
+
+int kick_click(int x, int y) {
+    const int i = kick_index(x, y);
+    if (i < 0 || i >= int(g_kickable.size())) return -1;
+    if (g_kick_armed != i) {
+        g_kick_armed = i;  // asks again
+        build();
+        return -2;
+    }
+    g_kick_armed = -1;
+    return g_kickable[std::size_t(i)].peer;
+}
+
+std::vector<std::array<int, 4>> kick_rects() { return g_kick_rects; }
 
 }  // namespace BattleStats
