@@ -1292,6 +1292,10 @@ void CMatrixRobot::Draw(void) {
                     }
                 }
             }
+            // The Reparator head's glow, as the repair weapon's (CreateTextures placed it).
+            for (SWeaponRepairData *glow : m_DecorGlow)
+                if (glow)
+                    glow->Draw(true);
         }
         else {
             int cnt = this->AsRobot()->m_WeaponsCnt;
