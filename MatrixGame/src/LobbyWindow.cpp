@@ -127,7 +127,8 @@ void load_sides() {
         if (line.size() < 2) continue;
         try {
             const std::wstring path = utils::to_wstring(std::string_view(line).substr(1));
-            if (!sides_read.contains(path) && file_stamp(path) == size + " " + time) sides_read[path] = sides;
+            if (!sides_read.contains(path) && !MapShare::used(path) && file_stamp(path) == size + " " + time)
+                sides_read[path] = sides;
         }
         catch (...) {
         }
@@ -137,8 +138,10 @@ void load_sides() {
 void save_sides() {
     if (!std::exchange(sides_new, false)) return;
     std::ofstream out{std::filesystem::path(sides_file), std::ios::trunc};
+    // A map read from the host's copy (MapShare) is not kept: its own file, under the same name, may have other sides.
     for (const auto &[path, sides] : sides_read)
-        if (sides > 0) out << file_stamp(path) << ' ' << sides << ' ' << utils::from_wstring(path) << '\n';
+        if (sides > 0 && !MapShare::used(path))
+            out << file_stamp(path) << ' ' << sides << ' ' << utils::from_wstring(path) << '\n';
 }
 
 LobbyModel::MapSort load_sort() {
