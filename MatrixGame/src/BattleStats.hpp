@@ -30,12 +30,13 @@ void update();
 // Releases the table (before the battle's interface goes).
 void clear();
 
-// The host of a shared battle: a Kick button under the table for each person it may put out of the battle for good
+// The host of a shared battle: a Kick button right of the table's row of each person it may put out of the battle for good
 // (in it, or gone and free to come back). The first click on one asks again; the second kicks.
 struct Kickable {
     int peer = -1;  // the host's connection to them
     int side = 0;
     std::wstring name;  // empty: the faction alone
+    bool kicked = false;  // already: the button grey, not pressable
     bool operator==(const Kickable &) const = default;
 };
 void set_kickable(std::vector<Kickable> people);
@@ -46,16 +47,9 @@ int kick_click(int x, int y);
 // Screen rectangles of the shown Kick buttons (tests): x, y, width, height each.
 std::vector<std::array<int, 4>> kick_rects();
 
-// The panel's hint template (border 2) and one per button, laid out for `width`; `armed`: the button that asks again,
-// `hover`: the one under the mouse (-1: none). Button i is drawn at the panel's (padding, buttons_y + i * row).
-struct KickTemplates {
-    std::wstring window;
-    std::vector<std::wstring> buttons;
-    int width = 0;
-    int buttons_y = 0;
-};
-KickTemplates kick_compose(const std::vector<Kickable> &people, int armed, int hover, bool russian,
-                           const std::function<int(const std::wstring &text, const std::wstring &font)> &text_width);
+// The Kick column's cell per person, as the table's text: "Kick out", the armed one asking again, `hover` the one
+// under the mouse (-1: none), a kicked person's grey.
+std::vector<std::wstring> kick_cells(const std::vector<Kickable> &people, int armed, int hover, bool russian);
 
 // A person's side that lost: Defeated + watching, left, lost the connection or removed; an AI's: Defeated.
 enum class Status { Fighting, GaveUpWatching, GaveUpLeft, GaveUpLost, GaveUpRemoved, Left, Lost, Removed, Defeated,
@@ -70,6 +64,8 @@ struct Row {
 };
 // The game's Stat template filled for the rows: the player column, the numbers, the status column and
 // no OK button. Rows of the template no side has are left empty (the template hides them).
-std::wstring fill_template(std::wstring templ, const std::vector<Row> &rows, bool russian);
+// `kick`: the host's Kick column, a cell per row key (_p_, _r_, _g_, _b_; empty: no button, the cell's place marked
+// otherwise); none when empty.
+std::wstring fill_template(std::wstring templ, const std::vector<Row> &rows, bool russian, const std::vector<std::wstring> &kick = {});
 
 }  // namespace BattleStats

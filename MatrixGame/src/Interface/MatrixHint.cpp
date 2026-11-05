@@ -165,7 +165,7 @@ CMatrixHint *CMatrixHint::Build(int border, const std::wstring &soundin, const s
             if ((cy + by) > ch)
                 ch = by + cy;
         }
-        else if (els->hem == HEM_COPY) {
+        else if (els->hem == HEM_COPY || els->hem == HEM_MARK) {
             pos.push_back(CPoint(0, 0));
             // do nothing
         }
@@ -411,10 +411,11 @@ CMatrixHint *CMatrixHint::Build(int border, const std::wstring &soundin, const s
     std::vector<CPoint> copypos;
 
     idx = 0;
-    bool copy = false;
+    bool copy = false, mark = false;
     for (const auto& item : pos)
     {
         bool new_copy = elems[idx].hem == HEM_COPY;
+        bool new_mark = elems[idx].hem == HEM_MARK;
 
         if (elems[idx].bmp) {
             if (copy) {
@@ -429,10 +430,13 @@ CMatrixHint *CMatrixHint::Build(int border, const std::wstring &soundin, const s
                 else {
                     bmpf.MergeWithAlpha(item, elems[idx].bmp->Size(), *elems[idx].bmp, CPoint(0, 0));
                 }
+                if (mark)
+                    copypos.push_back(item);
             }
         }
 
         copy = new_copy;
+        mark = new_mark;
         ++idx;
     }
 
@@ -508,6 +512,9 @@ static EHintElementModificator Convert(std::wstring &bmph, const std::wstring &t
     }
     else if (bmph == L"COPY") {
         return HEM_COPY;
+    }
+    else if (bmph == L"MARK") {
+        return HEM_MARK;
     }
     else {
         return HEM_BITMAP;

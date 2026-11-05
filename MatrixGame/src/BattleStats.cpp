@@ -8,7 +8,6 @@
 #include "MatrixSide.hpp"
 #include "StringConstants.hpp"
 #include "Interface/MatrixHint.hpp"
-#include "UiTheme.hpp"
 #include "CBlockPar.hpp"
 #include "3g.hpp"
 #include "utils.hpp"
@@ -24,19 +23,16 @@ namespace {
 
 constexpr auto refresh_every = std::chrono::milliseconds(500);
 constexpr int player_width = 150;
+constexpr int cell_width = 98, cell_height = 33;  // the template's number cells
 constexpr const wchar_t *keys[] = {L"_p_", L"_r_", L"_g_", L"_b_"};
 
 std::optional<std::array<std::wstring, side_count>> g_names;
 std::array<bool, side_count> g_gave_up{};
 std::array<int, side_count> g_left{};  // 1 left, 2 lost the connection, 3 removed, 4 kicked out
-// The host's Kick buttons under the table.
-constexpr int kick_row = 22, kick_pad_x = 64, kick_pad_top = 22, kick_pad_bottom = 24, kick_min_width = 340;
-const std::wstring kick_title_font = L"Font.2Ranger", kick_line_font = L"Font.2Normal";
+// The host's Kick buttons: the table's last column.
 std::vector<Kickable> g_kickable;
 int g_kick_armed = -1, g_kick_hover = -1;
-CMatrixHint *g_kick_frame = nullptr;
-std::vector<CMatrixHint *> g_kick_buttons;
-std::vector<std::array<int, 4>> g_kick_rects;
+std::vector<std::array<int, 4>> g_kick_rects;  // a person's each (0 when the person has no row)
 CMatrixHint *g_hint = nullptr;
 bool g_held = false;
 unsigned g_seen = 0;    // sides that took part in the battle so far
@@ -44,6 +40,7 @@ unsigned g_people = 0;  // sides a person played
 std::chrono::steady_clock::time_point g_next;
 int g_screen_x = 0, g_screen_y = 0;
 std::unique_ptr<CBitmap> g_wide_line;  // the table's row line, as long as the wider table
+int g_wide_extra = -1;                 // how much longer it is
 
 const wchar_t *text(bool russian, const wchar_t *english, const wchar_t *ru) { return russian ? ru : english; }
 
@@ -52,18 +49,10 @@ bool russian() {
            SettingsModel::Language::Russian;
 }
 
-void release_kick() {
-    if (g_kick_frame) g_kick_frame->Release();
-    g_kick_frame = nullptr;
-    for (CMatrixHint *b : g_kick_buttons) b->Release();
-    g_kick_buttons.clear();
-    g_kick_rects.clear();
-}
-
 void release() {
     if (g_hint) g_hint->Release();
     g_hint = nullptr;
-    release_kick();
+    g_kick_rects.clear();
 }
 
 // GetSideById stops the game on a side the map lacks.
@@ -141,17 +130,24 @@ std::wstring colour_tag(std::uint32_t c) {
     return std::format(L"<color={},{},{}>", (c >> 16) & 255, (c >> 8) & 255, c & 255);
 }
 
-// stat_hlw: stat_hl with its middle drawn on for the player column.
-void prepare_wide_line() {
-    if (g_wide_line) return;
+// The Kick column's width: a number cell and its line.
+int kick_column_width() {
+    const CBitmap *vl = CMatrixHint::FindBitmap(L"stat_vl");
+    return cell_width + (vl ? vl->SizeX() : 0);
+}
+
+// stat_hlw: stat_hl with its middle drawn on for the player column (and the Kick column).
+void prepare_wide_line(int extra) {
+    if (g_wide_line && g_wide_extra == extra) return;
     const CBitmap *line = CMatrixHint::FindBitmap(L"stat_hl");
     if (!line) return;
     const int w = line->SizeX(), h = line->SizeY(), half = w / 2;
     g_wide_line = std::make_unique<CBitmap>();
-    g_wide_line->CreateRGBA(w + player_width, h);
+    g_wide_line->CreateRGBA(w + extra, h);
     g_wide_line->Copy(CPoint(0, 0), CPoint(half, h), *line, CPoint(0, 0));
-    for (int x = 0; x < player_width; ++x) g_wide_line->Copy(CPoint(half + x, 0), CPoint(1, h), *line, CPoint(half, 0));
-    g_wide_line->Copy(CPoint(half + player_width, 0), CPoint(w - half, h), *line, CPoint(half, 0));
+    for (int x = 0; x < extra; ++x) g_wide_line->Copy(CPoint(half + x, 0), CPoint(1, h), *line, CPoint(half, 0));
+    g_wide_line->Copy(CPoint(half + extra, 0), CPoint(w - half, h), *line, CPoint(half, 0));
+    g_wide_extra = extra;
     CMatrixHint::SetRuntimeBitmap(L"stat_hlw", g_wide_line.get());
 }
 
@@ -160,8 +156,23 @@ void build() {
     const std::wstring templ = stat_template();
     if (templ.empty()) return;
     g_MatrixMap->PrepareStatisticsCards();
-    prepare_wide_line();
-    CMatrixHint *built = CMatrixHint::Build(fill_template(templ, rows(ru), ru), g_MatrixData->BlockGet(PAR_REPLACE),
+    // The host's Kick buttons in their people's rows (by the rows' keys): the template lays them out, MARK says where.
+    std::vector<std::wstring> kick;
+    std::vector<int> person;  // a marked cell's person, in the template's order
+    if (!g_kickable.empty()) {
+        kick.resize(std::size(keys));
+        const std::vector<std::wstring> cells = kick_cells(g_kickable, g_kick_armed, g_kick_hover, ru);
+        const std::vector<Row> present = rows(ru);
+        for (std::size_t k = 0; k < std::size(keys); ++k)
+            for (std::size_t i = 0; i < g_kickable.size(); ++i)
+                if (g_MatrixMap->StatisticsKey(g_kickable[i].side) == keys[k] &&
+                    std::any_of(present.begin(), present.end(), [&](const Row &r) { return r.key == keys[k]; })) {
+                    kick[k] = cells[i];
+                    person.push_back(int(i));
+                }
+    }
+    prepare_wide_line(player_width + (kick.empty() ? 0 : kick_column_width()));
+    CMatrixHint *built = CMatrixHint::Build(fill_template(templ, rows(ru), ru, kick), g_MatrixData->BlockGet(PAR_REPLACE),
                                             TEMPLATE_DIALOG_STATISTICS);
     const auto centre = ScreenLayout::centred_dialog(g_ScreenX, g_ScreenY, built->m_Width, built->m_Height);
     built->Show(centre.x, centre.y);
@@ -169,29 +180,16 @@ void build() {
     g_hint = built;
     g_screen_x = g_ScreenX;
     g_screen_y = g_ScreenY;
-    if (g_kickable.empty()) return;
-    // The host's Kick buttons in a frame of their own under the table (above it when the screen is too short).
-    const KickTemplates t = kick_compose(g_kickable, g_kick_armed, g_kick_hover, ru, [](const std::wstring &line, const std::wstring &font) {
-        return int(Text::GetFont(g_D3DD, font).CalcTextWidth(line));
-    });
-    g_kick_frame = CMatrixHint::Build(t.window, static_cast<CBlockPar *>(nullptr));
-    const int x = (g_ScreenX - g_kick_frame->m_Width) / 2;
-    int y = centre.y + built->m_Height + 8;
-    if (y + g_kick_frame->m_Height > g_ScreenY) y = std::max(0, centre.y - g_kick_frame->m_Height - 8);
-    g_kick_frame->Show(x, y);
-    for (std::size_t i = 0; i < t.buttons.size(); ++i) {
-        CMatrixHint *b = CMatrixHint::Build(t.buttons[i], static_cast<CBlockPar *>(nullptr));
-        const int bx = x + kick_pad_x, by = y + t.buttons_y + int(i) * kick_row;
-        b->Show(bx, by);
-        g_kick_buttons.push_back(b);
-        g_kick_rects.push_back({bx, by, t.width - 2 * kick_pad_x, kick_row});
-    }
+    g_kick_rects.assign(g_kickable.size(), {0, 0, 0, 0});
+    for (std::size_t m = 0; m < person.size() && int(m) < built->GetCopyPosCnt(); ++m)
+        g_kick_rects[std::size_t(person[m])] = {built->m_PosX + built->GetCopyPos(int(m)).x,
+                                                built->m_PosY + built->GetCopyPos(int(m)).y, cell_width, cell_height};
     g_next = std::chrono::steady_clock::now() + refresh_every;
 }
 
 }  // namespace
 
-std::wstring fill_template(std::wstring templ, const std::vector<Row> &table, bool ru) {
+std::wstring fill_template(std::wstring templ, const std::vector<Row> &table, bool ru, const std::vector<std::wstring> &kick) {
     // No OK button: the table goes when Tab does.
     utils::replace(templ, L"|_MOD:COPY|_BITMAP:bhole0:C", L"");
     // The rows' lines and the map's name at the right reach over the player column too.
@@ -200,7 +198,8 @@ std::wstring fill_template(std::wstring templ, const std::vector<Row> &table, bo
         const auto pos = templ.rfind(L"|_POS:", planet);
         const auto colon = pos == std::wstring::npos ? pos : templ.find(L':', pos + 6);
         if (colon != std::wstring::npos && colon < planet)
-            templ.replace(pos + 6, colon - pos - 6, std::to_wstring(std::stoi(templ.substr(pos + 6, colon - pos - 6)) + player_width));
+            templ.replace(pos + 6, colon - pos - 6, std::to_wstring(std::stoi(templ.substr(pos + 6, colon - pos - 6)) + player_width +
+                                                              (kick.empty() ? 0 : kick_column_width())));
     }
     // The player column, right of the side's card, in the header and every row.
     if (const auto c1 = templ.find(L"|_TEXT:[stat_c1]"); c1 != std::wstring::npos) {
@@ -209,7 +208,13 @@ std::wstring fill_template(std::wstring templ, const std::vector<Row> &table, bo
             templ.insert(width, std::format(L"|_WIDTH:{}|_HEIGHT:33|_FONT:Font.2Normal|_TEXTP:B|_TEXT:{}|_BITMAP:stat_vl:B",
                                             player_width, text(ru, L"Player", L"\u0418\u0433\u0440\u043e\u043a")));
     }
-    utils::replace(templ, L"[stat_c6]", text(ru, L"Status", L"\u0421\u0442\u0430\u0442\u0443\u0441"));
+    // The host's column of Kick buttons after the status, a cell as the others: the status no longer ends the line.
+    const std::wstring status_heading = text(ru, L"Status", L"\u0421\u0442\u0430\u0442\u0443\u0441");
+    if (!kick.empty())
+        utils::replace(templ, L"|_TEXTP:L|_TEXT:[stat_c6]",
+                       std::format(L"|_TEXTP:B|_TEXT:{}|_BITMAP:stat_vl:B|_TEXTP:L|_TEXT:{}", status_heading,
+                                   text(ru, L"Kick out?", L"Выгнать?")));
+    utils::replace(templ, L"[stat_c6]", status_heading);
     for (const wchar_t *key : keys) {
         const Row *row = nullptr;
         for (const Row &r : table)
@@ -248,6 +253,12 @@ std::wstring fill_template(std::wstring templ, const std::vector<Row> &table, bo
                 case Status::GaveUpKicked: status = text(ru, L"gave up<br>(kicked out)", L"сдался<br>(выгнан)"); break;
                 case Status::DefeatedKicked: status = colour_tag(0xFFFF6060) + text(ru, L"defeated", L"разбит") + L"</color><br>" + text(ru, L"(kicked out)", L"(выгнан)"); break;
             }
+        }
+        if (!kick.empty()) {
+            const std::wstring &button = kick[std::size_t(std::find(std::begin(keys), std::end(keys), key) - std::begin(keys))];
+            utils::replace(templ, L"|_TEXT:" + cell + L"6]|_MOD:L",
+                           L"|_TEXT:" + cell + L"6]|_BITMAP:stat_vl:B" + (button.empty() ? L"" : L"|_MOD:MARK") + L"|_TEXT:" +
+                               button + L"|_MOD:L");
         }
         utils::replace(templ, cell + L"6]", status);
     }
@@ -310,36 +321,15 @@ void clear() {
     g_kick_armed = g_kick_hover = -1;
 }
 
-KickTemplates kick_compose(const std::vector<Kickable> &people, int armed, int hover, bool ru,
-                           const std::function<int(const std::wstring &text, const std::wstring &font)> &text_width) {
-    const std::wstring title = text(ru, L"Kick out of the battle", L"Выгнать из боя");
-    const std::wstring line = text(ru, L"For good: the AI plays their side to the end", L"Без возврата: его сторону до конца боя ведёт ИИ");
-    std::vector<std::wstring> buttons;
+std::vector<std::wstring> kick_cells(const std::vector<Kickable> &people, int armed, int hover, bool ru) {
+    std::vector<std::wstring> cells;
     for (std::size_t i = 0; i < people.size(); ++i) {
-        const Kickable &p = people[i];
-        const std::wstring who = p.name.empty() ? std::wstring(Factions::name(p.side, ru)) : p.name;
-        buttons.push_back(int(i) == armed ? text(ru, L"Kick ", L"Выгнать ") + who + text(ru, L" for sure? Click again", L"? Щёлкните ещё раз")
-                                          : text(ru, L"Kick ", L"Выгнать ") + who);
+        const std::wstring label = int(i) == armed ? text(ru, L"Sure?<br>Again", L"Точно?<br>Ещё раз")
+                                                   : text(ru, L"Kick out", L"Выгнать");
+        const std::uint32_t c = people[i].kicked ? 0xFF808080 : int(i) == hover || int(i) == armed ? 0xFFFF9A8A : 0xFFE05050;
+        cells.push_back(colour_tag(c) + label + L"</color>");
     }
-    int inner = std::max(text_width(title, kick_title_font), text_width(line, kick_line_font));
-    for (const std::wstring &b : buttons) inner = std::max(inner, text_width(b, kick_line_font));
-    KickTemplates t;
-    t.width = std::max(kick_min_width, inner + 16 + 2 * kick_pad_x);
-    inner = t.width - 2 * kick_pad_x;
-    const std::uint32_t colour = UiTheme::pick(0xFF000000, UiTheme::Dark::text);
-    t.window = std::format(L"{}|_BORDER:{}:{}:{}:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_TEXTP:L|_COLOR:{:08X}|_FONT:{}|_TEXT:{}",
-                           UiTheme::border(), kick_pad_x, kick_pad_top, kick_pad_x, kick_pad_bottom, inner, kick_row + 6, colour,
-                           kick_title_font, title);
-    t.window += std::format(L"|_HEIGHT:{}|_FONT:{}|_TEXT:{}", kick_row, kick_line_font, line);
-    t.window += std::format(L"|_DOWN:{}", 6 + int(buttons.size()) * kick_row);
-    t.buttons_y = kick_pad_top + kick_row + 6 + kick_row + 6;
-    for (std::size_t i = 0; i < buttons.size(); ++i) {
-        const std::uint32_t c = int(i) == hover || int(i) == armed ? UiTheme::pick(0xFFE00000, 0xFFFF9A8A)
-                                                                   : UiTheme::pick(0xFF8E0000, UiTheme::Dark::error);
-        t.buttons.push_back(std::format(L"-1|_FONT:{}|_WIDTH:{}|_HEIGHT:{}|_ALIGN:1:1|_COLOR:{:08X}|_TEXT:{}", kick_line_font, inner,
-                                        kick_row, c, buttons[i]));
-    }
-    return t;
+    return cells;
 }
 
 void set_kickable(std::vector<Kickable> people) {
@@ -349,7 +339,7 @@ void set_kickable(std::vector<Kickable> people) {
     if (g_held && g_MatrixMap) build();
 }
 
-bool kick_shown() { return g_held && g_kick_frame != nullptr; }
+bool kick_shown() { return g_held && g_hint && !g_kick_rects.empty(); }
 
 static int kick_index(int x, int y) {
     for (std::size_t i = 0; i < g_kick_rects.size(); ++i) {
@@ -360,7 +350,8 @@ static int kick_index(int x, int y) {
 }
 
 void kick_hover(int x, int y) {
-    const int now = kick_index(x, y);
+    int now = kick_index(x, y);
+    if (now >= 0 && now < int(g_kickable.size()) && g_kickable[std::size_t(now)].kicked) now = -1;
     if (now == g_kick_hover) return;
     g_kick_hover = now;
     if (kick_shown()) build();
@@ -369,6 +360,7 @@ void kick_hover(int x, int y) {
 int kick_click(int x, int y) {
     const int i = kick_index(x, y);
     if (i < 0 || i >= int(g_kickable.size())) return -1;
+    if (g_kickable[std::size_t(i)].kicked) return -2;  // (grey: the click is the button's, nothing happens)
     if (g_kick_armed != i) {
         g_kick_armed = i;  // asks again
         build();

@@ -50,6 +50,7 @@
 //   --net-test-remove <ms>  host: go on without a person who kept the battle waiting so long, as its button does (tests)
 //   --net-test-kick <ms>  host: kick the first client out for good at this game time, as Tab's Kick does (tests)
 //   --net-test-leave <ms>  leave the battle at this game time as the menu's Exit does, and end there (tests)
+//   --net-test-tab <ms>  hold Tab from this game time on (the statistics and the host's Kick buttons; tests)
 //   --net-test-history <ms>,<lines>  say 25 chat lines at this game time and open the history panel as right Ctrl does,
 //                        scrolled that many lines up (tests)
 //   --net-test-lag <ms>,<lag>  from this game time on, every line this peer sends goes <lag> real ms late (tests the
@@ -120,6 +121,7 @@ struct Options {
     int test_leave_ms = -1;
     int test_history_ms = -1;
     int test_history_lines = 0;
+    int test_tab_ms = -1;
     int test_lag_ms = -1, test_lag = 0, test_lag_end_ms = -1;
     bool test_desync_again = false;
     bool test_no_deputy = false;

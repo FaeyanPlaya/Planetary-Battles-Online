@@ -1567,8 +1567,8 @@ bool loop_advance(void *context) {
         for (int i = 0; i < b.session.peer_count(); ++i) {
             const int side = b.session.peer_side(i);
             const bool active = g_MatrixMap->GetSideById(side)->GetStatus() == SS_ACTIVE;
-            if (!b.session.peer_kicked(i) && (b.session.peer_live(i) || (b.session.can_rejoin(i) && active && !b.decided)))
-                people.push_back({i, side, b.start.names[std::size_t(side - 1) % b.start.names.size()]});
+            if (b.session.peer_kicked(i) || b.session.peer_live(i) || (b.session.can_rejoin(i) && active && !b.decided))
+                people.push_back({i, side, b.start.names[std::size_t(side - 1) % b.start.names.size()], b.session.peer_kicked(i)});
         }
         BattleStats::set_kickable(std::move(people));
         if (b.options.test_kick_ms >= 0 && now >= b.options.test_kick_ms && b.session.peer_count() > 0 &&
@@ -1576,6 +1576,17 @@ bool loop_advance(void *context) {
             note(b, std::format("test: the host kicks side {} out", b.session.peer_side(0)));
             b.session.kick(0);
         }
+    }
+    if (b.options.test_tab_ms >= 0 && now >= b.options.test_tab_ms && !Input::isVKeyPressed(VK_TAB)) {
+        Input::onKeyDown(VK_TAB);  // as if held: the battle's own check lets go of it otherwise
+        BattleStats::hold(true);
+        note(b, "test: Tab held");
+    }
+    if (static bool told = false; b.options.test_tab_ms >= 0 && now >= b.options.test_tab_ms + 1000 && !told) {
+        told = true;
+        std::string rects;
+        for (const auto &r : BattleStats::kick_rects()) rects += std::format(" {},{} {}x{}", r[0], r[1], r[2], r[3]);
+        note(b, "test: Kick buttons at" + rects);
     }
     if (b.options.test_history_ms >= 0 && now >= b.options.test_history_ms && !b.test_history && !b.catching) {
         b.test_history = true;
@@ -1692,6 +1703,7 @@ Options parse(std::vector<std::wstring_view> &arguments) {
         else if (a == L"--net-test-crash") o.test_crash_ms = parse_int(value(), "crash time");
         else if (a == L"--net-test-remove") o.test_remove_ms = parse_int(value(), "remove time");
         else if (a == L"--net-test-kick") o.test_kick_ms = parse_int(value(), "kick time");
+        else if (a == L"--net-test-tab") o.test_tab_ms = parse_int(value(), "tab time");
         else if (a == L"--net-test-history") std::tie(o.test_history_ms, o.test_history_lines) = parse_pair(value(), "history");
         else if (a == L"--net-test-leave") o.test_leave_ms = parse_int(value(), "leave time");
         else if (a == L"--net-test-lag") std::tie(o.test_lag_ms, o.test_lag) = parse_pair(value(), "lag");

@@ -36,6 +36,7 @@ enum EHintElementModificator {
     HEM_CENTER_LEFT_LARGEST = 3000,  // last value
 
     HEM_COPY,  // next bitmap will be copied instead of merged
+    HEM_MARK,  // next bitmap's place is recorded (as HEM_COPY's), the bitmap merged as usual
     HEM_BITMAP,
     HEM_CENTER,
     HEM_LAST_ON_LINE,
