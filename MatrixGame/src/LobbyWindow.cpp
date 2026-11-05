@@ -38,6 +38,7 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -51,6 +52,7 @@ using LobbyModel::JoinError;
 
 constexpr const wchar_t *address_file = L"CFG\\net-join.txt";  // the last host joined
 constexpr const wchar_t *sort_file = L"CFG\\lobby-sort.txt";    // the map list's order: name or people
+constexpr const wchar_t *sides_file = L"CFG\\map-sides.txt";   // the maps' sides read before (the game restarts after a battle)
 constexpr int connect_timeout_ms = 8000;
 constexpr auto map_read_budget = std::chrono::milliseconds(15);
 
@@ -93,7 +95,10 @@ std::optional<State> state;
 CMatrixHint *hint = nullptr;
 bool battle_started = false;
 bool name_saved = false;  // the person chose a name in this run: it wins over --lobby-name
-std::map<std::wstring, int> sides_read;  // by map path, for the whole process
+std::map<std::wstring, int> sides_read;  // by map path, for the whole process (and kept in sides_file)
+bool sides_loaded = false, sides_new = false;
+int sides_files_read = 0;  // maps read since the lobby opened (not known from sides_file)
+std::chrono::steady_clock::time_point maps_listed;
 std::map<std::wstring, std::string> map_hashes;
 std::map<std::wstring, std::vector<std::wstring>> map_lacks;  // MapPacks::missing, by map path, for the whole process
 std::vector<std::unique_ptr<CBitmap>> lines;  // LobbyModel::separators(), made for lines_scale
@@ -101,6 +106,40 @@ double lines_scale = 0;
 std::unique_ptr<CBitmap> toggles[2];  // a mod's switch, off and on, made for toggles_scale
 std::unique_ptr<CBitmap> info_button;  // a mod's "i", made for toggles_scale
 double toggles_scale = 0;
+
+// A map file's size and time: one changed since is read again. "0 0": in the game's packages (they do not change; a
+// loose map put in its place has a stamp of its own).
+std::string file_stamp(const std::wstring &path) {
+    std::error_code error;
+    const auto size = std::filesystem::file_size(path, error);
+    if (error) return "0 0";
+    const auto time = std::filesystem::last_write_time(path, error);
+    return error ? "0 0" : std::format("{} {}", size, time.time_since_epoch().count());
+}
+
+// sides_file: a line a map, "<size> <time> <sides> <path>" (UTF-8).
+void load_sides() {
+    if (std::exchange(sides_loaded, true)) return;
+    std::ifstream in{std::filesystem::path(sides_file)};
+    std::string size, time, line;
+    int sides = 0;
+    while (in >> size >> time >> sides && std::getline(in, line)) {
+        if (line.size() < 2) continue;
+        try {
+            const std::wstring path = utils::to_wstring(std::string_view(line).substr(1));
+            if (!sides_read.contains(path) && file_stamp(path) == size + " " + time) sides_read[path] = sides;
+        }
+        catch (...) {
+        }
+    }
+}
+
+void save_sides() {
+    if (!std::exchange(sides_new, false)) return;
+    std::ofstream out{std::filesystem::path(sides_file), std::ios::trunc};
+    for (const auto &[path, sides] : sides_read)
+        if (sides > 0) out << file_stamp(path) << ' ' << sides << ' ' << utils::from_wstring(path) << '\n';
+}
 
 LobbyModel::MapSort load_sort() {
     std::ifstream in{std::filesystem::path(sort_file)};
@@ -201,6 +240,9 @@ Language language() {
 }
 
 void load_maps(State &s) {
+    load_sides();
+    sides_files_read = 0;
+    maps_listed = std::chrono::steady_clock::now();
     s.maps = MapCatalog::scan();
     // The map mods' maps, named by their own Lang.dat.
     std::map<std::string, MapMetadata::Catalog> pack_names;
@@ -269,6 +311,8 @@ void read_sides(State &s, std::size_t index) {
     if (index >= s.sides.size() || s.sides[index] >= 0) return;
     s.sides[index] = int(MapSides::read(s.maps[index].path));
     sides_read[s.maps[index].path] = s.sides[index];
+    sides_new = true;
+    ++sides_files_read;
     s.dirty = true;
 }
 
@@ -1007,6 +1051,12 @@ void takt() {
     const auto until = std::chrono::steady_clock::now() + map_read_budget;
     const bool reading = s.next_read < s.maps.size();
     while (s.next_read < s.maps.size() && std::chrono::steady_clock::now() < until) read_sides(s, s.next_read++);
+    if (reading && s.next_read >= s.maps.size()) {
+        lgr.notice("Lobby: the sides of {} maps known, {} of them read now, in {} ms")(
+            s.maps.size(), sides_files_read,
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - maps_listed).count());
+        save_sides();  // all read: the next lobby (and run) need not
+    }
     // By people, rows move while the maps are read: the host's page follows the lobby's map.
     if (reading && map_sort == LobbyModel::MapSort::People && s.mode == Mode::Host) page_to_selected(s);
     if (s.dirty) rebuild();

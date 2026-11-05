@@ -1119,6 +1119,11 @@ static bool SideColourTextureFilter(const std::wstring &name, DWORD *argb, int w
     if (s_InterfaceHue < 0.0f)
         return false;
     const std::wstring atlas = InterfaceAtlas(name);
+    // This atlas's untinted regions (holes in the tinted ones), found once rather than for every pixel.
+    std::vector<const SAtlasRegion *> holes;
+    for (const SAtlasRegion &out : s_SideRegions)
+        if (!out.tint && atlas == out.atlas)
+            holes.push_back(&out);
     bool wanted = false;
     for (const SAtlasRegion &in : s_SideRegions) {
         if (!in.tint || atlas != in.atlas)
@@ -1130,9 +1135,8 @@ static bool SideColourTextureFilter(const std::wstring &name, DWORD *argb, int w
         for (int y = int(in.y0 * k); y < std::min(height, int(in.y1 * k + 0.999f)); ++y)
             for (int x = int(in.x0 * k); x < std::min(width, int(in.x1 * k + 0.999f)); ++x) {
                 bool hole = false;
-                for (const SAtlasRegion &out : s_SideRegions)
-                    hole |= !out.tint && atlas == out.atlas && x >= out.x0 * k && x < out.x1 * k &&
-                            y >= out.y0 * k && y < out.y1 * k;
+                for (const SAtlasRegion *out : holes)
+                    hole |= x >= out->x0 * k && x < out->x1 * k && y >= out->y0 * k && y < out->y1 * k;
                 if (!hole)
                     argb[y * pitch + x] = TintYellow(argb[y * pitch + x], s_InterfaceHue);
             }
