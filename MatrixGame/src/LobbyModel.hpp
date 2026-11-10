@@ -62,7 +62,8 @@ struct Layout {
     static constexpr int bonus_y = 214;
     static constexpr int ai_y = 298;
     static constexpr int delay_y = 322;   // the battle's delay: the host's < >
-    static constexpr int address_y = 358;  // "Host:" and the address right of it; the host's further ones under it
+    static constexpr int follow_y = 344;  // the host's switch: the delay follows the pings in the battle or stays
+    static constexpr int address_y = 366;  // "Host:" and the address right of it; the host's further ones under it
     static constexpr int address_label_width = 96;
     // Under the addresses, past a line: the host's switch "only built-in personal mods", then a row per person with
     // their own mods (the rows that fit above the status' line).
@@ -70,9 +71,7 @@ struct Layout {
     static constexpr int status_y = 508;
     static constexpr int legend_y = 532;
     static constexpr int buttons_y = 566;
-    static constexpr int mods_x = 205;  // shows the mods in the list's place, and back to the maps
-    static constexpr int primary_x = 455;
-    static constexpr int leave_x = 705;
+    static constexpr int button_step = 250;  // the bottom buttons' centres, around the window's middle
     static constexpr int button_width = 160;
     static constexpr int mod_rows = 1;  // a mod in the list: its name, its "i" and its switch (SR HD's mods menu)
     static constexpr int toggle_size = 17;  // a mod's switch, at the row's right: a round button, lit when on
@@ -131,6 +130,7 @@ struct Screen {
     Language language = Language::English;
     bool host = true;
     bool local = false;        // the lobby without a network: the host alone, the AI plays the other sides
+    bool locked = false;       // the host's lobby has a password
     std::vector<MapRow> maps;
     MapSort sort = MapSort::Name;
     std::vector<int> order;    // the list's rows as indexes into `maps`; empty: in the order of `maps`
@@ -154,6 +154,7 @@ struct Screen {
     int auto_delay = 0;        // Lobby::State::auto_delay: ms, 0 measuring
     bool dropped_ai = true;    // Lobby::State::dropped_ai
     bool auto_resync = true;   // Lobby::State::auto_resync
+    bool delay_follows = true;  // Lobby::State::delay_follows
     std::vector<ModRow> mods;
     // The names of mods on that cannot be on together (the battle's, and this person's own): no start, no ready.
     std::vector<std::pair<std::wstring, std::wstring>> conflicts{};
@@ -227,10 +228,14 @@ ModInfo::Info mod_info(const Screen &screen, int mod);
 std::wstring status(const Screen &screen);
 bool status_is_error(const Screen &screen);
 std::wstring hint_template(const Screen &screen);
+// The bottom buttons: the network host's password (only theirs), the mods (the maps while they show), the primary
+// action, leaving. Where one starts: button_step apart, centred in the window (four or three of them).
+enum class Button { Password, Mods, Primary, Leave };
+int button_x(const Screen &screen, Button button);
 
 // The screen where a person types the host's address.
 struct JoinLayout {
-    static constexpr int width = 560;
+    static constexpr int width = 640;
     static constexpr int content_height = 230;
     static constexpr int field_y = 95;
     static constexpr int status_y = 150;
@@ -238,9 +243,24 @@ struct JoinLayout {
     static constexpr int connect_x = 120;
     static constexpr int back_x = 300;
     static constexpr int button_width = 140;
+    // With the rooms on the internet (JoinScreen::rooms_shown): their list first, the rest lower by rooms_height.
+    // The rooms' table: its header row, then a row per room; columns: name, map, people, password.
+    static constexpr int rooms_y = 95;
+    static constexpr int room_step = 24;
+    static constexpr int max_rooms = 6;
+    static constexpr int rooms_height = 214;
+    static constexpr int room_name_x = 40, room_map_x = 190, room_people_x = 360, room_password_x = 440,
+                         room_created_x = 520;
 };
 
-enum class JoinError { None, BadAddress, Unreachable, Full, Version, Build, Data, Name, Started, HostLeft, Lost, Busy, Kicked };
+// A host's room on the internet (Epic Online Services), as the join screen lists it.
+struct RoomRow {
+    std::wstring host, map, people;
+    bool locked = false;
+    std::wstring created;  // the host made it at (this PC's time, HH:MM): tells hosts of one name apart
+};
+
+enum class JoinError { None, BadAddress, Unreachable, Full, Version, Build, Data, Name, Started, HostLeft, Lost, Busy, Kicked, Password };
 
 struct JoinScreen {
     Language language = Language::English;
@@ -248,10 +268,15 @@ struct JoinScreen {
     bool connecting = false;
     JoinError error = JoinError::None;
     double scale = 1;  // drawn at the lobby's scale (scale_for); hits are in JoinLayout's units
+    bool rooms_shown = false;  // this build reaches people over EOS: the rooms are listed
+    bool searched = false;     // the rooms were looked for at least once
+    std::vector<RoomRow> rooms;
 };
 std::wstring join_error_text(Language language, JoinError error);
-// 1 connect, -1 back, 0 nothing.
+// 1 connect, -1 back, 0 nothing (the screen without rooms; the name screen's geometry).
 int join_hit(int x, int y);
+// As join_hit, and 100 + i: the room i.
+int join_hit(const JoinScreen &screen, int x, int y);
 std::wstring join_template(const JoinScreen &screen);
 
 // The screen where a person chooses the name others see (JoinLayout's geometry). forced: the first
@@ -264,6 +289,19 @@ struct NameScreen {
 };
 // 1 save, -1 cancel, 0 nothing.
 int name_hit(const NameScreen &screen, int x, int y);
+
+// The screen of a lobby's password (JoinLayout's geometry; join_hit's buttons): the host's to set (empty: none) or
+// the one a person joining types.
+struct PasswordScreen {
+    Language language = Language::English;
+    std::wstring password;
+    bool host = false;
+    bool wrong = false;  // the host refused the one given
+    double scale = 1;
+};
+std::wstring password_template(const PasswordScreen &screen);
+bool password_char(wchar_t ch);
+constexpr std::size_t password_length = 24;
 std::wstring name_template(const NameScreen &screen);
 
 // "a.b.c.d" or "a.b.c.d:port"; a missing port is Lobby::default_port.

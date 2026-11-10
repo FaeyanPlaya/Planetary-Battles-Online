@@ -41,6 +41,7 @@
 #include <format>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <memory>
 #include <optional>
 
@@ -89,6 +90,19 @@ struct State {
     int mods_page = 0;
     MenuKeyLatch actions;
     bool dirty = true;
+    // Over Epic Online Services (NetLink::eos): the host's room in the internet list; the join screen's look for the
+    // rooms, every 5 s, and what it found.
+    std::unique_ptr<NetLink::eos::Room> room;
+    std::unique_ptr<NetLink::eos::RoomSearch> search;
+    std::vector<NetLink::eos::RoomInfo> rooms;
+    bool rooms_searched = false;
+    std::chrono::steady_clock::time_point next_search{};
+    // The lobby's password: the host's (password_file) or the one this person joins with (join_password_file).
+    std::wstring password;
+    bool asking_password = false;  // its screen is shown over the lobby or the join screen
+    std::wstring password_typed;
+    bool password_wrong = false;
+    std::string settings_saved;  // the host's switches as last kept in their file (settings_text)
 };
 
 std::optional<State> state;
@@ -431,6 +445,8 @@ LobbyModel::Screen screen(State &s) {
     view.auto_delay = st.auto_delay;
     view.dropped_ai = st.dropped_ai;
     view.auto_resync = st.auto_resync;
+    view.delay_follows = st.delay_follows;
+    view.locked = s.mode == Mode::Host && s.host.locked();
     view.mods = mod_rows(s);
     // Mods on that cannot be on together, the battle's and this person's own: marked, and no start or ready.
     std::vector<std::string> on;
@@ -461,7 +477,10 @@ LobbyModel::Screen screen(State &s) {
                           st.map_hash.empty() || !MapCatalog::valid_path(st.map);
     }
     view.page = view.host ? s.page : LobbyModel::page_of(LobbyModel::row_of(view, view.selected));
-    view.address = s.host_address;
+    // A room's host is reached through Epic: its eos:<id> means nothing to a person.
+    view.address = !s.host_address.starts_with(L"eos:") ? s.host_address
+                   : s.language == Language::Russian   ? L"через интернет (Epic)"
+                                                       : L"over the internet (Epic)";
     view.loading = !view.host && s.client.phase() == NetLobby::Client::Phase::Loading;
     if (s.kick_asked >= int(st.people.size())) s.kick_asked = -1;  // (that person left meanwhile)
     view.kick_asked = view.host ? s.kick_asked : -1;
@@ -480,17 +499,43 @@ void release_hint() {
     hint = nullptr;
 }
 
+LobbyModel::JoinScreen join_view(const State &s) {
+    LobbyModel::JoinScreen join;
+    join.language = s.language;
+    join.address = s.typed;
+    join.connecting = s.client.phase() == NetLobby::Client::Phase::Connecting;
+    join.error = s.error;
+    join.scale = LobbyModel::scale_for(g_ScreenX, g_ScreenY);
+    join.rooms_shown = NetLink::eos::available();
+    join.searched = s.rooms_searched;
+    for (const auto &r : s.rooms) {
+        std::wstring created;
+        if (r.created > 0) {
+            const std::time_t t = std::time_t(r.created);
+            std::tm local{};
+            localtime_s(&local, &t);
+            wchar_t text[16] = {};
+            std::wcsftime(text, std::size(text), L"%H:%M", &local);
+            created = text;
+        }
+        join.rooms.push_back({r.host, r.map, r.people, r.locked, created});
+    }
+    return join;
+}
+
 void rebuild() {
     State &s = *state;
     std::wstring markup;
-    if (s.mode == Mode::Name) {
+    if (s.asking_password) {
+        markup = LobbyModel::password_template({s.language, s.password_typed, s.mode == Mode::Host, s.password_wrong,
+                                                LobbyModel::scale_for(g_ScreenX, g_ScreenY)});
+    }
+    else if (s.mode == Mode::Name) {
         markup = LobbyModel::name_template({s.language, s.name, s.name_forced, LobbyModel::scale_for(g_ScreenX, g_ScreenY)});
     }
     else if (s.mode == Mode::Join) {
         MapPreview::release();
-        markup = LobbyModel::join_template(
-            {s.language, s.typed, s.client.phase() == NetLobby::Client::Phase::Connecting, s.error,
-             LobbyModel::scale_for(g_ScreenX, g_ScreenY)});
+        markup = LobbyModel::join_template(join_view(s));
     }
     else {
         const LobbyModel::Screen view = screen(s);
@@ -506,6 +551,64 @@ void rebuild() {
     s.dirty = false;
 }
 
+constexpr const wchar_t *password_file = L"CFG\\lobby-password.txt";      // the host's
+constexpr const wchar_t *join_password_file = L"CFG\\join-password.txt";  // the last one joined with
+
+std::wstring load_text(const wchar_t *file) {
+    std::ifstream in{std::filesystem::path(file)};
+    std::string line;
+    std::getline(in, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    return utils::to_wstring(line);
+}
+
+void save_text(const wchar_t *file, const std::wstring &text) {
+    std::ofstream out{std::filesystem::path(file), std::ios::trunc};
+    out << utils::from_wstring(text) << '\n';
+}
+
+// The host's last switches (AI resources, robot control and its bonus, delay, a dropped person's side, desync,
+// the delay in the battle): the network lobby's and the single player's each in their file, read when it opens.
+const wchar_t *settings_file(const State &s) { return s.local ? L"CFG\\local-settings.txt" : L"CFG\\lobby-settings.txt"; }
+
+std::string settings_text(const Lobby::State &st) {
+    return std::format("ai={} manual={} manual_bonus={} delay={} dropped={} resync={} follow={}", st.ai_resources,
+                       st.manual_control ? 1 : 0, st.manual_bonus ? 1 : 0, st.delay, st.dropped_ai ? 1 : 0,
+                       st.auto_resync ? 1 : 0, st.delay_follows ? 1 : 0);
+}
+
+void load_settings(State &s) {
+    if (s.options.lobby_start > 0) return;  // a test's lobby (--lobby-start): its command line only
+    std::ifstream in{std::filesystem::path(settings_file(s))};
+    std::string line;
+    if (!std::getline(in, line)) return;
+    std::map<std::string, int> v;
+    std::istringstream words{line};
+    for (std::string word; words >> word;)
+        if (const auto eq = word.find('='); eq != std::string::npos) v[word.substr(0, eq)] = std::atoi(word.c_str() + eq + 1);
+    const auto st = s.host.state();
+    const auto get = [&](const char *key, int fallback) { return v.contains(key) ? v[key] : fallback; };
+    s.host.set_ai_resources(std::clamp(get("ai", st.ai_resources), 0, BattleRules::max_ai_resources));
+    s.host.set_manual(get("manual", st.manual_control) != 0, get("manual_bonus", st.manual_bonus) != 0);
+    if (!s.local) {
+        s.host.set_delay(std::max(0, get("delay", st.delay)));
+        s.host.set_dropped_ai(get("dropped", st.dropped_ai) != 0);
+        s.host.set_auto_resync(get("resync", st.auto_resync) != 0);
+        s.host.set_delay_follows(get("follow", st.delay_follows) != 0);
+    }
+    s.settings_saved = settings_text(s.host.state());
+}
+
+// Every frame of a host's lobby: its switches into their file when one changed.
+void keep_settings(State &s) {
+    if (s.options.lobby_start > 0) return;
+    const std::string now = settings_text(s.host.state());
+    if (now == s.settings_saved) return;
+    std::ofstream out{std::filesystem::path(settings_file(s)), std::ios::trunc};
+    out << now << '\n';
+    s.settings_saved = now;
+}
+
 std::wstring saved_address() {
     std::ifstream in{std::filesystem::path(address_file)};
     std::string line;
@@ -517,6 +620,7 @@ std::wstring saved_address() {
 }
 
 void save_address(const std::wstring &text) {
+    if (text.starts_with(L"eos:")) return;  // a room's host, chosen in the list: not typed
     std::ofstream out{std::filesystem::path(address_file), std::ios::trunc};
     out << utils::from_wstring(text) << '\n';
 }
@@ -613,6 +717,7 @@ JoinError join_error(NetLobby::Client::Failure failure) {
         case F::HostLeft: return JoinError::HostLeft;
         case F::Lost: return JoinError::Lost;
         case F::Kicked: return JoinError::Kicked;
+        case F::Password: return JoinError::Password;
         case F::None: break;
     }
     return JoinError::None;
@@ -628,9 +733,12 @@ void connect() {
         return;
     }
     lgr.notice("Lobby: joining {}:{}")(endpoint->address, endpoint->port);
+    s.client.set_password(Lobby::password_hash(s.password));
     // Back from a battle the host may still be reading the statistics: wait for its lobby up to ten
     // minutes (Back stops waiting).
-    s.client.connect(endpoint->address, endpoint->port, s.bonus, s.options.lobby_return ? 600000 : connect_timeout_ms,
+    // Over EOS the first connection to a person (NAT punch-through, else a relay) may take 10-20 s.
+    const int timeout_ms = NetLink::eos::is(endpoint->address) ? 30000 : connect_timeout_ms;
+    s.client.connect(endpoint->address, endpoint->port, s.bonus, s.options.lobby_return ? 600000 : timeout_ms,
                      GameData::data_fingerprint(),
                      GameData::build_fingerprint(), own_name(s), own_personal(s.values));
     s.error = JoinError::None;
@@ -823,6 +931,11 @@ void track_client(State &s) {
         if (s.client.failure() != NetLobby::Client::Failure::None) {
             MapShare::forget();
             s.error = join_error(s.client.failure());
+            if (s.error == JoinError::Password) {  // asked for it (again)
+                s.password_wrong = !s.password.empty();
+                s.password_typed = s.password;
+                s.asking_password = true;
+            }
             lgr.warning("Lobby: left the lobby ({})")(int(s.client.failure()));
             s.mode = Mode::Join;
             s.dirty = true;
@@ -860,7 +973,33 @@ void poll_network(State &s) {
             (!s.options.lobby_side || s.side_asked) &&
             LobbyModel::can_start(screen(s)))
             start_host();
+        if (state) keep_settings(s);
+        if (s.room && state) {
+            const int most = map >= 0 && s.sides[map] > 0 ? MapSides::count(unsigned(s.sides[map])) : 4;
+            s.room->set(own_name(s), map >= 0 ? s.names[map] : L"-",
+                        std::to_wstring(s.host.people()) + L"/" + std::to_wstring(most), s.host.locked());
+            s.room->pump();
+        }
         return;
+    }
+    if (s.mode == Mode::Join && NetLink::eos::available()) {
+        const auto now = std::chrono::steady_clock::now();
+        if (!s.search && now >= s.next_search)
+            s.search = std::make_unique<NetLink::eos::RoomSearch>(GameData::build_fingerprint());
+        if (s.search && s.search->poll()) {
+            const auto &found = s.search->rooms();
+            const auto same = [](const NetLink::eos::RoomInfo &a, const NetLink::eos::RoomInfo &b) {
+                return a.address == b.address && a.port == b.port && a.host == b.host && a.map == b.map &&
+                       a.people == b.people && a.locked == b.locked && a.created == b.created;
+            };
+            if (!s.rooms_searched || !std::equal(found.begin(), found.end(), s.rooms.begin(), s.rooms.end(), same)) {
+                s.rooms = found;
+                s.dirty = true;
+            }
+            s.rooms_searched = true;
+            s.search.reset();
+            s.next_search = now + std::chrono::seconds(5);
+        }
     }
     if (s.client.phase() != NetLobby::Client::Phase::Failed && s.client.poll()) s.dirty = true;
     track_client(s);
@@ -910,13 +1049,47 @@ wchar_t typed_char(uint8_t vk) {
     return 0;
 }
 
+void ask_host_password(State &s) {
+    s.asking_password = true;
+    s.password_wrong = false;
+    s.password_typed = s.password;
+    s.dirty = true;
+}
+
+void close_password(State &s) {
+    s.asking_password = false;
+    s.password_wrong = false;
+    s.dirty = true;
+}
+
+// The host's: the lobby's password from now on (kept for its next lobbies); the joining person's: connects with it.
+void save_password(State &s) {
+    s.password = s.password_typed;
+    close_password(s);
+    if (s.mode == Mode::Host) {
+        s.host.set_password(Lobby::password_hash(s.password));
+        save_text(password_file, s.password);
+        lgr.notice(s.password.empty() ? "Lobby: no password" : "Lobby: a password set");
+        return;
+    }
+    save_text(join_password_file, s.password);
+    if (s.mode == Mode::Join) connect();
+}
+
 void type(State &s, const std::wstring &text) {
+    if (s.asking_password) {
+        for (wchar_t ch : text)
+            if (LobbyModel::password_char(ch) && s.password_typed.size() < LobbyModel::password_length) s.password_typed += ch;
+        s.dirty = true;
+        return;
+    }
     if (s.mode == Mode::Name) {
         for (wchar_t ch : text)
             if (PlayerName::valid_char(ch) && s.name.size() < PlayerName::max_length) s.name += ch;
         s.dirty = true;
         return;
     }
+    if (s.typed.starts_with(L"eos:")) s.typed.clear();  // a room was chosen: typing starts an address
     for (wchar_t ch : text) {
         if (ch == L',') ch = L'.';  // the decimal key of some layouts
         if (LobbyModel::address_char(ch) && s.typed.size() < LobbyModel::address_length) s.typed += ch;
@@ -981,12 +1154,16 @@ bool open_host(const StandaloneSettings::Values &values, const NetBattle::Option
         return false;
     }
     lgr.notice("Lobby: hosting on {}:{}")(address, port);
+    s.password = options.lobby_password_given ? options.lobby_password : load_text(password_file);  // --lobby-password
+    s.host.set_password(Lobby::password_hash(s.password));
+    if (address == "0.0.0.0" && NetLink::eos::available())  // the room in the internet list
+        s.room = std::make_unique<NetLink::eos::Room>(port, GameData::build_fingerprint());
     s.listen_address = address;
     s.listen_port = port;
     if (address == "0.0.0.0") {
         // Every address of this PC (a LAN's, a VPN's or a virtual LAN's), a line each in the lobby.
         for (const auto &a : NetLink::local_addresses()) {
-            if (std::count(s.host_address.begin(), s.host_address.end(), L',') >= 3) break;
+            if (std::count(s.host_address.begin(), s.host_address.end(), L',') >= 2) break;  // three: the switches above need the room
             s.host_address += (s.host_address.empty() ? L"" : L", ") + utils::to_wstring(a) + L":" + std::to_wstring(port);
         }
         if (s.host_address.empty()) s.host_address = L"127.0.0.1:" + std::to_wstring(port);
@@ -997,7 +1174,9 @@ bool open_host(const StandaloneSettings::Values &values, const NetBattle::Option
     first_choices(s, values, options);
     if (options.delay > 0) s.host.set_delay(options.delay * Lockstep::Config{}.turn_ms);  // --net-delay
     s.host.set_dropped_ai(options.dropped_ai != 0);                                       // --net-dropped
+    s.host.set_delay_follows(options.delay_follows != 0);  // --net-delay-follows
     s.host.set_auto_resync(options.auto_resync != 0);                                     // --net-resync
+    load_settings(s);
     rebuild();
     return true;
 }
@@ -1008,6 +1187,7 @@ void open_local(const StandaloneSettings::Values &values, const NetBattle::Optio
     s.host.open_local(s.bonus, own_name(s), own_personal(values));
     lgr.notice("Lobby: a battle against the AI");
     first_choices(s, values, options);
+    load_settings(s);
     rebuild();
 }
 
@@ -1015,6 +1195,7 @@ void open_join(const StandaloneSettings::Values &values, const NetBattle::Option
     open(Mode::Join, values, options);
     State &s = *state;
     s.typed = options.lobby ? utils::to_wstring(options.address) + L":" + std::to_wstring(options.port) : saved_address();
+    s.password = options.lobby_password_given ? options.lobby_password : load_text(join_password_file);  // --lobby-password
     if (options.lobby) connect();
     rebuild();
 }
@@ -1071,6 +1252,21 @@ bool keyboard(uint8_t vk, bool down) {
     if (!s.actions.accept(vk, down)) return true;
     if (ModInfoWindow::open()) {  // a mod's window or its question: nothing else happens meanwhile
         ModInfoWindow::key(vk);
+        return true;
+    }
+    if (s.asking_password) {
+        if (vk == VK_ESCAPE) close_password(s);
+        else if (vk == VK_RETURN) save_password(s);
+        else if (vk == VK_BACK) {
+            if (!s.password_typed.empty()) s.password_typed.pop_back();
+            s.dirty = true;
+        }
+        else if (vk == 'V' && (GetKeyState(VK_CONTROL) & 0x8000)) paste(s);
+        else if (const wchar_t ch = typed_char(vk)) type(s, std::wstring(1, ch));
+        return true;
+    }
+    if (s.mode == Mode::Host && !s.local && vk == 'P') {  // the lobby's password
+        ask_host_password(s);
         return true;
     }
     if (s.mode == Mode::Name) {
@@ -1142,10 +1338,16 @@ bool mouse_down(int x, int y) {
     }
     x -= hint->m_PosX;
     y -= hint->m_PosY;
-    if (s.mode == Mode::Name || s.mode == Mode::Join) {  // drawn at the lobby's scale: hits in the layout's units
+    if (s.mode == Mode::Name || s.mode == Mode::Join || s.asking_password) {  // drawn at the lobby's scale: hits in the layout's units
         const double scale = LobbyModel::scale_for(g_ScreenX, g_ScreenY);
         x = int(std::floor(x / scale));
         y = int(std::floor(y / scale));
+    }
+    if (s.asking_password) {
+        const int action = LobbyModel::join_hit(x, y);
+        if (action == 1) save_password(s);
+        else if (action == -1) close_password(s);
+        return true;
     }
     if (s.mode == Mode::Name) {
         const int action = LobbyModel::name_hit({s.language, s.name, s.name_forced}, x, y);
@@ -1154,7 +1356,13 @@ bool mouse_down(int x, int y) {
         return true;
     }
     if (s.mode == Mode::Join) {
-        const int action = LobbyModel::join_hit(x, y);
+        const int action = LobbyModel::join_hit(join_view(s), x, y);
+        if (action >= 100 && std::size_t(action - 100) < s.rooms.size() &&
+            s.client.phase() != NetLobby::Client::Phase::Connecting) {  // a room: its host
+            const auto &room = s.rooms[std::size_t(action - 100)];
+            s.typed = utils::to_wstring(room.address) + L":" + std::to_wstring(room.port);
+            connect();
+        }
         if (action == 1) connect();
         else if (action == -1) shutdown();
         return true;
@@ -1168,6 +1376,7 @@ bool mouse_down(int x, int y) {
     }
     if (target.action == 1) primary(s);
     else if (target.action == -1) shutdown();
+    else if (target.action == 3) ask_host_password(s);
     else if (target.action == 2) {
         s.mods_view = !s.mods_view;
         s.dirty = true;
@@ -1220,6 +1429,7 @@ bool mouse_down(int x, int y) {
         if (target.manual == 1) s.host.set_manual(!st.manual_control, st.manual_bonus);
         else if (target.manual == 3) s.host.set_dropped_ai(!st.dropped_ai);
         else if (target.manual == 4) s.host.set_auto_resync(!st.auto_resync);
+        else if (target.manual == 5) s.host.set_delay_follows(!st.delay_follows);
         else if (st.manual_control) s.host.set_manual(true, !st.manual_bonus);
         s.dirty = true;
     }

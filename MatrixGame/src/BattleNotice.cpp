@@ -7,11 +7,14 @@
 #include "MatrixMap.hpp"
 #include "3g.hpp"
 #include "Text/Font.hpp"
+#include "utils.hpp"
 
 #include <chrono>
 #include <format>
 #include <utility>
 #include <vector>
+
+#include <stupid_logger.hpp>
 
 namespace BattleNotice {
 namespace {
@@ -62,6 +65,7 @@ void display(const std::wstring &text, std::uint32_t colour) {
 }  // namespace
 
 void show(const std::wstring &text, std::uint32_t colour) {
+    lgr.notice("Notice: {}")(utils::from_wstring(text));  // what the people were told, in their order
     BattleHistory::add(text, colour);
     display(text, colour);
 }

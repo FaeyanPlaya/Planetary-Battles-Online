@@ -8,6 +8,9 @@
 
 // Line-based TCP connections for battles shared over the network (Winsock, no extra libraries).
 // Every message is one line of text; sending and receiving never block once connected.
+// An address "eos:<id>" is a person reached over Epic Online Services: eos-bridge.exe beside the EXE (64-bit, as the
+// EOS SDK is) carries the stream over Epic's P2P, no VPN or open port needed; it is started when first needed and
+// outlives the game's restarts. A Listener on 0.0.0.0 takes such people too when the build has CFG\eos.txt.
 namespace NetLink {
 
 bool startup();  // WSAStartup; false when Winsock is unavailable
@@ -31,14 +34,18 @@ public:
     bool open() const { return m_Open; }
     // Bytes queued and not yet sent.
     std::size_t queued() const { return m_Out.size(); }
-    // The other end's IPv4 address; empty: unknown.
+    // The other end's IPv4 address or "eos:<id>"; empty: unknown.
     std::string remote_address() const;
+    void set_remote(std::string address) { m_Remote = std::move(address); }
 
 private:
     std::uintptr_t m_Socket;
     bool m_Open = true;
     std::string m_In, m_Out;
+    std::string m_Remote;  // set: a stream through the EOS bridge, and who is at its other end
 };
+
+class Connector;
 
 class Listener {
 public:
@@ -50,7 +57,14 @@ public:
     std::unique_ptr<Connection> accept(int timeout_ms);
 
 private:
+    std::unique_ptr<Connection> accept_eos();
+
     std::uintptr_t m_Socket;
+    int m_Port = 0;
+    // EOS: the bridge's LISTEN stream (its "ACCEPT <id> <who>" lines), while it is being reached, the next try.
+    std::unique_ptr<Connection> m_Eos;
+    std::unique_ptr<Connector> m_EosConnecting;
+    long long m_EosRetry = 0;
 };
 
 // Connects to address:port, retrying until timeout_ms passes (the host may still be starting).
@@ -70,10 +84,77 @@ public:
 private:
     std::uintptr_t m_Socket;
     bool m_Failed = false;
+    // An "eos:" address: the person and port asked for, the bridge's stream until it answers OK, the next try.
+    std::string m_Eos;
+    int m_Port = 0;
+    std::unique_ptr<Connector> m_Local;
+    std::unique_ptr<Connection> m_Link;
+    long long m_Retry = 0;
 };
 
 // Whether the text is an IPv4 address that connect and Listener take.
 bool valid_address(const std::string &address);
+
+namespace eos {
+inline constexpr std::string_view prefix = "eos:";
+// "eos:" and 32 hex digits.
+bool is(const std::string &address);
+// Whether this build can reach people over EOS (CFG\eos.txt and eos-bridge.exe beside the EXE).
+bool available();
+// This PC's "eos:<id>" once the bridge told it (asked in the background, the bridge started if needed: call it every
+// frame until it is not empty); empty without EOS.
+std::string own_address();
+
+// A host's room in the list on the internet (an EOS lobby nobody joins) while this object lives; build: only the
+// same build's join screens list it.
+class Room {
+public:
+    Room(int port, std::string build);
+    ~Room();
+    Room(const Room &) = delete;
+    Room &operator=(const Room &) = delete;
+    // What the list shows; sent when it changes (the bridge sends it on at most every 2 s).
+    void set(const std::wstring &host, const std::wstring &map, const std::wstring &people, bool locked);
+    // Every frame: reaches the bridge, sends the text.
+    void pump();
+
+private:
+    int m_Port;
+    long long m_Created;  // when the room was made: UTC seconds
+    std::string m_Build, m_Text, m_Sent;
+    std::unique_ptr<Connector> m_Connecting;
+    std::unique_ptr<Connection> m_Link;
+    bool m_Opened = false;
+    long long m_Retry = 0;
+};
+
+struct RoomInfo {
+    std::string address;  // eos:<id>
+    int port = 0;
+    std::wstring host, map, people;
+    bool locked = false;  // the lobby has a password
+    long long created = 0;  // when the host made it: UTC seconds (0: not said)
+};
+
+// One look for the rooms of a build: poll every frame until it is done (some seconds; nothing without a bridge).
+class RoomSearch {
+public:
+    explicit RoomSearch(std::string build);
+    ~RoomSearch();
+    RoomSearch(const RoomSearch &) = delete;
+    RoomSearch &operator=(const RoomSearch &) = delete;
+    bool poll();  // true once done: rooms() then
+    const std::vector<RoomInfo> &rooms() const { return m_Rooms; }
+
+private:
+    std::string m_Build;
+    std::unique_ptr<Connector> m_Connecting;
+    std::unique_ptr<Connection> m_Link;
+    std::vector<RoomInfo> m_Rooms;
+    long long m_Until, m_Retry = 0;
+    int m_Tries = 0;
+};
+}  // namespace eos
 
 // IPv4 addresses of this PC that other PCs may reach (not 127.x), for showing to people who join.
 std::vector<std::string> local_addresses();

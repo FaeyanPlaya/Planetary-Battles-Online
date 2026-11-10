@@ -79,7 +79,7 @@ class Form final : public CForm {
             const std::wstring name_label = std::wstring(text(L"( Name: ", L"( \u041d\u0438\u043a: ")) + (nick.empty() ? L"-" : nick) + L" )";
             const wchar_t *labels[ItemCount] = {
                 text(L"( Back to the battle )", L"( Вернуться в бой )"),
-                text(L"( New battle )", L"( \u041d\u043e\u0432\u0430\u044f \u0431\u0438\u0442\u0432\u0430 )"),
+                text(L"( Single player )", L"( \u041e\u0434\u0438\u043d\u043e\u0447\u043d\u0430\u044f \u0438\u0433\u0440\u0430 )"),
                 text(L"( Host a network battle )", L"( \u0421\u043e\u0437\u0434\u0430\u0442\u044c \u0441\u0435\u0442\u0435\u0432\u043e\u0439 \u0431\u043e\u0439 )"),
                 text(L"( Join a network battle )", L"( \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f \u043a \u0431\u043e\u044e )"),
                 name_label.c_str(),

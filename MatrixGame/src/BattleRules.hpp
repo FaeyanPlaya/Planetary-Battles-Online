@@ -49,6 +49,8 @@ struct Rules {
     // A person whose battle went apart from the host's starts it again and replays the host's turns (the host is
     // right); off: the desync is only reported.
     bool auto_resync = true;
+    // The delay follows the round trips during the battle (the host's watch); off: it stays as the battle began.
+    bool delay_follows = true;
     bool operator==(const Rules &) const = default;
 };
 
@@ -68,6 +70,7 @@ bool dropped_ai();
 const std::vector<std::string> &mods();
 bool verified_personal();
 bool auto_resync();
+bool delay_follows();
 
 // Rules the next battle uses whatever the person's settings say (a host's choice, a record being
 // replayed); the settings then neither choose nor change them. nullopt returns to the settings.

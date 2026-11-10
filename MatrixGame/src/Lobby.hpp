@@ -61,6 +61,7 @@ struct State {
     int delay = 0;               // ms between a command and its execution, whole turns; 0: auto (delay_turns)
     bool dropped_ai = true;      // BattleRules::Rules::dropped_ai
     bool auto_resync = true;     // BattleRules::Rules::auto_resync
+    bool delay_follows = true;   // BattleRules::Rules::delay_follows
     int auto_delay = 0;          // ms: auto's delay, measured after the people last changed (auto_delay_for); 0: measuring
     std::vector<ModRef> mods{};  // the battle's mods (BattleRules::Rules::mods)
     std::string map_pack{};      // the map's map mod, "<id>:<fingerprint>" (MapPacks::ref); empty: the game's map
@@ -99,7 +100,9 @@ std::optional<Received> from_line(std::string_view line);
 
 std::string hello_line(BattleChoice::Bonus bonus, const std::string &data, const std::string &build,
                        const std::wstring &name = {}, const std::string &rejoin = {},
-                       const std::vector<ModRef> &personal = {});
+                       const std::vector<ModRef> &personal = {}, const std::string &password = {});
+// What a hello carries of a lobby's password (not the text itself); empty for none.
+std::string password_hash(const std::wstring &password);
 struct Hello {
     int version = 0;
     BattleChoice::Bonus bonus = BattleChoice::Bonus::None;
@@ -107,6 +110,7 @@ struct Hello {
     std::wstring name;  // empty or not PlayerName::valid: none
     std::string rejoin;  // the key of a person back to the battle; empty: joins the lobby
     std::vector<ModRef> personal;
+    std::string password;  // password_hash; empty: none given
 };
 
 // A person's own mods that this build does not vouch for (Mods::verified).

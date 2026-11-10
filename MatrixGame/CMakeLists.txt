@@ -167,6 +167,28 @@ if (NOT MATRIXGAME_BUILD_DLL)
     endif ()
 endif ()
 
+# eos-bridge.exe beside the EXE (EosBridge/eos-bridge.cpp: Epic Online Services P2P; NetLink.hpp), when the EOS SDK
+# (64-bit only, so the bridge is built with a 64-bit MinGW) is there; the product's ids (EOS_IDS, never in the
+# repository) go to CFG\eos.txt.
+set(EOS_SDK_DIR ${CMAKE_SOURCE_DIR}/../vendor/eos-sdk/SDK CACHE PATH "The EOS C SDK's SDK folder")
+set(EOS_GXX ${CMAKE_SOURCE_DIR}/.tools/winlibs-13.2.0/mingw64/bin/g++.exe CACHE FILEPATH "A 64-bit MinGW g++")
+set(EOS_IDS ${CMAKE_SOURCE_DIR}/../local/eos.txt CACHE FILEPATH "The EOS product's ids")
+if (NOT MATRIXGAME_BUILD_DLL AND EXISTS ${EOS_SDK_DIR}/Include/eos_sdk.h AND EXISTS ${EOS_GXX})
+    set(EOS_BRIDGE_SOURCE ${CMAKE_SOURCE_DIR}/EosBridge/eos-bridge.cpp)
+    set(EOS_DLL ${EOS_SDK_DIR}/Bin/EOSSDK-Win64-Shipping.dll)
+    get_filename_component(EOS_GXX_BIN ${EOS_GXX} DIRECTORY)
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${EOS_GXX_BIN}" ${EOS_GXX} -std=c++20 -O2 -I${EOS_SDK_DIR}/Include
+            ${EOS_BRIDGE_SOURCE} ${EOS_DLL} -lws2_32 -static -o ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EOS_DLL} ${CMAKE_CURRENT_BINARY_DIR}
+        DEPENDS ${EOS_BRIDGE_SOURCE}
+        COMMENT "Building eos-bridge.exe (64-bit)")
+    add_custom_target(EosBridge ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe)
+    if (EXISTS ${EOS_IDS})
+        configure_file(${EOS_IDS} ${CMAKE_CURRENT_BINARY_DIR}/CFG/eos.txt COPYONLY)
+    endif ()
+endif ()
+
 # The mods folder beside the EXE. Our mods of it (mods/<id> here; games/space-rangers-hd/MODS-DESIGN.md): each a DLL
 # over PBOEngine and its mod.txt in mods/<id> beside the EXE; the EXE carries the fingerprints of the personal ones
 # (Mods::verified), written by ModHash once they are built. The engine runs their code through ModHooks.hpp.

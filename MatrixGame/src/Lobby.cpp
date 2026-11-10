@@ -98,9 +98,9 @@ std::string to_line(const State &state, int you) {
         pings += (pings.empty() ? "" : ",") + (p.ping >= 0 ? std::to_string(p.ping) : std::string("-"));
         personal += (personal.empty() ? "" : "|") + mods_text(p.personal, ';');
     }
-    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} resync={} auto={} people={} pings={} maphash={} mods={} mappack={} verified={} personal={} map={}",
+    return std::format("lobby you={} ai={} manual={} manual_bonus={} delay={} dropped={} resync={} follow={} auto={} people={} pings={} maphash={} mods={} mappack={} verified={} personal={} map={}",
                        you, state.ai_resources, state.manual_control ? 1 : 0, state.manual_bonus ? 1 : 0, state.delay,
-                       state.dropped_ai ? "ai" : "idle", state.auto_resync ? "on" : "off", state.auto_delay, people, pings,
+                       state.dropped_ai ? "ai" : "idle", state.auto_resync ? "on" : "off", state.delay_follows ? "on" : "off", state.auto_delay, people, pings,
                        state.map_hash.empty() ? "-" : state.map_hash, mods_text(state.mods, ','),
                        state.map_pack.empty() ? "-" : state.map_pack, state.verified_only ? 1 : 0,
                        personal.empty() ? "-" : personal, utils::from_wstring(state.map));
@@ -188,6 +188,11 @@ std::optional<Received> from_line(std::string_view line) {
             r.state.auto_resync = value == "on";
             continue;  // optional
         }
+        else if (key == "follow") {
+            if (value != "on" && value != "off") return std::nullopt;
+            r.state.delay_follows = value == "on";
+            continue;  // optional
+        }
         else if (key == "pings") {
             pings = value;
             continue;  // optional
@@ -249,10 +254,20 @@ std::optional<Received> from_line(std::string_view line) {
 }
 
 std::string hello_line(BattleChoice::Bonus bonus, const std::string &data, const std::string &build,
-                       const std::wstring &name, const std::string &rejoin, const std::vector<ModRef> &personal) {
-    return std::format("hello pbo {} bonus={} data={} build={} name={}{}{}", protocol_version, BattleRules::bonus_name(bonus),
+                       const std::wstring &name, const std::string &rejoin, const std::vector<ModRef> &personal,
+                       const std::string &password) {
+    return std::format("hello pbo {} bonus={} data={} build={} name={}{}{}{}", protocol_version, BattleRules::bonus_name(bonus),
                        data, build, encode_name(name), rejoin.empty() ? std::string() : " rejoin=" + rejoin,
-                       personal.empty() ? std::string() : " personal=" + mods_text(personal, ';'));
+                       personal.empty() ? std::string() : " personal=" + mods_text(personal, ';'),
+                       password.empty() ? std::string() : " password=" + password);
+}
+
+std::string password_hash(const std::wstring &password) {
+    if (password.empty()) return {};
+    std::uint64_t h = 14695981039346656037ull;  // FNV-1a over "pbo-room:" and the text
+    for (const char ch : std::string_view("pbo-room:")) h = (h ^ std::uint8_t(ch)) * 1099511628211ull;
+    for (const wchar_t ch : password) h = (h ^ std::uint16_t(ch)) * 1099511628211ull;
+    return std::format("{:016x}", h);
 }
 
 std::optional<Hello> parse_hello(std::string_view line) {
@@ -274,6 +289,7 @@ std::optional<Hello> parse_hello(std::string_view line) {
         else if (pair.starts_with("build=")) hello.build = pair.substr(6);
         else if (pair.starts_with("name=")) hello.name = decode_name(pair.substr(5));
         else if (pair.starts_with("rejoin=")) hello.rejoin = pair.substr(7);
+        else if (pair.starts_with("password=")) hello.password = pair.substr(9);
         else if (pair.starts_with("personal=")) {
             if (auto mods = parse_mods(pair.substr(9), ';')) hello.personal = std::move(*mods);
         }

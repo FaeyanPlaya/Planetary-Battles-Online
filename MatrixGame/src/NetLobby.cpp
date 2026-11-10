@@ -78,6 +78,10 @@ bool Host::poll() {
                 refuse(link, "data");
                 m_Events.push_back("refused a client with other game files " + hello->data);
             }
+            else if (!m_Password.empty() && hello->password != m_Password) {
+                refuse(link, "password");
+                m_Events.push_back("refused a client: no or another password");
+            }
             else if (people() >= Lobby::max_people) {
                 refuse(link, "full");
                 m_Events.push_back("refused a client: the lobby is full");
@@ -377,6 +381,12 @@ void Host::set_auto_resync(bool on) {
     publish();
 }
 
+void Host::set_delay_follows(bool on) {
+    if (on == m_State.delay_follows) return;
+    m_State.delay_follows = on;
+    publish();
+}
+
 void Host::set_mods(const std::vector<Lobby::ModRef> &mods) {
     if (mods == m_State.mods) return;
     m_State.mods = mods;
@@ -459,7 +469,7 @@ bool Client::poll() {
             if (auto link = m_Connector->poll()) {
                 m_Link = std::move(link);
                 m_Connector.reset();
-                m_Link->send_line(Lobby::hello_line(m_Bonus, m_Data, m_Build, m_Name, {}, m_Personal));
+                m_Link->send_line(Lobby::hello_line(m_Bonus, m_Data, m_Build, m_Name, {}, m_Personal, m_Password));
             }
             else if (m_Connector->failed()) {
                 m_Connector.reset();
@@ -492,7 +502,8 @@ bool Client::poll() {
             changed = true;
         }
         else if (line.starts_with("refused")) {
-            fail(line.find("kicked") != std::string::npos    ? Failure::Kicked
+            fail(line.find("password") != std::string::npos ? Failure::Password
+                 : line.find("kicked") != std::string::npos    ? Failure::Kicked
                  : line.find("name") != std::string::npos    ? Failure::Name
                  : line.find("full") != std::string::npos    ? Failure::Full
                  : line.find("version") != std::string::npos ? Failure::Version

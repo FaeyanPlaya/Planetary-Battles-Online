@@ -239,6 +239,7 @@ struct Battle {
     std::chrono::steady_clock::time_point clock;
     std::chrono::steady_clock::time_point last_advance;  // for the slow-frame note
     bool host_left_early = false;  // a client's host went before the battle was decided
+    bool eos_sent = false;         // a client's eos:<id> went to the host (NetLink::eos::own_address)
     int test_turret_building = 0;  // --net-test-turret: the building it ordered turrets at
     int test_drive_robot = 0;      // --net-test-drive: the robot it drives
     int budget_ms = 0;  // game time the real clock allows this iteration
@@ -276,6 +277,7 @@ struct Battle {
     bool catching = false;          // client: replaying the battle to come back into it
     bool muted = false;             // the sound is off while replaying
     Time catch_frame{};             // when this iteration's replay began
+    Time caught_at{};               // client: the replay reached the last turn known then (held back from it a while)
     // The host gone (client), the battle holding: a relay is looked for, the old host's place and the deputies (every
     // other person, in side order) in turn; on a connection made the takeover line goes, its answer awaited (asking).
     struct Asking {
@@ -312,6 +314,12 @@ struct Battle {
     std::map<int, Time> pings_sent;
     std::vector<std::deque<int>> round_trips;
     Time lower_since{};
+    Time fps_noted{};  // the frame rate notes: since then, from that battle time, the longest frame meanwhile
+    int fps_noted_at = 0;
+    int slowest_frame = 0;
+    int stalled_frames = 0;  // frames that waited for a turn meanwhile (a step was due, its turn not known)
+    bool stalled_now = false;
+    Time delay_watch_from{};  // host: the delay follows the round trips from then on
     int shown_delay = 0;  // the delay last said in a notice
     std::deque<std::tuple<Time, int, std::string>> lagged;  // --net-test-lag: lines held back, in order
 
@@ -386,9 +394,11 @@ void route(Battle &b) {
     }
 }
 
-// Host: the delay follows the round trips to the clients. Each peer's second slowest of its last six (one stray
-// spike is not a lag) gives Lobby::auto_delay_for; a longer delay than now takes hold at once, a shorter one after
-// 10 s without a reason for more, a turn at a time. A delay chosen in the lobby is the least.
+// Host: the delay follows the round trips to the clients (unless the lobby's host turned that off: it stays as the
+// battle began). Each peer's second slowest of its last six (one stray spike is not a lag) gives
+// Lobby::auto_delay_for; a longer delay than now takes hold at once, a shorter one only after 30 s without a reason
+// for more, a turn at a time, so that it does not go up and down. The first 5 s (the loading's stalls) do not count.
+// A delay chosen in the lobby is the least.
 void watch_delay(Battle &b) {
     const auto t = std::chrono::steady_clock::now();
     for (const auto &[peer, id] : b.session.take_pongs()) {
@@ -406,6 +416,9 @@ void watch_delay(Battle &b) {
         b.session.ping(b.ping_id);
         std::erase_if(b.pings_sent, [&](const auto &p) { return t - p.second > std::chrono::seconds(10); });
     }
+    if (!BattleRules::delay_follows()) return;
+    if (b.delay_watch_from == Battle::Time{}) b.delay_watch_from = t + std::chrono::seconds(5);
+    if (t < b.delay_watch_from) return;
     int slowest = 0;
     for (std::size_t i = 0; i < b.round_trips.size(); ++i) {
         if (!b.session.peer_live(int(i)) || b.session.peer_catching_up(int(i))) {
@@ -428,7 +441,7 @@ void watch_delay(Battle &b) {
     }
     else if (wanted < now) {
         if (b.lower_since == Battle::Time{}) b.lower_since = t;
-        else if (t - b.lower_since >= std::chrono::seconds(10)) {
+        else if (t - b.lower_since >= std::chrono::seconds(30)) {
             note(b, std::format("round trips up to {} ms: the delay comes down to {} ms", slowest, (now - 1) * turn));
             b.session.set_delay(now - 1);
             b.lower_since = t;
@@ -693,8 +706,30 @@ void poll_coming_back(Battle &b) {
     }
 }
 
+// The host's: a client's own address over Epic Online Services. It is the one the others get for it (the people
+// line): a deputy in the host's place is then reached by everyone, whether each came in over a LAN, a VPN or EOS.
+void take_eos(Battle &b, int peer, const std::string &address) {
+    if (b.options.role != Role::Host || !NetLink::eos::is(address)) return;
+    const int side = b.session.peer_side(peer);
+    // 127.x: on the host's own PC (a test's copies share one EOS identity there).
+    if (side < 1 || b.addresses[side] == address || b.addresses[side].starts_with("127.")) return;
+    b.addresses[side] = address;
+    note(b, std::format("side {} is also at {}", side, address));
+    send_people(b);
+}
+
+// A client's: its own address over EOS to the host, once the bridge told it.
+void send_own_eos(Battle &b) {
+    if (b.eos_sent || b.options.role != Role::Client || g_links.empty() || !g_links[0]) return;
+    const std::string own = NetLink::eos::own_address();
+    if (own.empty()) return;
+    g_links[0]->send_line("eos " + own);
+    b.eos_sent = true;
+}
+
 void pump(Battle &b) {
     poll_coming_back(b);
+    send_own_eos(b);
     const bool was_started = b.session.started();
     for (int pass = 0; pass < 2; ++pass) {  // received turns can make the host send at once
         route(b);
@@ -705,6 +740,7 @@ void pump(Battle &b) {
             std::string line;
             while (link->next_line(line)) {
                 if (line.starts_with("people ")) take_people(b, line);
+                else if (line.starts_with("eos ")) take_eos(b, int(i), line.substr(4));
                 else b.session.receive(int(i), line);
             }
             if (!open) {
@@ -732,7 +768,7 @@ void pump(Battle &b) {
         catch (...) {
             continue;
         }
-        note(b, std::format("chat side {}: {}", side, text));
+        // (What people write is theirs: no log or trace keeps it.)
         BattleChat::show(side, side_name(b, side), wide, russian());
     }
     bool title = b.session.started() != was_started;
@@ -958,6 +994,7 @@ Loop::Clock::time_point loop_now(void *context) {
     // A long stall (window dragged, peers waiting) is not made up for at once.
     b.budget_ms = std::min<int>(b.budget_ms + int(std::min<long long>(elapsed, 250)), 250);
     b.steps = 0;
+    b.stalled_now = false;
     b.catch_frame = now;
     return Loop::Clock::now();
 }
@@ -1040,6 +1077,13 @@ void watch_host_gone(Battle &b) {
     if (b.gone_since == Battle::Time{}) {
         b.gone_since = t;
         b.gone_host = b.session.peer_side(0);
+        // Said here at once: the relay's own word of it comes in a later turn, after the battle went on (then not said
+        // again: gone_sides).
+        if (!(b.gone_sides & (1u << b.gone_host)) && !b.catching) {
+            b.gone_sides |= 1u << b.gone_host;
+            const bool ru = russian();
+            BattleNotice::show(person_of(b, b.gone_host, ru) + (ru ? L" потерял связь" : L" lost the connection"));
+        }
         // A battle over, not begun or without the people's addresses: nothing to hold it for.
         if (b.decided || !b.session.started() || b.addresses.empty()) {
             play_alone(b, b.decided ? "the battle is decided" : !b.session.started() ? "it had not begun" : "no addresses");
@@ -1090,10 +1134,13 @@ void watch_host_gone(Battle &b) {
             ask(std::move(link), 0, b.host_address, b.base_port);
             return;
         }
-        if (b.to_host->failed() || t - b.to_host_at > std::chrono::seconds(3)) b.to_host.reset();
+        if (b.to_host->failed() || t - b.to_host_at > std::chrono::seconds(NetLink::eos::is(b.host_address) ? 20 : 3))
+            b.to_host.reset();
     }
     if (!b.deputies.empty()) {
-        if (t - b.trying_since >= std::chrono::seconds(10)) {
+        // Over EOS a first connection to a person may take 10-20 s (NAT punch-through, else a relay).
+        const bool over_eos = NetLink::eos::is(b.addresses[b.deputies[b.trying]]);
+        if (t - b.trying_since >= std::chrono::seconds(over_eos ? 30 : 10)) {
             b.connector.reset();
             if (++b.trying >= b.deputies.size()) {
                 b.trying = 0;
@@ -1113,7 +1160,7 @@ void watch_host_gone(Battle &b) {
                 ask(std::move(link), side, address, b.base_port + side);
                 return;
             }
-            if (b.connector->failed() || t - b.connector_at > std::chrono::seconds(3)) b.connector.reset();
+            if (b.connector->failed() || t - b.connector_at > std::chrono::seconds(over_eos ? 25 : 3)) b.connector.reset();
         }
     }
     const std::size_t before = std::size_t(std::count_if(b.deputies.begin(), b.deputies.end(), [&](int s) { return s < b.start.side; }));
@@ -1520,12 +1567,23 @@ bool catch_up(Battle &b, int now) {
         return false;
     }
     const bool can = b.session.can_step(now);
-    if (can && std::chrono::steady_clock::now() - b.catch_frame < catch_up_slice) {
+    if (can && b.caught_at == Battle::Time{} && std::chrono::steady_clock::now() - b.catch_frame < catch_up_slice) {
         ++b.steps;
         return true;
     }
     const int history = b.session.history_turn();
-    if (!can && history >= 0 && b.session.known_turn() >= history) {
+    if (b.caught_at != Battle::Time{} || (!can && history >= 0 && b.session.known_turn() >= history)) {
+        // At the last turn known: the others are a delay of turns behind it (each closes its own turns that far
+        // ahead). Going on from here this person would wait for every next turn to come and the battle would move in
+        // jerks; it stands still while the others come up to it (less a turn for the way here).
+        const auto t = std::chrono::steady_clock::now();
+        if (b.caught_at == Battle::Time{}) b.caught_at = t;
+        if (t - b.caught_at < std::chrono::milliseconds((b.session.delay() - 1) * b.start.config.turn_ms)) {
+            BattleWait::Window w;
+            w.catching_up = 99;
+            BattleWait::show(w, russian());
+            return false;
+        }
         b.session.caught();
         finish_catching(b, now);
         return false;
@@ -1548,7 +1606,28 @@ bool loop_advance(void *context) {
     if (const auto gap = std::chrono::duration_cast<std::chrono::milliseconds>(real - b.last_advance).count();
         b.last_time >= 0 && gap >= 150 && !b.catching)
         note(b, std::format("slow frame: {} ms before t={}", gap, now));
+    if (b.last_time >= 0 && !b.catching)
+        b.slowest_frame = std::max(b.slowest_frame,
+                                   int(std::chrono::duration_cast<std::chrono::milliseconds>(real - b.last_advance).count()));
     b.last_advance = real;
+    // Every 10 s, for lag reports: the frame rate, the longest frame and how fast the battle's time went.
+    if (b.catching) b.fps_noted = {};
+    else if (b.fps_noted == Battle::Time{}) {
+        b.fps_noted = real;
+        b.fps_noted_at = now;
+    }
+    else if (real - b.fps_noted >= std::chrono::seconds(10)) {
+        const auto real_ms = std::chrono::duration_cast<std::chrono::milliseconds>(real - b.fps_noted).count();
+        const int lead = (b.session.known_turn() + 1) * b.start.config.turn_ms - now;
+        note(b, std::format("fps {}, longest frame {} ms, {} frames waited for a turn, {} ms of turns ahead, battle time "
+                            "at {}% of real time",
+                            g_DrawFPS, b.slowest_frame, b.stalled_frames, lead,
+                            real_ms > 0 ? (now - b.fps_noted_at) * 100 / real_ms : 0));
+        b.stalled_frames = 0;
+        b.fps_noted = real;
+        b.fps_noted_at = now;
+        b.slowest_frame = 0;
+    }
     if (now != b.last_time) {
         b.last_time = now;
         stepped(b, now);
@@ -1627,6 +1706,8 @@ bool loop_advance(void *context) {
     const int most = b.options.fast ? 10 : 25;
     if (b.steps >= most || (!b.options.fast && b.budget_ms < step)) return false;
     if (!b.session.can_step(now)) {
+        if (!b.stalled_now && b.session.started()) ++b.stalled_frames;
+        b.stalled_now = true;
         // Waiting for a peer: the time lost is not made up for later beyond one turn.
         b.budget_ms = std::min(b.budget_ms, b.start.config.turn_ms);
         return false;
@@ -1720,6 +1801,11 @@ Options parse(std::vector<std::wstring_view> &arguments) {
             if (v != L"on" && v != L"off") throw std::runtime_error("--net-resync takes on or off");
             o.auto_resync = v == L"on" ? 1 : 0;
         }
+        else if (a == L"--net-delay-follows") {
+            const std::wstring_view v = value();
+            if (v != L"on" && v != L"off") throw std::runtime_error("--net-delay-follows takes on or off");
+            o.delay_follows = v == L"on" ? 1 : 0;
+        }
         else if (a == L"--net-dropped") {
             const std::wstring v(value());
             if (v != L"ai" && v != L"idle") throw std::runtime_error("--net-dropped takes ai or idle");
@@ -1742,6 +1828,10 @@ Options parse(std::vector<std::wstring_view> &arguments) {
         else if (a == L"--lobby-return") o.lobby_return = true;
         else if (a == L"--lobby-test-size") o.lobby_test_size = parse_pair(value(), "--lobby-test-size");
         else if (a == L"--lobby-side") o.lobby_side = std::clamp(parse_int(value(), "lobby side"), 1, BattleRules::side_count);
+        else if (a == L"--lobby-password") {
+            o.lobby_password = value();
+            o.lobby_password_given = true;
+        }
         else if (a == L"--lobby-name") {
             o.lobby_name = value();
             if (!PlayerName::valid(o.lobby_name)) throw std::runtime_error("Not a valid player name on the command line");
@@ -1922,7 +2012,7 @@ std::optional<Start> connect_host_back(const Options &options, const StandaloneS
     const std::wstring name = !options.lobby_name.empty() ? options.lobby_name : PlayerName::load();
     for (const auto &[side, address] : ticket->addresses) {
         if (side == ticket->side) continue;
-        auto link = NetLink::connect(address, ticket->port + side, 1500);
+        auto link = NetLink::connect(address, ticket->port + side, NetLink::eos::is(address) ? 20000 : 1500);
         if (!link) continue;
         link->send_line(Lobby::hello_line(settings.battle_bonus, GameData::data_fingerprint(), GameData::build_fingerprint(),
                                           name, ticket->key));
@@ -2075,6 +2165,7 @@ std::optional<Start> connect(const Options &options, const StandaloneSettings::V
         start.rules.manual_bonus = options.manual_bonus != 0;
         start.rules.dropped_ai = options.dropped_ai != 0;
         start.rules.auto_resync = options.auto_resync != 0;
+        start.rules.delay_follows = options.delay_follows != 0;
         if (options.mods) start.rules.mods = *options.mods;
         start.rules.bonus.fill(BattleChoice::Bonus::None);
         start.rules.bonus[0] = settings.battle_bonus;  // the host plays side 1
@@ -2157,6 +2248,7 @@ Start lobby_start(const Lobby::State &state, const std::vector<int> &sides, cons
     start.rules.manual_bonus = state.manual_bonus;
     start.rules.dropped_ai = state.dropped_ai;
     start.rules.auto_resync = state.auto_resync;
+    start.rules.delay_follows = state.delay_follows;
     start.rules.mods.clear();
     for (const Lobby::ModRef &mod : state.mods) start.rules.mods.push_back(mod.id);
     start.rules.verified_personal = state.verified_only;

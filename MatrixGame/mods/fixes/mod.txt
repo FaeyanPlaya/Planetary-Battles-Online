@@ -2,14 +2,31 @@
 # a robot whose capture is held up (the original killed it and closed the base).
 # StopInPlace: Stop halts each robot where it stands (the original sent the group on to free places round
 # its centre).
+# The other battle fixes of PBEngine's list are already in this engine's source, mod or not: the bomb's blast from
+# the robot's centre (CMatrixRobotAI::BigBoom: GetGeoCenter), the Firewall's BOMB_PROTECT on WEAPON_BIGBOOM
+# (CMatrixRobot::Damage), a mortar shell exploding at its path's end (CTrajectory::CalcPoint clamps, MO_Bomb_Takt),
+# the flamethrower's reach from its range with the Locator (ModifyDist before CreateFlame), the radar round the
+# driven robot (DrawRadar).
 Name=Исправления боя
 NameEn=Battle fixes
-Description=Исправления ошибок оригинального боя.
+Description=Исправления ошибок оригинального боя, все исправления боя из PBEngine.
 Description=- Робот, захватывающий базу, больше не погибает через 10 секунд, если захват задержался (в оригинале его убивал лимит для застрявших на лифте новых роботов, а база закрывалась).
 Description=- По команде «Стоп» каждый робот останавливается там, где стоит (в оригинале группа разъезжалась по свободным местам вокруг своего центра).
-DescriptionEn=Fixes of the original battle's mistakes.
+Description=Уже исправлено в самом движке, работает и без этого мода:
+Description=- Взрыв бомбы считается из центра робота, поэтому на возвышенностях и над водой тоже.
+Description=- Фаервол защищает и от взрыва бомбы, а не только от снарядов миномёта.
+Description=- Снаряд миномёта, выпущенный очень высоко, не зависает в воздухе: он взрывается в конце пути.
+Description=- На дальность огнемёта действуют значение из настроек игры и Локатор.
+Description=- В ручном управлении радар показывает обстановку вокруг робота, а не камеры.
+DescriptionEn=Fixes of the original battle's mistakes, all of PBEngine's battle fixes.
 DescriptionEn=- A robot capturing a base no longer dies after 10 seconds when the capture is held up (the original's limit for new robots stuck on a lift killed it and closed the base).
 DescriptionEn=- On Stop each robot halts where it stands (the original sent the group on to free places round its centre).
+DescriptionEn=Already fixed in the engine itself, with or without this mod:
+DescriptionEn=- A bomb's blast is counted from the robot's centre, so on heights and over water too.
+DescriptionEn=- The Firewall protects from bomb blasts too, not only from mortar shells.
+DescriptionEn=- A mortar shell fired very high does not hang in the air: it explodes at its path's end.
+DescriptionEn=- The flamethrower's reach follows the game's settings and the Locator.
+DescriptionEn=- In direct control the radar shows the area round the robot, not round the camera.
 Author=Planetary Battles Online
 Kind=battle
 Default=on

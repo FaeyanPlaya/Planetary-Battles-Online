@@ -262,7 +262,7 @@ const std::vector<Line> &separators() {
         {Layout::preview_x, 372, Layout::preview_width, false},                   // map info | direct control
         {Layout::people_x, 184, Layout::people_width, false},                     // people | bonus
         {Layout::people_x, 290, Layout::people_width, false},                     // bonus | AI resources, delay
-        {Layout::people_x, 352, Layout::people_width, false},                     // delay | address
+        {Layout::people_x, Layout::address_y - 4, Layout::people_width, false},   // delay | address
         {Layout::list_x, 500, Layout::width - 2 * Layout::list_x, false},         // over the status
         {Layout::list_x, 558, Layout::width - 2 * Layout::list_x, false},         // over the buttons
         {Layout::people_x, 0, Layout::people_width, false},                       // addresses | personal mods (y: personal_line_y)
@@ -275,11 +275,19 @@ std::wstring line_bitmap(int index) { return L"LobbyLine" + std::to_wstring(inde
 std::wstring toggle_bitmap(bool on) { return on ? L"LobbyToggleOn" : L"LobbyToggleOff"; }
 std::wstring info_bitmap() { return L"LobbyInfo"; }
 
+int button_x(const Screen &s, Button button) {
+    const bool four = s.host && !s.local;
+    const int n = four ? 4 : 3, i = int(button) - (four ? 0 : 1);
+    return Layout::width / 2 + (2 * i - (n - 1)) * Layout::button_step / 2 - Layout::button_width / 2;
+}
+
 Hit hit(const Screen &s, int x, int y) {
     if (y >= Layout::buttons_y && y < Layout::buttons_y + Layout::row_height) {
-        if (x >= Layout::primary_x && x < Layout::primary_x + Layout::button_width) return {.action = 1};
-        if (x >= Layout::leave_x && x < Layout::leave_x + Layout::button_width) return {.action = -1};
-        if (x >= Layout::mods_x && x < Layout::mods_x + Layout::button_width) return {.action = 2};
+        const auto on = [&](Button b) { return x >= button_x(s, b) && x < button_x(s, b) + Layout::button_width; };
+        if (on(Button::Primary)) return {.action = 1};
+        if (on(Button::Leave)) return {.action = -1};
+        if (on(Button::Mods)) return {.action = 2};
+        if (s.host && !s.local && on(Button::Password)) return {.action = 3};
         return {};
     }
     if (x >= Layout::people_x && x < Layout::people_x + Layout::people_width) {
@@ -310,6 +318,7 @@ Hit hit(const Screen &s, int x, int y) {
             if (x < Layout::people_x + Layout::pager_width) return {.delay = -1};
             if (x >= Layout::people_x + Layout::people_width - Layout::pager_width) return {.delay = 1};
         }
+        if (!s.local && y >= Layout::follow_y && y < Layout::follow_y + Layout::row_height) return {.manual = 5};
         return {};
     }
     if (x >= Layout::preview_x && x < Layout::preview_x + Layout::preview_width + 12) {
@@ -490,8 +499,9 @@ std::wstring mod_row(const Screen &s, const ModRow &mod, int x, int width, int y
 std::wstring hint_template(const Screen &s) {
     const Language l = s.language;
     std::wstring result = frame(px(s, Layout::width), px(s, Layout::content_height));
-    result += el(s, s.local  ? text(l, L"New battle", L"\u041d\u043e\u0432\u0430\u044f \u0431\u0438\u0442\u0432\u0430")
-                    : s.host ? text(l, L"Network battle: you are the host", L"\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u0431\u043e\u0439: \u0432\u044b \u0445\u043e\u0441\u0442")
+    result += el(s, s.local  ? text(l, L"Single player", L"\u041e\u0434\u0438\u043d\u043e\u0447\u043d\u0430\u044f \u0438\u0433\u0440\u0430")
+                    : s.host ? std::wstring(text(l, L"Network battle: you are the host", L"\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u0431\u043e\u0439: \u0432\u044b \u0445\u043e\u0441\u0442")) +
+                                   (s.locked ? text(l, L" (password)", L" (\u0441 \u043f\u0430\u0440\u043e\u043b\u0435\u043c)") : L"")
                              : text(l, L"Network battle", L"\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u0431\u043e\u0439"),
                  L"Font.2Ranger", text_color(), 0, Layout::title_y, Layout::width, 1);
 
@@ -697,6 +707,10 @@ std::wstring hint_template(const Screen &s) {
         }
         result += el(s, delay_label(l, s.delay, auto_delay_ms(s)), L"Font.2Small", text_color(), Layout::people_x + Layout::pager_width,
                      Layout::delay_y, Layout::people_width - 2 * Layout::pager_width, 1);
+        result += el(s, s.delay_follows ? text(l, L"In the battle: follows the pings", L"\u0412 \u0431\u043e\u044e: \u043f\u043e\u0434\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u043f\u043e\u0434 \u043f\u0438\u043d\u0433")
+                                        : text(l, L"In the battle: stays", L"\u0412 \u0431\u043e\u044e: \u043d\u0435 \u043c\u0435\u043d\u044f\u0435\u0442\u0441\u044f"),
+                     L"Font.2Small", s.host ? selected_color() : text_color(), Layout::people_x + Layout::pager_width, Layout::follow_y,
+                     Layout::people_width - 2 * Layout::pager_width, 1);
 
         result += el(s, s.host ? text(l, L"Join at:", L"\u0410\u0434\u0440\u0435\u0441:") : text(l, L"Host:", L"\u0425\u043e\u0441\u0442:"),
                      L"Font.2Small", text_color(), Layout::people_x, Layout::address_y + 2, Layout::address_label_width, 0);
@@ -720,8 +734,8 @@ std::wstring hint_template(const Screen &s) {
                                             : text(l, L"Arrows: map.", L"\u0421\u0442\u0440\u0435\u043b\u043a\u0438: \u043a\u0430\u0440\u0442\u0430.");
     result += el(s, s.local  ? arrows + text(l, L" S: side. 1-3: bonus. M: mods. Enter: start. Esc: leave",
                                              L" S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. M: \u043c\u043e\u0434\u044b. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438")
-                    : s.host ? arrows + text(l, L" S: side. 1-3: bonus. Enter: start. Esc: leave. Click a name: send away",
-                                             L" S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438. \u041a\u043b\u0438\u043a \u043f\u043e \u043d\u0438\u043a\u0443: \u0432\u044b\u0433\u043d\u0430\u0442\u044c")
+                    : s.host ? arrows + text(l, L" S: side. 1-3: bonus. P: password. Enter: start. Esc: leave. Click a name: send away",
+                                             L" S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. P: \u043f\u0430\u0440\u043e\u043b\u044c. Enter: \u043d\u0430\u0447\u0430\u0442\u044c. Esc: \u0432\u044b\u0439\u0442\u0438. \u041a\u043b\u0438\u043a \u043f\u043e \u043d\u0438\u043a\u0443: \u0432\u044b\u0433\u043d\u0430\u0442\u044c")
                              : text(l, L"S: side. 1-3: bonus. Enter: ready. Esc: leave. List headers: order",
                                     L"S: \u0441\u0442\u043e\u0440\u043e\u043d\u0430. 1-3: \u0431\u043e\u043d\u0443\u0441. Enter: \u0433\u043e\u0442\u043e\u0432. Esc: \u0432\u044b\u0439\u0442\u0438. \u0417\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0438 \u0441\u043f\u0438\u0441\u043a\u0430: \u0441\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430"),
                  L"Font.2Small", legend_color(), Layout::list_x, Layout::legend_y, Layout::width - 2 * Layout::list_x, 0);
@@ -742,11 +756,14 @@ std::wstring hint_template(const Screen &s) {
     for (int i = 0; i < battle_rows(s); ++i) on += s.mods[std::size_t(i)].on ? 1 : 0;  // battle mods (not the switch)
     result += el(s, s.mods_view ? std::wstring(text(l, L"( Maps )", L"( \u041a\u0430\u0440\u0442\u044b )"))
                                 : text(l, L"( Mods: ", L"( \u041c\u043e\u0434\u044b: ") + std::to_wstring(on) + L" )",
-                 L"Font.2Normal", mods_fine(s) ? selected_color() : error_color(), Layout::mods_x, Layout::buttons_y,
+                 L"Font.2Normal", mods_fine(s) ? selected_color() : error_color(), button_x(s, Button::Mods), Layout::buttons_y,
                  Layout::button_width, 1);
-    result += el(s, primary, L"Font.2Normal", enabled ? selected_color() : disabled_color(), Layout::primary_x,
+    if (s.host && !s.local)
+        result += el(s, text(l, L"( Password )", L"( Пароль )"), L"Font.2Normal", selected_color(), button_x(s, Button::Password),
+                     Layout::buttons_y, Layout::button_width, 1);
+    result += el(s, primary, L"Font.2Normal", enabled ? selected_color() : disabled_color(), button_x(s, Button::Primary),
                  Layout::buttons_y, Layout::button_width, 1);
-    result += el(s, text(l, L"( Leave )", L"( \u0412\u044b\u0439\u0442\u0438 )"), L"Font.2Normal", selected_color(), Layout::leave_x,
+    result += el(s, text(l, L"( Leave )", L"( \u0412\u044b\u0439\u0442\u0438 )"), L"Font.2Normal", selected_color(), button_x(s, Button::Leave),
                  Layout::buttons_y, Layout::button_width, 1);
     // The lines are centred on their place; the window makes their bitmaps (none in tests: no line). Without a
     // network nothing is under the AI's economy: no line there.
@@ -765,6 +782,16 @@ int join_hit(int x, int y) {
     if (x >= JoinLayout::connect_x && x < JoinLayout::connect_x + JoinLayout::button_width) return 1;
     if (x >= JoinLayout::back_x && x < JoinLayout::back_x + JoinLayout::button_width) return -1;
     return 0;
+}
+
+int join_hit(const JoinScreen &s, int x, int y) {
+    if (!s.rooms_shown) return join_hit(x, y);
+    const int first = JoinLayout::rooms_y + JoinLayout::room_step;  // under the header row
+    const int row = (y - first) / JoinLayout::room_step;
+    if (y >= first && row < int(std::min<std::size_t>(s.rooms.size(), JoinLayout::max_rooms)) && x >= 40 &&
+        x < JoinLayout::width - 40)
+        return 100 + row;
+    return join_hit(x, y - JoinLayout::rooms_height);
 }
 
 std::wstring join_error_text(Language l, JoinError error) {
@@ -788,6 +815,8 @@ std::wstring join_error_text(Language l, JoinError error) {
         case JoinError::Busy:
             return text(l, L"Cannot open a lobby: is another one running on this PC?",
                         L"\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0442\u043a\u0440\u044b\u0442\u044c \u043b\u043e\u0431\u0431\u0438: \u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e, \u043e\u043d\u043e \u0443\u0436\u0435 \u043e\u0442\u043a\u0440\u044b\u0442\u043e \u043d\u0430 \u044d\u0442\u043e\u043c \u041f\u041a");
+        case JoinError::Password:
+            return text(l, L"The host's lobby wants its password", L"\u0425\u043e\u0441\u0442\u0443 \u043d\u0443\u0436\u0435\u043d \u043f\u0430\u0440\u043e\u043b\u044c \u043b\u043e\u0431\u0431\u0438");
         case JoinError::Kicked: return text(l, L"The host sent you away from the lobby", L"\u0425\u043e\u0441\u0442 \u0432\u044b\u0433\u043d\u0430\u043b \u0432\u0430\u0441 \u0438\u0437 \u043b\u043e\u0431\u0431\u0438");
         case JoinError::None: break;
     }
@@ -796,25 +825,90 @@ std::wstring join_error_text(Language l, JoinError error) {
 
 std::wstring join_template(const JoinScreen &s) {
     const Language l = s.language;
-    std::wstring result = frame(px(s.scale, JoinLayout::width), px(s.scale, JoinLayout::content_height));
+    const int dy = s.rooms_shown ? JoinLayout::rooms_height : 0;  // the address and buttons under the rooms
+    std::wstring result = frame(px(s.scale, JoinLayout::width), px(s.scale, JoinLayout::content_height + dy));
     result += el(s.scale, text(l, L"Join a network battle", L"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f \u043a \u0431\u043e\u044e"), L"Font.2Ranger", text_color(), 0,
                            Layout::title_y, JoinLayout::width, 1);
-    result += el(s.scale, text(l, L"Host address (IP or IP:port):", L"\u0410\u0434\u0440\u0435\u0441 \u0445\u043e\u0441\u0442\u0430 (IP \u0438\u043b\u0438 IP:\u043f\u043e\u0440\u0442):"), L"Font.2Small",
-                           text_color(), 40, 70, JoinLayout::width - 80, 0);
-    result += el(s.scale, s.address + (s.connecting ? L"" : L"_"), L"Font.2Normal", selected_color(), 40, JoinLayout::field_y,
+    if (s.rooms_shown) {
+        result += el(s.scale, text(l, L"Rooms on the internet (click one to join):", L"\u041a\u043e\u043c\u043d\u0430\u0442\u044b \u0432 \u0438\u043d\u0442\u0435\u0440\u043d\u0435\u0442\u0435 (\u0449\u0451\u043b\u043a\u043d\u0438\u0442\u0435, \u0447\u0442\u043e\u0431\u044b \u0432\u043e\u0439\u0442\u0438):"),
+                     L"Font.2Small", text_color(), 40, 70, JoinLayout::width - 80, 0);
+        const std::size_t shown = std::min<std::size_t>(s.rooms.size(), JoinLayout::max_rooms);
+        const auto cell = [&](const std::wstring &value, const wchar_t *font, uint32_t color, int x, int right, int y) {
+            result += el(s.scale, value, font, color, x, y, right - x - 6, 0);
+        };
+        if (shown) {
+            using J = JoinLayout;
+            const int y = J::rooms_y;
+            cell(text(l, L"Name", L"\u041d\u0438\u043a"), L"Font.2Small", legend_color(), J::room_name_x, J::room_map_x, y);
+            cell(text(l, L"Map", L"\u041a\u0430\u0440\u0442\u0430"), L"Font.2Small", legend_color(), J::room_map_x, J::room_people_x, y);
+            cell(text(l, L"Players", L"\u0418\u0433\u0440\u043e\u043a\u043e\u0432"), L"Font.2Small", legend_color(), J::room_people_x,
+                 J::room_password_x, y);
+            cell(text(l, L"Password", L"\u041f\u0430\u0440\u043e\u043b\u044c"), L"Font.2Small", legend_color(), J::room_password_x,
+                 J::room_created_x, y);
+            cell(text(l, L"Made", L"\u0421\u043e\u0437\u0434\u0430\u043d\u0430"), L"Font.2Small", legend_color(), J::room_created_x,
+                 J::width - 30, y);
+        }
+        for (std::size_t i = 0; i < shown; ++i) {
+            using J = JoinLayout;
+            const RoomRow &r = s.rooms[i];
+            const int y = J::rooms_y + int(i + 1) * J::room_step;
+            const uint32_t color = s.connecting ? disabled_color() : selected_color();
+            cell(r.host, L"Font.2Small", color, J::room_name_x, J::room_map_x, y);
+            cell(r.map, L"Font.2Small", color, J::room_map_x, J::room_people_x, y);
+            cell(r.people, L"Font.2Small", color, J::room_people_x, J::room_password_x, y);
+            cell(r.locked ? text(l, L"yes", L"\u0435\u0441\u0442\u044c") : text(l, L"no", L"\u043d\u0435\u0442"), L"Font.2Small", color,
+                 J::room_password_x, J::room_created_x, y);
+            cell(r.created, L"Font.2Small", color, J::room_created_x, J::width - 30, y);
+        }
+        if (!shown)
+            result += el(s.scale, !s.searched ? text(l, L"Looking for rooms...", L"\u0418\u0449\u0435\u043c \u043a\u043e\u043c\u043d\u0430\u0442\u044b...")
+                                              : text(l, L"No rooms yet: someone has to host a network battle",
+                                                     L"\u041a\u043e\u043c\u043d\u0430\u0442 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442: \u043a\u0442\u043e-\u0442\u043e \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0441\u0435\u0442\u0435\u0432\u043e\u0439 \u0431\u043e\u0439"),
+                         L"Font.2Small", legend_color(), 40, JoinLayout::rooms_y, JoinLayout::width - 80, 0);
+    }
+    result += el(s.scale, s.rooms_shown ? text(l, L"Or the host's address (IP or IP:port):", L"\u0418\u043b\u0438 \u0430\u0434\u0440\u0435\u0441 \u0445\u043e\u0441\u0442\u0430 (IP \u0438\u043b\u0438 IP:\u043f\u043e\u0440\u0442):")
+                                         : text(l, L"Host address (IP or IP:port):", L"\u0410\u0434\u0440\u0435\u0441 \u0445\u043e\u0441\u0442\u0430 (IP \u0438\u043b\u0438 IP:\u043f\u043e\u0440\u0442):"),
+                 L"Font.2Small", text_color(), 40, 70 + dy, JoinLayout::width - 80, 0);
+    // A room's eos:<id> is not typed: the field shows the room's host.
+    const std::wstring shown_address = s.address.starts_with(L"eos:") ? L"" : s.address;
+    result += el(s.scale, shown_address + (s.connecting ? L"" : L"_"), L"Font.2Normal", selected_color(), 40, JoinLayout::field_y + dy,
                            JoinLayout::width - 80, 0);
     result += el(s.scale, text(l, L"Digits, dots and a colon. Ctrl+V pastes.", L"\u0426\u0438\u0444\u0440\u044b, \u0442\u043e\u0447\u043a\u0438 \u0438 \u0434\u0432\u043e\u0435\u0442\u043e\u0447\u0438\u0435. Ctrl+V: \u0432\u0441\u0442\u0430\u0432\u0438\u0442\u044c."),
-                           L"Font.2Small", legend_color(), 40, 122, JoinLayout::width - 80, 0);
+                           L"Font.2Small", legend_color(), 40, 122 + dy, JoinLayout::width - 80, 0);
     if (s.connecting)
-        result += el(s.scale, text(l, L"Connecting...", L"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u043c\u0441\u044f..."), L"Font.2Small", text_color(), 40, JoinLayout::status_y,
+        result += el(s.scale, text(l, L"Connecting...", L"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u043c\u0441\u044f..."), L"Font.2Small", text_color(), 40, JoinLayout::status_y + dy,
                                JoinLayout::width - 80, 0);
     else if (s.error != JoinError::None)
-        result += el(s.scale, join_error_text(l, s.error), L"Font.2Mini", error_color(), 40, JoinLayout::status_y,
+        result += el(s.scale, join_error_text(l, s.error), L"Font.2Mini", error_color(), 40, JoinLayout::status_y + dy,
                                JoinLayout::width - 80, 0);
     result += el(s.scale, text(l, L"( Connect )", L"( \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f )"), L"Font.2Normal", s.connecting ? disabled_color() : selected_color(),
-                           JoinLayout::connect_x, JoinLayout::buttons_y, JoinLayout::button_width, 1);
+                           JoinLayout::connect_x, JoinLayout::buttons_y + dy, JoinLayout::button_width, 1);
     result += el(s.scale, text(l, L"( Back )", L"( \u041d\u0430\u0437\u0430\u0434 )"), L"Font.2Normal", selected_color(), JoinLayout::back_x,
-                           JoinLayout::buttons_y, JoinLayout::button_width, 1);
+                           JoinLayout::buttons_y + dy, JoinLayout::button_width, 1);
+    return result;
+}
+
+bool password_char(wchar_t ch) { return ch > L' ' && ch != 0x7f; }
+
+std::wstring password_template(const PasswordScreen &s) {
+    const Language l = s.language;
+    std::wstring result = frame(px(s.scale, JoinLayout::width), px(s.scale, JoinLayout::content_height));
+    result += el(s.scale, text(l, L"Lobby password", L"\u041f\u0430\u0440\u043e\u043b\u044c \u043b\u043e\u0431\u0431\u0438"), L"Font.2Ranger", text_color(), 0, Layout::title_y,
+                 JoinLayout::width, 1);
+    result += el(s.scale, s.host ? text(l, L"Only those who type it come in (empty: anyone):", L"\u0412\u043e\u0439\u0434\u0443\u0442 \u0442\u043e\u043b\u044c\u043a\u043e \u0437\u043d\u0430\u044e\u0449\u0438\u0435 \u0435\u0433\u043e (\u043f\u0443\u0441\u0442\u043e: \u0432\u0441\u0435):")
+                                 : text(l, L"The host's lobby has a password:", L"\u0423 \u043b\u043e\u0431\u0431\u0438 \u0445\u043e\u0441\u0442\u0430 \u0435\u0441\u0442\u044c \u043f\u0430\u0440\u043e\u043b\u044c:"),
+                 L"Font.2Small", text_color(), 40, 70, JoinLayout::width - 80, 0);
+    result += el(s.scale, s.password + L"_", L"Font.2Normal", selected_color(), 40, JoinLayout::field_y, JoinLayout::width - 80, 0);
+    if (s.wrong)
+        result += el(s.scale, text(l, L"This password is not the host's", L"\u042d\u0442\u043e \u043d\u0435 \u043f\u0430\u0440\u043e\u043b\u044c \u0445\u043e\u0441\u0442\u0430"), L"Font.2Mini", error_color(), 40,
+                     JoinLayout::status_y, JoinLayout::width - 80, 0);
+    else
+        result += el(s.scale, text(l, L"Up to 24 characters, no spaces. Ctrl+V pastes.", L"\u0414\u043e 24 \u0437\u043d\u0430\u043a\u043e\u0432, \u0431\u0435\u0437 \u043f\u0440\u043e\u0431\u0435\u043b\u043e\u0432. Ctrl+V: \u0432\u0441\u0442\u0430\u0432\u0438\u0442\u044c."), L"Font.2Small",
+                     legend_color(), 40, 122, JoinLayout::width - 80, 0);
+    result += el(s.scale, s.host ? text(l, L"( Save )", L"( \u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c )") : text(l, L"( Connect )", L"( \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c\u0441\u044f )"),
+                 L"Font.2Normal", selected_color(), JoinLayout::connect_x, JoinLayout::buttons_y, JoinLayout::button_width, 1);
+    result += el(s.scale, text(l, L"( Back )", L"( \u041d\u0430\u0437\u0430\u0434 )"), L"Font.2Normal", selected_color(), JoinLayout::back_x,
+                 JoinLayout::buttons_y, JoinLayout::button_width, 1);
     return result;
 }
 
@@ -850,6 +944,16 @@ std::wstring name_template(const NameScreen &s) {
 
 std::optional<Endpoint> parse_endpoint(const std::wstring &text) {
     Endpoint e;
+    if (text.starts_with(L"eos:")) {  // a person over Epic Online Services: eos:<id>[:port]
+        const auto colon = text.find(L':', 4);
+        if (colon != std::wstring::npos && (!parse_number(std::wstring_view(text).substr(colon + 1), 65535, e.port) || e.port == 0))
+            return std::nullopt;
+        const std::wstring id = text.substr(4, colon == std::wstring::npos ? std::wstring::npos : colon - 4);
+        if (id.size() != 32 || !std::all_of(id.begin(), id.end(), [](wchar_t ch) { return std::iswxdigit(ch); }))
+            return std::nullopt;
+        for (wchar_t ch : text.substr(0, colon)) e.address += char(ch);
+        return e;
+    }
     std::wstring_view address = text;
     if (const auto colon = address.find(L':'); colon != std::wstring_view::npos) {
         if (!parse_number(address.substr(colon + 1), 65535, e.port) || e.port == 0) return std::nullopt;

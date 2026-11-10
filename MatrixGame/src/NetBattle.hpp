@@ -45,6 +45,7 @@
 //   --net-rejoin-key <key>  that key instead of the file's (tests)
 //   --net-test-crash <ms>  end this process at this game time without a word to the others (tests)
 //   --net-dropped ai|idle  host: a dropped person's side is played by the AI (default) or gets no orders
+//   --net-delay-follows on|off  host: the delay follows the round trips during the battle (default) or stays
 //   --net-resync on|off  host: a person whose battle went apart from the host's replays it (default) or it is reported only
 //   --net-test-dump <ms>  write the world's text at this game time next to the trace (tests: finding a desync)
 //   --net-test-remove <ms>  host: go on without a person who kept the battle waiting so long, as its button does (tests)
@@ -93,6 +94,8 @@ struct Options {
     std::optional<BattleChoice::Bonus> lobby_bonus;
     int lobby_side = 0;
     std::wstring lobby_name;
+    std::wstring lobby_password;        // --lobby-password: the host's lobby's, or the one joined with (tests)
+    bool lobby_password_given = false;
     bool lobby_return = false;
     bool lobby_local = false;  // --lobby-local
     std::pair<int, int> lobby_test_size{0, 0};  // --lobby-test-size
@@ -130,6 +133,7 @@ struct Options {
     int test_dump_ms = -1;
     int dropped_ai = 1;  // --net-dropped: 1 ai, 0 idle
     int auto_resync = 1;  // --net-resync: 1 on, 0 off
+    int delay_follows = 1;  // --net-delay-follows: 1 on, 0 off
     std::optional<std::vector<std::string>> mods;  // --net-mods pbo,... or -: the host's battle mods (else its settings')
 };
 

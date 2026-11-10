@@ -45,6 +45,10 @@ public:
     // Who plays a dropped person's side: the AI, or nobody (no orders) until they are back.
     void set_dropped_ai(bool ai);
     void set_auto_resync(bool on);
+    // Lobby::password_hash of the lobby's password; empty: anyone may come in.
+    void set_password(std::string hash) { m_Password = std::move(hash); }
+    bool locked() const { return !m_Password.empty(); }
+    void set_delay_follows(bool on);
     // The battle's mods; other mods make every client not ready.
     void set_mods(const std::vector<Lobby::ModRef> &mods);
     // Only verified personal mods play (Lobby::State::verified_only); a change makes every client not ready.
@@ -93,6 +97,7 @@ private:
     Lobby::State m_State;
     unsigned m_MapSides = 0;
     std::string m_Data, m_Build;
+    std::string m_Password;  // Lobby::password_hash; empty: none
     std::vector<std::unique_ptr<NetLink::Connection>> m_Clients;  // person i + 1
     std::vector<Ping> m_Pings;                                    // the same order
     std::vector<std::optional<std::size_t>> m_Sending;            // the same order: bytes of the map file sent
@@ -107,7 +112,7 @@ class Client {
 public:
     enum class Phase { Connecting, InLobby, Loading, Started, Failed };
     // ComeBack: the battle has started and this person (by name) may come back to it.
-    enum class Failure { None, Unreachable, Full, Version, Build, Data, Name, Started, ComeBack, HostLeft, Lost, Kicked };
+    enum class Failure { None, Unreachable, Full, Version, Build, Data, Name, Started, ComeBack, HostLeft, Lost, Kicked, Password };
 
     // personal: this person's own mods on, told the host in the hello.
     void connect(const std::string &address, int port, BattleChoice::Bonus bonus, int timeout_ms, std::string data,
@@ -122,6 +127,8 @@ public:
     void set_bonus(BattleChoice::Bonus bonus);
     void set_ready(bool ready);
     void set_side(int side);
+    // The password (Lobby::password_hash) the next connect's hello gives.
+    void set_password(std::string hash) { m_Password = std::move(hash); }
     // Asks the host for its map file with this fingerprint; once per fingerprint (again after another).
     void request_map(const std::string &hash);
     // The share of that file received, 0..100, while it comes; -1 otherwise.
@@ -145,6 +152,7 @@ private:
     int m_Port = 0;
     std::string m_Data, m_Build;
     std::wstring m_Name;
+    std::string m_Password;  // Lobby::password_hash, sent in the hello
     std::vector<Lobby::ModRef> m_Personal;
     BattleChoice::Bonus m_Bonus = BattleChoice::Bonus::None;
     Phase m_Phase = Phase::Failed;
