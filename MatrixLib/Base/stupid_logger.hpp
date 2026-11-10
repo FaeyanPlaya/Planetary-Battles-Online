@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <fstream>
 #include <chrono>
 #include <iostream>
@@ -94,13 +95,13 @@ public:
         size_t _tick;
     };
 
-    stupid(const std::string& path)
+    stupid(const std::filesystem::path& path)
     : _out_file{path, std::ios::app}
     , _out{_out_file}
     {
         if (!_out_file.is_open())
         {
-            throw std::runtime_error("Failed to open log file: " + path);
+            throw std::runtime_error("Failed to open log file: " + path.filename().string());
         }
     }
 

@@ -51,6 +51,7 @@ public:
     // the others stay available; the collection is released only when none opens. Returns the dropped names.
     static std::vector<std::wstring> OpenPackFiles(void);
     static void ReleasePackFiles(void);
+    static bool PackFilesOpen(void) { return m_Packs != NULL; }
     // Names of the files, not folders, directly inside a folder of every registered package, in
     // registration order. A name present in several packages is listed for each of them.
     static std::vector<std::wstring> PackedFileNames(const std::wstring &folder);
