@@ -6,11 +6,11 @@
 #include <cstdio>
 #include <string>
 
-// What ended the game, appended to crash.txt beside the EXE (the working directory), so that a crash that
-// closes the game without a word still says where it happened.
+// What ended the game, appended to logs\crash.txt (LogFolder: the log made the folder at the start), so that a crash
+// that closes the game without a word still says where it happened.
 namespace CrashReport {
 
-inline constexpr const char *file_name = "crash.txt";
+inline constexpr const char *file_name = "logs\\crash.txt";
 
 // A fatal fault: its code, where it happened (module+offset), the registers and the return-address candidates
 // on the stack. Safe in an exception filter: no allocation and no logger.

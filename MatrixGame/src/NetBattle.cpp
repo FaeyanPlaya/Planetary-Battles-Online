@@ -13,11 +13,13 @@
 #include "PlayerName.hpp"
 #include "GameData.hpp"
 #include "MapShare.hpp"
+#include "LogFolder.hpp"
 #include "Mods.hpp"
 #include "SettingsModel.hpp"
 #include "MatrixGame.h"
 #include "StringConstants.hpp"
 #include "CBlockPar.hpp"
+#include "CFile.hpp"
 #include "StandaloneRuntime.hpp"
 #include "Commands.hpp"
 #include "LoopPlatform.hpp"
@@ -229,7 +231,8 @@ struct Battle {
     Start start;
     Lockstep::Session session;
     std::ofstream trace;
-    std::ofstream commands;  // battle-commands.txt: this battle as a lab command replay
+    std::ofstream commands;  // logs\battle-commands-<stamp>.txt: this battle as a lab command replay
+    std::wstring log_stamp;  // the battle's start (LogFolder::stamp), in its log files' names
     std::vector<Commands::Command> bot;
     std::size_t bot_next = 0;
     int last_time = -1;
@@ -338,11 +341,11 @@ void note(Battle &b, const std::string &event) {
     }
 }
 
-// Next to the trace, or in a played battle next to test.log: comparing the two people's files shows
-// which objects differ.
+// Next to the trace, or in a played battle in the logs folder: comparing the two people's files shows which objects
+// differ.
 void write_desync_dump(Battle &b, int time) {
     const std::wstring path = b.options.trace.empty()
-                                      ? std::format(L"desync-{}s-side{}.txt", time / 1000, b.start.side)
+                                      ? LogFolder::file(std::format(L"desync-{}-{}s-side{}.txt", b.log_stamp, time / 1000, b.start.side)).wstring()
                                       : b.options.trace + std::format(L".desync-{}.txt", time);
     for (const auto &[t, dump] : b.dumps) {
         if (t != time) continue;
@@ -1885,7 +1888,14 @@ std::optional<Start> connect_back(const Options &options, const StandaloneSettin
     start->rules = *rules;
     // A map the host gave for this battle: its copy, kept while the person may come back.
     if (!start->map_hash.empty() && !MapShare::used(start->map)) {
+        // The game's packages open with the battle, after this: one of their maps is read with them open for a moment.
+        const bool open_here = !Base::CFile::PackFilesOpen();
+        if (open_here) {
+            Base::CFile::AddPackFile(L"DATA\\robots.pkg");
+            Base::CFile::OpenPackFiles();
+        }
         const auto own = MapShare::read(start->map);
+        if (open_here) Base::CFile::ReleasePackFiles();
         if ((!own || MapShare::fingerprint(*own) != start->map_hash) && !MapShare::use(start->map, start->map_hash)) {
             back_failed(L"На этом ПК нет карты этого боя.", L"This PC does not have the battle's map.", "no map");
             return std::nullopt;
@@ -2294,8 +2304,9 @@ int run(const Options &given, const Start &start) {
         b.trace << "rules " << BattleRules::to_text(BattleRules::active()) << '\n';
     }
     // Every battle's commands, in the lab's replay format: a desync can then be replayed here with other
-    // camera views (the last battle only; written next to the EXE).
-    b.commands.open(std::filesystem::path(L"battle-commands.txt"), std::ios::trunc);
+    // camera views (each battle its own file in the logs folder, named by its start).
+    b.log_stamp = LogFolder::stamp();
+    b.commands.open(LogFolder::file(L"battle-commands-" + b.log_stamp + L".txt"), std::ios::trunc);
     b.commands << std::format("simlab-commands 1 map={} seed={} step_ms={} human={}\n",
                               utils::from_wstring(g_MatrixMap->MapName()), start.seed, start.config.step_ms,
                               side_list(start.human_sides));
