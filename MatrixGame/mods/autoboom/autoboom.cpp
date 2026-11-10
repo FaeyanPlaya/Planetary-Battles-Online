@@ -61,8 +61,8 @@ void bomb_right_click() {
     const bool on = g_MatrixMap->GetPlayerSide()->ToggleAutoBoom();
     const std::wstring setup = g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup");
     const bool ru = SettingsModel::detect_language(setup) == SettingsModel::Language::Russian;
-    BattleNotice::show(on ? (ru ? L"Автоподрыв включён" : L"Auto detonation on")
-                          : (ru ? L"Автоподрыв выключен" : L"Auto detonation off"));
+    BattleNotice::show_own(on ? (ru ? L"Автоподрыв включён" : L"Auto detonation on")
+                              : (ru ? L"Автоподрыв выключен" : L"Auto detonation off"));
     if (g_IFaceList->m_CurrentHint && g_IFaceList->m_CurrentHintControlName == IF_ORDER_BOMB) {
         g_IFaceList->m_CurrentHint->Release();
         g_IFaceList->m_CurrentHint = NULL;

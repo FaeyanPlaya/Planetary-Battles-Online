@@ -35,6 +35,8 @@ struct Switches {
     bool lift_sight = false;         // LiftSight: robots on a base's lift see the enemies in reach, and are seen
     bool capture_lift = false;       // CaptureLift: a capturer rides the lift down when something else closed it
     bool drive_reach_reset = false;  // DriveReachReset: a robot left by its driver loses the reach bonus too
+    bool turret_places = false;      // TurretPlaces: only the selected building's turret places are shown
+    bool capture_stay = false;       // CaptureStay: a capturer on a base's lift does not drive off it to give way
     // Battle: Исправления боя
     bool capture_no_timeout = false;  // CaptureNoTimeout: a robot capturing a base is not killed by the 10 s lift limit
     bool stop_in_place = false;       // StopInPlace: Stop halts robots where they stand

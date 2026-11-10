@@ -32,6 +32,8 @@ constexpr SwitchName battle_switches[] = {
     {"liftsight", &Switches::lift_sight},
     {"capturelift", &Switches::capture_lift},
     {"drivereachreset", &Switches::drive_reach_reset},
+    {"turretplaces", &Switches::turret_places},
+    {"capturestay", &Switches::capture_stay},
     {"capturenotimeout", &Switches::capture_no_timeout},
     {"stopinplace", &Switches::stop_in_place},
     {"repairplant", &Switches::repair_plant},

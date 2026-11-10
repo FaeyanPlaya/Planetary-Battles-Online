@@ -82,6 +82,8 @@ std::vector<std::wstring> bundle_files(const std::wstring &map_path);
 // "PBOMAPS1", then each of bundle_files: u32 length and its path (UTF-8), u64 size and its bytes; read once per map
 // (the last one kept). nullopt: not a map mod's map.
 std::optional<std::string> bundle(const std::wstring &map_path);
+// The same of bundle_files already found (the lobby keeps them with their stamps).
+std::optional<std::string> bundle(const std::wstring &map_path, const std::vector<std::wstring> &files);
 bool is_bundle(std::string_view bytes);
 // Writes a bundle's files into folder; false (and maybe some written) when it is broken or names a path outside it.
 bool unpack(std::string_view bytes, const std::filesystem::path &folder);

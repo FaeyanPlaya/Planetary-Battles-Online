@@ -65,6 +65,7 @@ struct Run {
     bool injecting = false;
     Loop::Clock::time_point clock{};
     int frames = 0;
+    int steps_now = 0;  // steps run this loop iteration (steps_per_frame)
     bool initial_dumped = false;  // the start state is always dumped, to diagnose launch-to-launch drift
     int next_hash_ms = 0;
     int next_camera_ms = 0;
@@ -302,6 +303,7 @@ Options load(const wchar_t *path) {
     if (bp.ParCount(L"CommandScript")) o.command_script = utils::trim(bp.ParGet(L"CommandScript"));
     o.no_pause = int_par(bp, L"NoPause", 1) != 0;
     o.maintenance_ready = int_par(bp, L"MaintenanceReady", 0) != 0;
+    o.steps_per_frame = std::clamp(int_par(bp, L"StepsPerFrame", 1), 1, 50);
     if (bp.ParCount(L"Record")) o.record = utils::trim(bp.ParGet(L"Record"));
     if (bp.ParCount(L"Replay")) o.replay = utils::trim(bp.ParGet(L"Replay"));
     if (const auto &source = !o.command_replay.empty() ? o.command_replay : o.replay; !source.empty())
@@ -399,9 +401,22 @@ void begin(const Options &options) {
                                                        options.step_ms);
 }
 
+// StepsPerFrame: so many steps before each picture.
+bool lab_advance(void *) {
+    if (g_run->steps_now >= g_run->options.steps_per_frame) {
+        g_run->steps_now = 0;
+        return false;
+    }
+    ++g_run->steps_now;
+    return true;
+}
+
 int run(const Options &options) {
-    (void)options;
-    const Loop::Platform platform{nullptr, lab_now, lab_poll, lab_dispatch, lab_wait};
+    Loop::Platform platform{nullptr, lab_now, lab_poll, lab_dispatch, lab_wait};
+    if (options.steps_per_frame > 1 && options.replay.empty()) {
+        platform.advance = lab_advance;
+        platform.step_ms = options.step_ms;
+    }
     const int result = L3GRun(platform);
     if (g_run->commands.is_open()) {
         // A command replay stops at this time, so both runs end on the same state.

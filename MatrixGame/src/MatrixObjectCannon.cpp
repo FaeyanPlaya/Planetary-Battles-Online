@@ -18,6 +18,8 @@
 #include "Effects/MatrixEffectSelection.hpp"
 #include "ShadowStencil.hpp"
 #include "Interface/CInterface.h"
+#include "Mods.hpp"
+#include "ModHooks.hpp"
 
 #include "Effects/MatrixEffectExplosion.hpp"
 
@@ -1569,7 +1571,14 @@ void CMatrixCannon::ReleaseMe(void) {
         if (side != 0) {
             CMatrixSideUnit *su = g_MatrixMap->GetSideById(side);
             if (su->m_CurrentAction == BUILDING_TURRET || FLAG(g_IFaceList->m_IfListFlags, PREORDER_BUILD_TURRET)) {
-                m_ParentBuilding->CreatePlacesShow();
+                // The places shown anew. The original showed this turret's building's while this person chose a place
+                // at any building: nothing took them off (an ordering mode's end takes the selected one's), green where
+                // no turret could be ordered. With the TurretPlaces switch (Planetary Battles Online mod) only the
+                // selected building's.
+                const auto own = ModHooks::hooks().turret_places;
+                if (!(Mods::switches().turret_places && own && own()) ||
+                    g_MatrixMap->GetPlayerSide()->m_ActiveObject == m_ParentBuilding)
+                    m_ParentBuilding->CreatePlacesShow();
                 m_ParentBuilding = NULL;
             }
         }

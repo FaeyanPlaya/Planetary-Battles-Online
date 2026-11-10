@@ -1079,10 +1079,16 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                     break;
                 }
 
+                // A capture driving onto a base's lift holds the moves over it (giving way to another robot). With the
+                // CaptureStay switch (Planetary Battles Online mod) also as it sets up and captures there: the original
+                // drove off the lift then, and the lift went down without the robot (which killed it).
+                const auto stay = ModHooks::hooks().capture_stay;
+                const bool staying = Mods::switches().capture_stay && stay;
                 int i;
                 for (i = 0; i < m_OrdersInPool; i++) {
                     if (m_OrdersList[i].GetOrderType() == ROT_CAPTURE_FACTORY &&
-                        m_OrdersList[i].GetOrderPhase() == ROP_CAPTURE_IN_POSITION) {
+                        (staying ? stay(m_OrdersList[i].GetOrderPhase())
+                                 : m_OrdersList[i].GetOrderPhase() == ROP_CAPTURE_IN_POSITION)) {
                         CMatrixBuilding *factory = (CMatrixBuilding *)m_OrdersList[i].GetStatic();
                         if (factory && factory->IsBase())
                             break;

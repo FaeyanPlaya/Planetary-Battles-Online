@@ -303,10 +303,10 @@ void Session::set_delay(int turns) {
     if (m_Host) send(-1, std::format("delay {}", turns));
 }
 
-void Session::ping(int id) {
+void Session::ping(int id, int lead) {
     if (!m_Host) return;
     for (int i = 0; i < int(m_Peers.size()); ++i)
-        if (m_Peers[i].live && !m_Peers[i].catching) send(i, std::format("ping {}", id));
+        if (m_Peers[i].live && !m_Peers[i].catching) send(i, std::format("ping {} {}", id, lead));
 }
 
 std::vector<std::pair<int, int>> Session::take_pongs() { return std::exchange(m_Pongs, {}); }
@@ -654,9 +654,10 @@ void Session::receive(int peer, const std::string &line) {
                                       : "the host removed this side from the battle: not answering");
     }
     else if (tag == "ping" && !m_Host) {
-        int id = 0;
+        int id = 0, lead = -1;
         in >> id;
         send(0, std::format("pong {}", id));
+        if (in >> lead && lead >= 0 && m_Started && !m_Catching) m_HostLeads.push_back(lead);
     }
     else if (tag == "pong") {
         // (A lobby ping answered as the battle began has an id the host does not know.)

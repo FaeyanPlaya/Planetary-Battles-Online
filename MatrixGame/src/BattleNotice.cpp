@@ -70,6 +70,11 @@ void show(const std::wstring &text, std::uint32_t colour) {
     display(text, colour);
 }
 
+void show_own(const std::wstring &text, std::uint32_t colour) {
+    lgr.notice("Notice: {}")(utils::from_wstring(text));
+    display(text, colour);
+}
+
 void update() {
     if (!waiting.empty() && ready())
         for (const auto &[text, colour] : std::exchange(waiting, {})) display(text, colour);

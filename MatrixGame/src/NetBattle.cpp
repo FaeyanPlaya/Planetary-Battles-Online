@@ -36,8 +36,10 @@
 #include "3g.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <chrono>
+#include <climits>
 #include <ctime>
 #include <deque>
 #include <filesystem>
@@ -59,6 +61,7 @@ constexpr int wait_shown_after_ms = 1500;  // a shorter wait is the network's or
 constexpr int drop_after_ms = 60000;       // a person who keeps the battle waiting so long is removed
 constexpr auto announce_every = std::chrono::milliseconds(500);
 constexpr auto catch_up_slice = std::chrono::milliseconds(100);  // undrawn replay between two pictures
+constexpr int lower_margin_ms = 30;  // watch_delay: room left by a shorter delay
 constexpr auto hello_wait = std::chrono::seconds(10);           // host: a connection that says nothing
 constexpr auto back_load_wait = std::chrono::minutes(3);        // host: a person coming back loads the map
 constexpr int back_connect_ms = 15000;
@@ -314,6 +317,15 @@ struct Battle {
     std::map<int, Time> pings_sent;
     std::vector<std::deque<int>> round_trips;
     Time lower_since{};
+    // How far ahead the turns were known at least (ms), since the host's last ping. A client's pace (keep_pace): -1
+    // slower, 1 faster than the real clock until then; the ms owed meanwhile; the host's spare less its own since.
+    int least_lead = INT_MAX;
+    int pace = 0;
+    Time pace_until{};
+    int pace_rest = 0;
+    std::deque<int> spares;
+    Time wait_from{};     // waiting for a turn since then
+    Time long_wait_at{};  // the end of the last wait of 150 ms or more
     Time fps_noted{};  // the frame rate notes: since then, from that battle time, the longest frame meanwhile
     int fps_noted_at = 0;
     int slowest_frame = 0;
@@ -395,10 +407,12 @@ void route(Battle &b) {
 }
 
 // Host: the delay follows the round trips to the clients (unless the lobby's host turned that off: it stays as the
-// battle began). Each peer's second slowest of its last six (one stray spike is not a lag) gives
-// Lobby::auto_delay_for; a longer delay than now takes hold at once, a shorter one only after 30 s without a reason
-// for more, a turn at a time, so that it does not go up and down. The first 5 s (the loading's stalls) do not count.
-// A delay chosen in the lobby is the least.
+// battle began). What four of each peer's last six round trips (2 s of 3) took at least gives Lobby::auto_delay_for:
+// a burst of spikes over the internet is not a lag, and a longer delay after it only puts orders off. A longer delay
+// than now takes hold at once. A shorter one only after 30 s in which even the second slowest round trips, and
+// lower_margin_ms more, would have fitted it, a turn at a time: round trips about the line between two delays (50 to
+// 65 ms over EOS) do not take it up and down. The first 5 s (the loading's stalls) do not count. A delay chosen in the
+// lobby is the least.
 void watch_delay(Battle &b) {
     const auto t = std::chrono::steady_clock::now();
     for (const auto &[peer, id] : b.session.take_pongs()) {
@@ -413,13 +427,14 @@ void watch_delay(Battle &b) {
     if (t - b.last_ping >= std::chrono::milliseconds(500)) {
         b.last_ping = t;
         b.pings_sent[++b.ping_id] = t;
-        b.session.ping(b.ping_id);
+        b.session.ping(b.ping_id, b.least_lead == INT_MAX ? -1 : b.least_lead);  // for keep_pace
+        b.least_lead = INT_MAX;
         std::erase_if(b.pings_sent, [&](const auto &p) { return t - p.second > std::chrono::seconds(10); });
     }
     if (!BattleRules::delay_follows()) return;
     if (b.delay_watch_from == Battle::Time{}) b.delay_watch_from = t + std::chrono::seconds(5);
     if (t < b.delay_watch_from) return;
-    int slowest = 0;
+    int slow = 0, slowest = 0;
     for (std::size_t i = 0; i < b.round_trips.size(); ++i) {
         if (!b.session.peer_live(int(i)) || b.session.peer_catching_up(int(i))) {
             b.round_trips[i].clear();  // measured afresh when they are back
@@ -428,18 +443,20 @@ void watch_delay(Battle &b) {
         std::vector<int> trips(b.round_trips[i].begin(), b.round_trips[i].end());
         if (trips.size() < 3) continue;
         std::sort(trips.begin(), trips.end());
+        slow = std::max(slow, trips[(trips.size() - 1) / 2]);
         slowest = std::max(slowest, trips[trips.size() - 2]);
     }
     const int turn = b.start.config.turn_ms;
     const int least = b.start.delay_auto ? 2 : b.start.config.delay;
-    const int wanted = std::max(least, Lobby::auto_delay_for(slowest, turn) / turn);
+    const int wanted = std::max(least, Lobby::auto_delay_for(slow, turn) / turn);
+    const int lower = std::max(least, Lobby::auto_delay_for(slowest + lower_margin_ms, turn) / turn);
     const int now = b.session.delay();
     if (wanted > now) {
-        note(b, std::format("round trips up to {} ms: the delay goes up to {} ms", slowest, wanted * turn));
+        note(b, std::format("round trips up to {} ms: the delay goes up to {} ms", slow, wanted * turn));
         b.session.set_delay(wanted);
         b.lower_since = {};
     }
-    else if (wanted < now) {
+    else if (lower < now) {
         if (b.lower_since == Battle::Time{}) b.lower_since = t;
         else if (t - b.lower_since >= std::chrono::seconds(30)) {
             note(b, std::format("round trips up to {} ms: the delay comes down to {} ms", slowest, (now - 1) * turn));
@@ -450,6 +467,49 @@ void watch_delay(Battle &b) {
     else {
         b.lower_since = {};
     }
+}
+
+// Client: its game time keeps the turns known as far ahead as the host's. A lag on the host's lines stops a client
+// while the host goes on, up to the delay's turns ahead; back to the real clock the client would stay behind and the
+// host would know its turns just in time, waiting for each on any jitter (the picture in jerks while fps stays 60);
+// a client ahead (as after a lag the other way) waits so itself. So each of the host's pings says how far ahead it knew
+// the turns at least since the last, and the client compares that with its own least meanwhile. When the middle of
+// three such differences is over 40 ms, the client runs 5% slower (the host has more to spare) or faster, as long as
+// moving half the difference takes (the other half is the host's: its turns wait for the client's), then measures
+// afresh. Not from a second after a wait of 150 ms or more: the time lost then is partly made up at once (loop_now's
+// budget); a client ahead waits for each turn, shortly. The battle is the same: only when its steps run changes.
+void keep_pace(Battle &b) {
+    const auto t = std::chrono::steady_clock::now();
+    const auto leads = b.session.take_host_leads();
+    if (b.pace != 0) {
+        if (t < b.pace_until) return;  // what was known meanwhile tells the pace, not the clock
+        b.pace = 0;
+        b.pace_rest = 0;
+        b.spares.clear();
+        b.least_lead = INT_MAX;
+        return;
+    }
+    const bool long_wait = b.wait_from != Battle::Time{} && t - b.wait_from >= std::chrono::milliseconds(150);
+    if (long_wait || t - b.long_wait_at < std::chrono::seconds(1)) {
+        b.spares.clear();
+        b.least_lead = INT_MAX;
+        return;
+    }
+    for (const int lead : leads) {
+        if (b.least_lead != INT_MAX) b.spares.push_back(lead - b.least_lead);
+        b.least_lead = INT_MAX;
+    }
+    while (b.spares.size() > 3) b.spares.pop_front();
+    if (b.spares.size() < 3) return;
+    std::array<int, 3> last{b.spares[0], b.spares[1], b.spares[2]};
+    std::sort(last.begin(), last.end());
+    const int spare = last[1];
+    if (std::abs(spare) <= 40) return;
+    b.pace = spare > 0 ? -1 : 1;
+    const int length = std::min(std::abs(spare), 1000) * 10;
+    b.pace_until = t + std::chrono::milliseconds(length);
+    note(b, std::format("{} the turns {} ms further ahead: {}% for {} ms", spare > 0 ? "the host knows" : "this client knows",
+                        std::abs(spare), spare > 0 ? 95 : 105, length));
 }
 
 // Every peer: a notice when the battle's delay changed (the host's choice).
@@ -992,7 +1052,14 @@ Loop::Clock::time_point loop_now(void *context) {
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - b.clock).count();
     b.clock += std::chrono::milliseconds(elapsed);
     // A long stall (window dragged, peers waiting) is not made up for at once.
-    b.budget_ms = std::min<int>(b.budget_ms + int(std::min<long long>(elapsed, 250)), 250);
+    int ms = int(std::min<long long>(elapsed, 250));
+    if (b.pace != 0) {
+        // keep_pace's 5%: a millisecond more or less for every 20.
+        b.pace_rest += ms * b.pace;
+        ms += b.pace_rest / 20;
+        b.pace_rest %= 20;
+    }
+    b.budget_ms = std::min<int>(b.budget_ms + ms, 250);
     b.steps = 0;
     b.stalled_now = false;
     b.catch_frame = now;
@@ -1638,10 +1705,13 @@ bool loop_advance(void *context) {
         return catch_up(b, now);
     }
     if (b.session.catching_up()) b.session.caught();  // a relay's member: every whole turn it lacked is in
+    if (b.session.started())
+        b.least_lead = std::min(b.least_lead, (b.session.known_turn() + 1) * b.start.config.turn_ms - now);
     watch_host_gone(b);
     watch_relay(b);
     watch_waits(b, now);
     if (b.session.is_host()) watch_delay(b);
+    else keep_pace(b);
     show_delay(b);
     if (b.session.is_host()) {
         // Tab's Kick buttons: everyone in the battle, or gone and free to come back.
@@ -1708,9 +1778,15 @@ bool loop_advance(void *context) {
     if (!b.session.can_step(now)) {
         if (!b.stalled_now && b.session.started()) ++b.stalled_frames;
         b.stalled_now = true;
+        if (b.wait_from == Battle::Time{}) b.wait_from = std::chrono::steady_clock::now();
         // Waiting for a peer: the time lost is not made up for later beyond one turn.
         b.budget_ms = std::min(b.budget_ms, b.start.config.turn_ms);
         return false;
+    }
+    if (b.wait_from != Battle::Time{}) {
+        const auto t = std::chrono::steady_clock::now();
+        if (t - b.wait_from >= std::chrono::milliseconds(150)) b.long_wait_at = t;
+        b.wait_from = {};
     }
     b.budget_ms -= step;
     ++b.steps;

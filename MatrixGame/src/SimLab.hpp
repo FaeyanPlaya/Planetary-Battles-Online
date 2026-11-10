@@ -36,6 +36,9 @@ struct Options {
     int view_side = 1;           // the side this client shows and controls (PLAYER_SIDE)
     bool no_pause = true;        // menus and the robot constructor do not pause the battle
     bool maintenance_ready = false;  // reinforcements callable at once (the start wait is 500 s)
+    // Steps run between two pictures: more than 1 replays faster (the same battle; the hashes and the details are
+    // then taken every so many steps). Not with recorded input, which comes between pictures.
+    int steps_per_frame = 1;
     std::wstring record;         // write this run's keyboard/mouse messages per loop iteration
     std::wstring replay;         // feed a recorded input file instead of live input
     std::wstring command_record; // write every executed command with its game time

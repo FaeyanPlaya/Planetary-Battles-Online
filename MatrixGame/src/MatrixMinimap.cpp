@@ -488,9 +488,8 @@ void CMinimap::DrawRadar(float x, float y, float radius) {
         switch (ms->GetObjectType()) {
             case OBJECT_TYPE_ROBOTAI:
             {
-                // The driven robot too, in its side's colour: it covers the radar picture's centre mark,
-                // yellow (the colour of the single player's side) whatever side drives.
-                if (!ms->IsLiveRobot())
+                // The driven robot is the radar picture's centre mark, in its side's colour (s_SideRegions).
+                if (!ms->IsLiveRobot() || ms == arcaded)
                     continue;
                 auto tmp = *(D3DXVECTOR2 *)&ms->GetGeoCenter() - *(D3DXVECTOR2 *)&arcaded->GetGeoCenter();
                 if (r2 < D3DXVec2LengthSq(&tmp)) {

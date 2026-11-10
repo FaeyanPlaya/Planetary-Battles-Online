@@ -1,18 +1,27 @@
 # LiftSight: robots on a base's lift see the enemies in reach and are seen (the original ignored them there).
 # CaptureLift: a capturer rides the lift down when something else closed it (it stood in the air).
 # DriveReachReset: a robot its driver left loses the reach bonus too (the original kept it).
+# TurretPlaces: only the selected building's turret places are shown (a turret lost while a place was being chosen
+# showed its own building's, and they stayed: CMatrixCannon::ReleaseMe).
+# CaptureStay: a capturer giving way to another robot (a move and a return over its capture order) no longer drives
+# off the base's lift as it sets up and captures (the original held those moves only on the way to the lift); the lift
+# went down without it and killed it.
 Name=Planetary Battles Online
 NameEn=Planetary Battles Online
 Description=Исправления Planetary Battles Online.
 Description=- Роботы на лифте базы видят врагов в пределах дальности и видны им (в оригинале на лифте их не замечали).
 Description=- Захватчик базы едет на лифте вниз, даже если лифт закрыл кто-то другой (в оригинале он зависал в воздухе).
 Description=- Робот, которого покинул водитель, теряет и бонус дальности за ручное управление.
+Description=- Захватчик на лифте базы не съезжает с него, уступая дорогу (в оригинале его могло отбросить за базу, и он взрывался).
+Description=- Места под турели горят только у выбранной постройки (в оригинале гибель чужой турели во время выбора места зажигала и её места).
 DescriptionEn=Fixes of Planetary Battles Online.
 DescriptionEn=- Robots on a base's lift see the enemies within reach and are seen (the original ignored them there).
 DescriptionEn=- A capturer rides the lift down even when something else closed it (it stood in the air).
 DescriptionEn=- A robot its driver left loses the manual control's reach bonus too.
+DescriptionEn=- A capturer on a base's lift no longer drives off it to give way (the original could throw it behind the base, and it blew up).
+DescriptionEn=- Only the selected building's turret places light up (in the original, a turret of another building lost meanwhile lit its places too).
 Author=Planetary Battles Online
 Kind=battle
 Default=on
 Dll=pbo.dll
-Switches=LiftSight,CaptureLift,DriveReachReset
+Switches=LiftSight,CaptureLift,DriveReachReset,TurretPlaces,CaptureStay

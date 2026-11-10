@@ -12,6 +12,7 @@
 #include "MatrixObjectBuilding.hpp"
 #include "Commands.hpp"
 #include "BattleNotice.hpp"
+#include "SettingsModel.hpp"
 #include "random.hpp"
 #include "Effects/MatrixEffect.hpp"
 
@@ -51,8 +52,11 @@ bool issue_rally(CMatrixSideUnit &side, CMatrixMapStatic *clicked, const D3DXVEC
     command.y = at.y;
     command.params = {clear ? 0 : 1};
     Commands::issue(command);
-    BattleNotice::show(clear ? L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0441\u043d\u044f\u0442\u0430"
-                             : L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0437\u0430\u0434\u0430\u043d\u0430");
+    // The game's own menu text tells its language; without it (test data), the original Russian.
+    const auto replaces = g_MatrixData->BlockGetNE(PAR_REPLACE);
+    const bool ru = !replaces || SettingsModel::detect_language(replaces->ParGetNE(L"setup")) == SettingsModel::Language::Russian;
+    BattleNotice::show_own(clear ? (ru ? L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0441\u043d\u044f\u0442\u0430" : L"Rally point cleared")
+                                 : (ru ? L"\u0422\u043e\u0447\u043a\u0430 \u0441\u0431\u043e\u0440\u0430 \u0437\u0430\u0434\u0430\u043d\u0430" : L"Rally point set"));
     if (!clear) {
         // This client's interface only: the effect's randoms come from the cosmetic stream.
         random::CosmeticScope cosmetic;

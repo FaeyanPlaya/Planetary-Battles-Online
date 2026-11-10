@@ -1014,6 +1014,7 @@ void CMatrixMap::ClearSide() {
 //   get it turned into side N's hue, so every side's robots wear its colour for every viewer;
 // - a client showing another side turns those interface pictures into its side's hue.
 static float s_InterfaceHue = -1.0f;  // degrees; < 0: the pictures as they are
+static DWORD s_InterfaceColorMM = 0;  // the same side's minimap colour (the radar's centre mark)
 static float s_SideHue[5] = {-1.0f, -1.0f, -1.0f, -1.0f, -1.0f};
 
 static float Ramp(float x, float a, float b) {
@@ -1059,6 +1060,14 @@ static DWORD TintYellow(DWORD argb, float hue) {
     return Rehue(argb, r, g, b, s, v, w, h - 42.0f + hue);
 }
 
+// Turns the pure yellow of a pixel over a background without red (the radar's dark teal) into `colour`, blended as
+// the yellow was: its share is the pixel's red. (By hue, the scan lines' blends of the two, greenish, stayed yellow.)
+static DWORD MixYellow(DWORD argb, DWORD colour) {
+    const int r = (argb >> 16) & 255, g = (argb >> 8) & 255, b = argb & 255;
+    const auto part = [r](int now, int yellow, int to) { return DWORD(std::clamp(now + (to - yellow) * r / 255, 0, 255)); };
+    return (argb & 0xFF000000) | (part(r, 255, (colour >> 16) & 255) << 16) | (part(g, 255, (colour >> 8) & 255) << 8) |
+           part(b, 0, colour & 255);
+}
 // Where the player's things are in the interface atlases (Matrix\IFace\*, 512x512 pixels). Other
 // yellow and orange there (flames, warning signs, energy icons, order arrows, auto-program gears,
 // the desert behind the robot preview) means something else and stays.
@@ -1066,6 +1075,7 @@ struct SAtlasRegion {
     const wchar_t *atlas;
     bool tint;  // false: a hole in the regions above it
     int x0, y0, x1, y1;
+    bool minimap = false;  // yellow over a background without red: turned into the side's minimap colour (MixYellow)
 };
 static const SAtlasRegion s_SideRegions[] = {
         {L"base_1", true, 0, 0, 512, 512},  // robot parts: weapons, heads, hulls
@@ -1082,6 +1092,7 @@ static const SAtlasRegion s_SideRegions[] = {
         {L"base_4", false, 344, 189, 371, 216},
         {L"base_4", false, 381, 189, 408, 216},
         {L"interface1", true, 136, 0, 162, 30},  // robot counter of the top bar
+        {L"interface2", true, 229, 365, 246, 382, true},  // the radar's centre mark: the driven robot (147,280 + 90,93)
 };
 
 // The atlas name of an interface texture ("matrix\iface\<atlas>[.ext][?flags]"), or empty.
@@ -1138,7 +1149,8 @@ static bool SideColourTextureFilter(const std::wstring &name, DWORD *argb, int w
                 for (const SAtlasRegion *out : holes)
                     hole |= x >= out->x0 * k && x < out->x1 * k && y >= out->y0 * k && y < out->y1 * k;
                 if (!hole)
-                    argb[y * pitch + x] = TintYellow(argb[y * pitch + x], s_InterfaceHue);
+                    argb[y * pitch + x] = in.minimap ? MixYellow(argb[y * pitch + x], s_InterfaceColorMM)
+                                                     : TintYellow(argb[y * pitch + x], s_InterfaceHue);
             }
     }
     return wanted;
@@ -1292,6 +1304,7 @@ void CMatrixMap::LoadSide(CBlockPar &bp) {
                 m_PlayerSide = &m_Side[side_idx];
                 m_Side[side_idx].InitPlayerSide();
                 s_InterfaceHue = id == 1 ? -1.0f : ColorHue(color);
+                s_InterfaceColorMM = colorMM;
             }
         }
     }

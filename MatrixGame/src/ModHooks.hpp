@@ -67,11 +67,14 @@ struct Hooks {
     // Planetary Battles Online (pbo): LiftSight: whether a robot's sight between two cells skips the path check (a
     // robot on a base's lift, off the move grid); CaptureLift: the capturer's lift raised again under it as it sets
     // up, and waited for at the top (true: still waiting); DriveReachReset: a robot its driver left loses the reach
-    // bonus too.
+    // bonus too; TurretPlaces: only the selected building's turret places shown (true); CaptureStay: whether a capture
+    // in this phase keeps the robot from the moves under it (true from the lift on).
     bool (*off_move_grid)(const CMatrixRobotAI &robot, const Base::CPoint &from, const Base::CPoint &to) = nullptr;
     void (*capture_raise)(CMatrixBuilding &base) = nullptr;
     bool (*capture_wait)(CMatrixRobotAI &robot, CMatrixBuilding &base) = nullptr;
     bool (*drive_reach_reset)() = nullptr;
+    bool (*turret_places)() = nullptr;
+    bool (*capture_stay)(int phase) = nullptr;
 
     // Исправления боя (fixes): CaptureNoTimeout: whether a robot with a base keeps it past the 10 s; StopInPlace: Stop
     // for a player's group (true: its robots were halted where they stand).

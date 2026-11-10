@@ -16,6 +16,8 @@
 #include <stupid_logger.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -166,25 +168,66 @@ std::vector<std::wstring> map_files(const Pack &pack) {
 std::string fingerprint(const Pack &pack) {
     static std::map<std::wstring, std::string> known;
     if (const auto found = known.find(pack.folder); found != known.end()) return found->second;
-    std::vector<std::pair<std::string, std::filesystem::path>> files;
+    struct File {
+        std::string name;
+        std::filesystem::path path;
+        std::uintmax_t size;
+        long long time;
+        bool operator<(const File &other) const { return name < other.name; }
+    };
+    std::vector<File> files;
     std::error_code error;
     const std::filesystem::path root(pack.folder);
+    // The listing's own sizes and times, and names relative by the letters: asking the disk again for every file of a
+    // pack of thousands took more than a second.
     for (auto it = std::filesystem::recursive_directory_iterator(root, error);
          !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
         if (!it->is_regular_file(error)) continue;
-        files.emplace_back(utils::from_wstring(folded(std::filesystem::relative(it->path(), root, error).wstring())), it->path());
+        files.push_back({utils::from_wstring(folded(it->path().lexically_relative(root).wstring())), it->path(),
+                         it->file_size(error), it->last_write_time(error).time_since_epoch().count()});
     }
     std::sort(files.begin(), files.end());
+    // Every file but the pictures is read: hundreds of MB in a pack of many maps, on every start of the game (it starts
+    // again after each battle), a minute on a slow disk. Kept in kept_file under the files' names, sizes and times: read
+    // again only when one changed.
+    constexpr const wchar_t *kept_file = L"CFG\\map-packs.txt";  // "<folder>\t<listing>\t<fingerprint>" a line (UTF-8)
+    std::uint64_t listing = GameData::hash_bytes("pbo-maps-listing", 16);
+    for (const auto &[name, path, size, time] : files) {
+        const std::string stamp = std::format("{} {}", size, time);
+        listing = GameData::hash_bytes(name.data(), name.size() + 1, listing);
+        listing = GameData::hash_bytes(stamp.data(), stamp.size() + 1, listing);
+    }
+    const std::string folder = utils::from_wstring(pack.folder), listed = GameData::hex(listing);
+    std::vector<std::string> kept_lines;
+    {
+        std::ifstream in{std::filesystem::path(kept_file)};
+        for (std::string line; std::getline(in, line);) {
+            const std::size_t a = line.find('\t'), b = a == std::string::npos ? a : line.find('\t', a + 1);
+            if (b == std::string::npos) continue;
+            if (line.substr(0, a) == folder) {
+                if (line.substr(a + 1, b - a - 1) == listed) return known[pack.folder] = line.substr(b + 1);
+                continue;  // this pack's line, out of date
+            }
+            kept_lines.push_back(line);
+        }
+    }
+    const auto began = std::chrono::steady_clock::now();
     std::uint64_t h = GameData::hash_bytes("pbo-maps", 8);
-    for (const auto &[name, path] : files) {
-        const std::string size = std::to_string(std::filesystem::file_size(path, error));
+    for (const auto &[name, path, bytes_size, time] : files) {
+        const std::string size = std::to_string(bytes_size);
         h = GameData::hash_bytes(name.data(), name.size() + 1, h);  // with the terminating zero
         h = GameData::hash_bytes(size.data(), size.size() + 1, h);
         if (picture(path)) continue;
         const auto bytes = file_bytes(path);
         h = bytes ? GameData::hash_bytes(bytes->data(), bytes->size(), h) : GameData::hash_bytes("?", 1, h);
     }
-    return known[pack.folder] = GameData::hex(h);
+    const std::string fp = GameData::hex(h);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count();
+    lgr.notice("Map pack {}: its fingerprint took {} ms")(folder, ms);
+    std::ofstream out{std::filesystem::path(kept_file), std::ios::trunc};
+    for (const auto &line : kept_lines) out << line << '\n';
+    out << folder << '\t' << listed << '\t' << fp << '\n';
+    return known[pack.folder] = fp;
 }
 
 std::string ref(const Pack &pack) { return pack.id + ":" + fingerprint(pack); }
@@ -501,13 +544,17 @@ std::vector<std::wstring> bundle_files(const std::wstring &map_path) {
 }
 
 std::optional<std::string> bundle(const std::wstring &map_path) {
+    return bundle(map_path, of_map(installed(), map_path) ? bundle_files(map_path) : std::vector<std::wstring>{});
+}
+
+std::optional<std::string> bundle(const std::wstring &map_path, const std::vector<std::wstring> &files) {
     static std::wstring last_path;
     static std::string last;
     if (!last_path.empty() && folded(last_path) == folded(map_path)) return last;
     const Pack *pack = of_map(installed(), map_path);
     if (!pack) return std::nullopt;
     std::string out(bundle_magic);
-    for (const std::wstring &file : bundle_files(map_path)) {
+    for (const std::wstring &file : files) {
         const auto bytes = file_bytes(std::filesystem::path(pack->folder) / file);
         if (!bytes) return std::nullopt;
         const std::string name = utils::from_wstring(file);

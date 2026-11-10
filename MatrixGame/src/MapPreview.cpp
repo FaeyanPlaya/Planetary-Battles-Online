@@ -226,27 +226,93 @@ void draw_marks(CBitmap &bmp, const std::vector<Mark> &marks) {
         draw_icon(bmp, m.u * float(bmp.SizeX()), m.v * float(bmp.SizeY()), icons.cells[m.kind], size, side_colour(m.side));
 }
 
-std::wstring cached_minimap(const std::wstring &map_path) {
-    if (const auto known = cached_minimaps.find(map_path); known != cached_minimaps.end()) return known->second;
-    std::wstring found;
-    try {
-        Base::CStorage storage;
-        if (storage.Load(map_path.c_str())) {
-            auto *names = storage.GetBuf(DATA_PROPERTIES, DATA_PROPERTIES_NAME, Base::ST_WCHAR);
-            auto *values = storage.GetBuf(DATA_PROPERTIES, DATA_PROPERTIES_VALUE, Base::ST_WCHAR);
-            const int at = names && values ? names->FindAsWStr(DATA_UNIQID) : -1;
-            const DWORD uniq = at >= 0 ? values->GetAsParamParser(at).GetDword() : 0;
-            // The name the minimap cache uses (CMinimap::RenderBackground).
-            const std::wstring file = std::format(L"{}\\{}.{:X}",PathToOutputFiles(FOLDER_NAME_CACHE),
-                                                  std::filesystem::path(map_path).filename().wstring(), uniq);
-            std::error_code error;
-            if (at >= 0 && std::filesystem::is_regular_file(file, error)) {
-                found = file;
-                marks_of[file] = read_marks(storage);
+// previews_file: a line a map, "<size> <time>\t<UniqID, hex; - none>\t<u,v,side,kind;...>\t<path>" (UTF-8). Its
+// minimap's name and marks come from the whole map read (tens of MB some): kept, a map is read again only when its file
+// changed (the game starts again after every battle).
+constexpr const wchar_t *previews_file = L"CFG\\map-previews.txt";
+struct KeptPreview {
+    std::string stamp;
+    std::string uniq;  // hex; "-": none
+    std::vector<Mark> marks;
+};
+std::map<std::wstring, KeptPreview> previews_kept;
+bool previews_loaded = false;
+
+std::string file_stamp(const std::wstring &path) {
+    std::error_code error;
+    const auto size = std::filesystem::file_size(path, error);
+    if (error) return "0 0";
+    const auto time = std::filesystem::last_write_time(path, error);
+    return error ? "0 0" : std::format("{} {}", size, time.time_since_epoch().count());
+}
+
+void load_previews() {
+    if (std::exchange(previews_loaded, true)) return;
+    std::ifstream in{std::filesystem::path(previews_file)};
+    std::string line;
+    while (std::getline(in, line)) {
+        try {
+            const std::size_t a = line.find('\t'), b = a == std::string::npos ? a : line.find('\t', a + 1),
+                              c = b == std::string::npos ? b : line.find('\t', b + 1);
+            if (c == std::string::npos) continue;
+            KeptPreview kept{line.substr(0, a), line.substr(a + 1, b - a - 1), {}};
+            std::istringstream marks(line.substr(b + 1, c - b - 1));
+            Mark m{};
+            int kind = 0;
+            char comma = 0, semicolon = 0;
+            while (marks >> m.u >> comma >> m.v >> comma >> m.side >> comma >> kind >> semicolon) {
+                m.kind = Mark::Kind(std::clamp(kind, 0, int(Mark::Base)));
+                kept.marks.push_back(m);
             }
+            previews_kept[utils::to_wstring(line.substr(c + 1))] = std::move(kept);
+        }
+        catch (...) {
         }
     }
-    catch (...) {
+}
+
+void save_previews() {
+    std::ofstream out{std::filesystem::path(previews_file), std::ios::trunc};
+    for (const auto &[path, kept] : previews_kept) {
+        out << kept.stamp << '\t' << kept.uniq << '\t';
+        for (const Mark &m : kept.marks) out << m.u << ',' << m.v << ',' << m.side << ',' << int(m.kind) << ';';
+        out << '\t' << utils::from_wstring(path) << '\n';
+    }
+}
+
+std::wstring cached_minimap(const std::wstring &map_path) {
+    if (const auto known = cached_minimaps.find(map_path); known != cached_minimaps.end()) return known->second;
+    load_previews();
+    const std::string stamp = file_stamp(map_path);
+    auto kept = previews_kept.find(map_path);
+    if (kept == previews_kept.end() || kept->second.stamp != stamp) {
+        KeptPreview fresh{stamp, "-", {}};
+        try {
+            Base::CStorage storage;
+            if (storage.Load(map_path.c_str())) {
+                auto *names = storage.GetBuf(DATA_PROPERTIES, DATA_PROPERTIES_NAME, Base::ST_WCHAR);
+                auto *values = storage.GetBuf(DATA_PROPERTIES, DATA_PROPERTIES_VALUE, Base::ST_WCHAR);
+                const int at = names && values ? names->FindAsWStr(DATA_UNIQID) : -1;
+                if (at >= 0) fresh.uniq = std::format("{:X}", values->GetAsParamParser(at).GetDword());
+                fresh.marks = read_marks(storage);
+            }
+        }
+        catch (...) {
+        }
+        kept = previews_kept.insert_or_assign(map_path, std::move(fresh)).first;
+        save_previews();
+    }
+    std::wstring found;
+    if (kept->second.uniq != "-") {
+        // The name the minimap cache uses (CMinimap::RenderBackground).
+        const std::wstring file = std::format(L"{}\\{}.{}", PathToOutputFiles(FOLDER_NAME_CACHE),
+                                              std::filesystem::path(map_path).filename().wstring(),
+                                              utils::to_wstring(kept->second.uniq));
+        std::error_code error;
+        if (std::filesystem::is_regular_file(file, error)) {
+            found = file;
+            marks_of[file] = kept->second.marks;
+        }
     }
     cached_minimaps[map_path] = found;
     return found;

@@ -94,8 +94,11 @@ public:
     // closed already; a higher one at once.
     void set_delay(int turns);
     // Host: measures the round trip to the live clients (each answers pong <id>); their answers as (peer, id), once.
-    void ping(int id);
+    // Each ping also carries how far ahead the host knew the turns (its least since the last ping, ms; -1: not said).
+    void ping(int id, int lead);
     std::vector<std::pair<int, int>> take_pongs();
+    // Client: the host's leads of its pings since the last call.
+    std::vector<int> take_host_leads() { return std::exchange(m_HostLeads, {}); }
     bool is_host() const { return m_Host; }
     int side() const { return m_Side; }
     bool alone() const;  // every other peer has gone
@@ -250,6 +253,7 @@ private:
     int m_Now = 0;  // the game time of the last step
     std::vector<std::pair<int, std::string>> m_Chat;
     std::vector<std::pair<int, int>> m_Pongs;  // host: (peer, id)
+    std::vector<int> m_HostLeads;              // client: the host's, from its pings
     std::vector<std::pair<int, int>> m_Desyncs;  // host: (peer, time)
     std::vector<std::pair<int, int>> m_Unfixed;  // (side, time)
     std::map<int, std::uint64_t> m_Checkpoints;  // host: its hashes of the times a resync was for, kept

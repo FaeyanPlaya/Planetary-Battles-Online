@@ -53,7 +53,8 @@ using LobbyModel::JoinError;
 
 constexpr const wchar_t *address_file = L"CFG\\net-join.txt";  // the last host joined
 constexpr const wchar_t *sort_file = L"CFG\\lobby-sort.txt";    // the map list's order: name or people
-constexpr const wchar_t *sides_file = L"CFG\\map-sides.txt";   // the maps' sides read before (the game restarts after a battle)
+constexpr const wchar_t *hashes_file = L"CFG\\map-hashes.txt";  // the maps' fingerprints kept (map_hash)
+constexpr const wchar_t *sides_file =L"CFG\\map-sides.txt";   // the maps' sides read before (the game restarts after a battle)
 constexpr int connect_timeout_ms = 8000;
 constexpr auto map_read_budget = std::chrono::milliseconds(15);
 
@@ -61,6 +62,7 @@ enum class Mode { Join, Host, Client, Name };
 
 struct State {
     Mode mode = Mode::Join;
+    std::chrono::steady_clock::time_point last_takt{};  // the slow-frame note's
     StandaloneSettings::Values values;
     NetBattle::Options options;
     Language language = Language::English;
@@ -129,6 +131,50 @@ std::string file_stamp(const std::wstring &path) {
     if (error) return "0 0";
     const auto time = std::filesystem::last_write_time(path, error);
     return error ? "0 0" : std::format("{} {}", size, time.time_since_epoch().count());
+}
+
+// hashes_file: a line a map, "<hash>\t<path>" and "\t<file>\t<file_stamp>" for each file the hash covers (UTF-8). A
+// fingerprint reads the map, a map mod's map its bundle (its cache.txt read, the files it takes found and read): up
+// to tens of MB for each map chosen, again after every battle (the game starts again). Kept, it is read again only
+// when one of its files changed.
+struct KeptHash {
+    std::string hash;
+    std::vector<std::pair<std::wstring, std::string>> files;  // file, file_stamp
+};
+std::map<std::wstring, KeptHash> hashes_kept;
+bool hashes_loaded = false;
+
+void load_hashes() {
+    if (std::exchange(hashes_loaded, true)) return;
+    std::ifstream in{std::filesystem::path(hashes_file)};
+    std::string line;
+    while (std::getline(in, line)) {
+        try {
+            std::vector<std::string> parts;
+            for (std::size_t at = 0;;) {
+                const std::size_t tab = line.find('\t', at);
+                parts.push_back(line.substr(at, tab == std::string::npos ? std::string::npos : tab - at));
+                if (tab == std::string::npos) break;
+                at = tab + 1;
+            }
+            if (parts.size() < 4 || parts.size() % 2 != 0 || parts[0].empty()) continue;
+            KeptHash kept{parts[0], {}};
+            for (std::size_t i = 2; i + 1 < parts.size(); i += 2)
+                kept.files.emplace_back(utils::to_wstring(parts[i]), parts[i + 1]);
+            hashes_kept[utils::to_wstring(parts[1])] = std::move(kept);
+        }
+        catch (...) {
+        }
+    }
+}
+
+void save_hashes() {
+    std::ofstream out{std::filesystem::path(hashes_file), std::ios::trunc};
+    for (const auto &[path, kept] : hashes_kept) {
+        out << kept.hash << '\t' << utils::from_wstring(path);
+        for (const auto &[file, stamp] : kept.files) out << '\t' << utils::from_wstring(file) << '\t' << stamp;
+        out << '\n';
+    }
 }
 
 // sides_file: a line a map, "<size> <time> <sides> <path>" (UTF-8).
@@ -236,20 +282,39 @@ std::string map_hash(const std::wstring &path) {
     if (const auto known = map_hashes.find(path); known != map_hashes.end()) return known->second;
     // A copy the host gave; a map mod's map: its bundle (the map with the mod's files it takes).
     if (const auto kept = MapShare::used_hash(path)) return map_hashes[path] = *kept;
-    if (MapPacks::of_map(MapPacks::installed(), path)) {
-        const auto bundle = MapPacks::bundle(path);
-        return map_hashes[path] = bundle ? MapShare::fingerprint(*bundle) : std::string();
+    load_hashes();
+    if (const auto kept = hashes_kept.find(path);
+        kept != hashes_kept.end() && std::all_of(kept->second.files.begin(), kept->second.files.end(),
+                                                 [](const auto &f) { return file_stamp(f.first) == f.second; }))
+        return map_hashes[path] = kept->second.hash;
+    const auto began = std::chrono::steady_clock::now();
+    KeptHash fresh;
+    if (const MapPacks::Pack *pack = MapPacks::of_map(MapPacks::installed(), path)) {
+        const auto files = MapPacks::bundle_files(path);
+        for (const std::wstring &file : files) {
+            const std::wstring full = (std::filesystem::path(pack->folder) / file).wstring();
+            fresh.files.emplace_back(full, file_stamp(full));
+        }
+        const auto bundle = MapPacks::bundle(path, files);
+        fresh.hash = bundle ? MapShare::fingerprint(*bundle) : std::string();
     }
-    std::string hash;
-    try {
-        CBuf data;
-        data.LoadFromFile(path);
-        hash = GameData::hex(GameData::hash_bytes(data.Get(), std::size_t(data.Len())));
+    else {
+        fresh.files.emplace_back(path, file_stamp(path));
+        try {
+            CBuf data;
+            data.LoadFromFile(path);
+            fresh.hash = GameData::hex(GameData::hash_bytes(data.Get(), std::size_t(data.Len())));
+        }
+        catch (...) {
+        }
     }
-    catch (...) {
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count();
+    if (ms >= 100) lgr.notice("Lobby: the fingerprint of {} took {} ms")(utils::from_wstring(path), ms);
+    if (!fresh.hash.empty() && !fresh.files.empty()) {
+        hashes_kept[path] = fresh;
+        save_hashes();
     }
-    map_hashes[path] = hash;
-    return hash;
+    return map_hashes[path] = fresh.hash;
 }
 
 Language language() {
@@ -1215,6 +1280,13 @@ void poll() {
 void takt() {
     if (!state) return;
     State &s = *state;
+    {
+        // For lag reports: a frame of the lobby that took long (its window answers nothing meanwhile).
+        const auto now = std::chrono::steady_clock::now();
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - s.last_takt).count();
+        if (s.last_takt != std::chrono::steady_clock::time_point{} && ms >= 300) lgr.notice("Lobby: a slow frame, {} ms")(ms);
+        s.last_takt = now;
+    }
     if (s.mode == Mode::Name) {
         if (s.dirty) rebuild();
         return;

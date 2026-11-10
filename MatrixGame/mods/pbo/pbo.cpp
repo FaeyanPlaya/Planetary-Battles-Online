@@ -1,8 +1,9 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 // Planetary Battles Online, a battle mod: pbo.dll in mods\pbo. Fixes of what network battles showed: robots on a
 // base's lift see the enemies in reach and are seen (LiftSight), a capturer rides the lift down when something else
-// closed it (CaptureLift), a robot its driver left loses the reach bonus too (DriveReachReset). The tests build this
-// file into themselves (PBO_MOD_STATIC).
+// closed it (CaptureLift), a robot its driver left loses the reach bonus too (DriveReachReset), only the selected
+// building's turret places are shown (TurretPlaces), a capturer on a base's lift does not drive off it to give way
+// (CaptureStay). The tests build this file into themselves (PBO_MOD_STATIC).
 #include "ModApi.hpp"
 #include "ModHooks.hpp"
 
@@ -42,6 +43,17 @@ bool capture_wait(CMatrixRobotAI &robot, CMatrixBuilding &base) {
 // another robot).
 bool drive_reach_reset() { return true; }
 
+// TurretPlaces: a turret lost while this person chose a place for one at any building showed its own building's
+// places, and nothing took them off: green spots by another building, where no turret could be ordered.
+bool turret_places() { return true; }
+
+// CaptureStay: a capturer's way of giving way (a move and a return over its capture) waited while it drove onto the
+// lift, and went on from there: the robot drove off the lift as it set up and captured (once into blocked cells that
+// threw it behind the base), and the lift going down without it killed it. From the lift on it waits.
+bool capture_stay(int phase) {
+    return phase == ROP_CAPTURE_IN_POSITION || phase == ROP_CAPTURE_SETTING_UP || phase == ROP_CAPTURING;
+}
+
 }  // namespace
 
 void init(ModApi::Context &) {
@@ -50,6 +62,8 @@ void init(ModApi::Context &) {
     hooks.capture_raise = capture_raise;
     hooks.capture_wait = capture_wait;
     hooks.drive_reach_reset = drive_reach_reset;
+    hooks.turret_places = turret_places;
+    hooks.capture_stay = capture_stay;
 }
 
 }  // namespace PboMod

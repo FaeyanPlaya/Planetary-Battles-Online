@@ -4879,6 +4879,10 @@ void CIFaceList::ResetOrderingMode() {
     if (ps->m_ActiveObject && ps->m_ActiveObject->IsBuilding()) {
         ((CMatrixBuilding *)ps->m_ActiveObject)->DeletePlacesShow();
     }
+    // TurretPlaces (Planetary Battles Online mod): every building's, whatever showed them.
+    if (const auto own = ModHooks::hooks().turret_places; Mods::switches().turret_places && own && own())
+        for (CMatrixMapStatic *ms = CMatrixMapStatic::GetFirstLogic(); ms; ms = ms->GetNextLogic())
+            if (ms->IsBuilding()) ms->AsBuilding()->DeletePlacesShow();
 
     RESETFLAG(m_IfListFlags, ORDERING_MODE);
     m_IfListFlags &= 0x0000ffff;
