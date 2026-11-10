@@ -76,11 +76,11 @@ PBO_MOD_ENTRY("mymod", init)
 
 `ModApi::Context` (`MatrixGame/src/ModApi.hpp`) gives the mod its id and folder, whether it is on now, its keys and settings, a log line and a key handler. To build one, put it beside ours (`MatrixGame/mods/<id>/<id>.cpp` and `mod.txt`) and add the id to `MATRIXGAME_MODS` in `MatrixGame/CMakeLists.txt`. The build makes `mods/<id>/<id>.dll` beside the EXE.
 
-- **The game's version.** The DLL carries the engine's id (`PBO_ENGINE_ID`), and the game loads it only for the same build. "Built for another version of the game" in `test.log` means: rebuild it for this one. Every release of the game needs its mods rebuilt.
+- **The game's version.** The DLL carries the engine's id (`PBO_ENGINE_ID`), and the game loads it only for the same build. "Built for another version of the game" in `logs\test.log` means: rebuild it for this one. Every release of the game needs its mods rebuilt.
 - **Hooks.** The engine asks our mods at the places they change (`MatrixGame/src/ModHooks.hpp`): how a missile turns, what a repair factory does, and so on. Each hook belongs to one of our mods and works while that mod's switch is on (`Switches=`), so a hook is not yet open to a new mod. New hooks are added when a mod needs them: ask for one, naming the place in the engine.
 - **Licence.** A DLL built against the engine is a work based on it: it is under the GPL (version 2 or later), as the engine is.
 
 ## When something goes wrong
 
-- `test.log` beside the EXE says which mods loaded, which data was laid ("Battle mods' data: ..."), and why a mod was left out.
-- A crash that closes the game is written to `crash.txt` beside the EXE: the place as module+offset and the call chain.
+- `logs\test.log` beside the EXE says which mods loaded, which data was laid ("Battle mods' data: ..."), and why a mod was left out.
+- A crash that closes the game is written to `logs\crash.txt` beside the EXE: the place as module+offset and the call chain.
