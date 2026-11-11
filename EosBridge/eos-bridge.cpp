@@ -47,6 +47,7 @@ enum Kind : std::uint8_t { Open = 1, Accepted, Refused, Data, Close };
 constexpr std::uint8_t opener_bit = 0x80;
 constexpr std::size_t header = 5, max_payload = EOS_P2P_MAX_PACKET_SIZE - header;
 constexpr std::size_t read_limit = 256 * 1024;  // a stream's bytes waiting for EOS before its socket is read again
+constexpr std::size_t write_limit = 64u << 20;  // a stream's bytes waiting for the game; more: the stream is closed
 constexpr auto connect_wait = std::chrono::seconds(20), take_wait = std::chrono::seconds(10);
 constexpr auto idle_exit = std::chrono::minutes(5);  // no game connected this long: the bridge ends
 
@@ -276,6 +277,10 @@ std::string room_attribute(EOS_HLobbyDetails details, const char *key) {
                             ? a->Data->Value.AsUtf8
                             : "";
     EOS_Lobby_Attribute_Release(a);
+    // Anybody's room: its text goes to the game as one line, so it holds no line end, and is no longer than ours are.
+    if (value.size() > 512) value.resize(512);
+    for (char &ch : value)
+        if (ch == '\n' || ch == '\r') ch = ' ';
     return value;
 }
 
@@ -438,6 +443,10 @@ void packet(const std::string &peer, const std::uint8_t *data, std::uint32_t siz
             say("%s asked for port %u: nobody listens", peer.c_str(), port);
             return;
         }
+        if (b.incoming.size() >= 64) {  // (the game takes each within moments: so many are a flood)
+            send_packet(peer, Refused, id, false);
+            return;
+        }
         const std::uint32_t local_id = b.next_id++;
         b.incoming[local_id] = {peer, id, Clock::now() + take_wait};
         reply(*l, "ACCEPT " + std::to_string(local_id) + " " + peer);
@@ -458,6 +467,11 @@ void packet(const std::string &peer, const std::uint8_t *data, std::uint32_t siz
         drop(*l, "refused");
     } else if (kind == Data && l->role == Local::Role::Stream) {
         l->out.append(payload, length);
+        // The game reads its socket every frame: so much waiting for it is a peer filling this PC's memory.
+        if (l->out.size() > write_limit) {
+            l->out.clear();
+            drop(*l, "more came than the game takes");
+        }
     } else if (kind == Close) {
         l->role = Local::Role::Who;  // the other end closed it: no CLOSE back
         l->closing = true;
