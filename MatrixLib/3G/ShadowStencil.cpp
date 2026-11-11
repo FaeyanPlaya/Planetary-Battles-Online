@@ -13,6 +13,7 @@
 static const DWORD SVOShadowStencilVertex_FVF = D3DFVF_XYZ;
 
 CVOShadowStencil *CVOShadowStencil::m_First;
+float CVOShadowStencil::s_LengthScale = 1.0f;
 CVOShadowStencil *CVOShadowStencil::m_Last;
 
 void CVOShadowStencil::BeforeRenderAll()
@@ -111,7 +112,7 @@ void CVOShadowStencil::Build(CVectorObject &obj, int frame, const D3DXVECTOR3 &v
     SSSFrameData *fd = &m_Frames[frame];
     SVOKadr *k = obj.m_Geometry.m_Frames + frame;
 
-    len += k->m_Radius * 2 + k->m_GeoCenter.z;
+    len = (len + k->m_Radius * 2 + k->m_GeoCenter.z) * s_LengthScale;
 
     if (dirty || m_FrameFor != frame) {
         // frame not match

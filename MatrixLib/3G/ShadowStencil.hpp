@@ -52,6 +52,10 @@ public:
 
     static void MarkAllBuffersNoNeed(void);
 
+    // How many times longer the volumes are drawn along the light than asked (the far view: so they reach the water
+    // plane under a low sun; 1 in the original). Set by the map each frame.
+    static float s_LengthScale;
+
     CVOShadowStencil();
     ~CVOShadowStencil();
 
