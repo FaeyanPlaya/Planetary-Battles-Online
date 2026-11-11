@@ -99,15 +99,14 @@ void CMatrixRobot::DecorHeadPlace(const D3DXVECTOR3 &top) {
         CBlockPar *templates = ReinforcementTemplates();
         const std::wstring model = templates->ParGetNE(L"SelfRepairHead");
         const std::wstring texture = templates->ParGetNE(L"SelfRepairHeadTexture");
-        std::wstring found;
         std::error_code error;
-        if (model.empty() || texture.empty() || !std::filesystem::is_regular_file(model, error))
+        std::wstring texture_file;
+        // (A mod's data naming a texture that is not there: no head, not a battle ended by the missing file.)
+        if (model.empty() || texture.empty() || !std::filesystem::is_regular_file(model, error) ||
+            !CFile::FileExist(texture_file, texture.c_str(), CacheExtsTex))
             return;
-        // Every side's own colour, as the units' (CMatrixMap::LoadSide).
-        std::wstring name = texture;
-        if (m_Side >= 2 && CFile::FileExist(found, texture.c_str(), L"png~dds"))
-            name += utils::format(L"?Side%d", m_Side);
-        m_DecorHead = LoadObject(model.c_str(), g_MatrixHeap, true, name.c_str());
+        // The same texture for every side: the head's own, not recoloured as the units' (owner's choice).
+        m_DecorHead = LoadObject(model.c_str(), g_MatrixHeap, true, texture.c_str());
         m_DecorHead->SetAnimByName(ANIMATION_NAME_IDLE);
         for (int k = 0; k < 2; ++k)
             if (m_DecorHead->GetMatrixById(10 + 2 * k) && m_DecorHead->GetMatrixById(11 + 2 * k))
@@ -1154,7 +1153,7 @@ bool CMatrixRobot::ChassisSidesTakt() {
 int CMatrixRobot::ChassisSideFrame(int side) const {
     CVectorObjectAnim *graph = m_Unit[0].m_Graph;
     const int anim = graph->GetAnimIndex();
-    const int count = graph->VO()->GetAnimFramesCount(anim);
+    const int count = std::max(1, graph->VO()->GetAnimFramesCount(anim));
     int frame = int(std::floor(m_ChassisSides.frames[side])) % count;
     if (frame < 0)
         frame += count;

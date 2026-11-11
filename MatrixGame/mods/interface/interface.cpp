@@ -169,6 +169,10 @@ bool chassis_sides(CMatrixRobot &robot) {
         const int time = std::max(1, graph->VO()->GetAnimFrameTime(anim, 0));
         const float speed = kind == RUK_CHASSIS_TRACK ? ANIMSPEED_CHAISIS_TRACK : ANIMSPEED_CHAISIS_WHEEL;
         const float frames = float(graph->VO()->GetAnimFramesCount(anim));
+        if (frames < 1) {  // (a model without frames of this animation: drawn as the battle has it)
+            s.time = -1;
+            return false;
+        }
         for (int i = 0; i < 2; ++i) {
             s.step[i] = (ahead + (i ? -spin : spin)) * LOGIC_TAKT_PERIOD / (speed * time);
             s.frames[i] = std::fmod(s.frames[i] + s.step[i], frames);

@@ -638,7 +638,8 @@ void CMatrixCamera::ResizeScreen(void) {
     _res_y_inversed = (float)(1.0 / (double)g_ScreenY);
 
     // recalculate projective matrix
-    D3DXMatrixPerspectiveFovLH(&m_MatProj, CAM_HFOV, float(g_ScreenX) * _res_y_inversed, 1.0f, MAX_VIEW_DISTANCE);
+    m_Near = 1.0f;
+    D3DXMatrixPerspectiveFovLH(&m_MatProj, CAM_HFOV, float(g_ScreenX) * _res_y_inversed, m_Near, MAX_VIEW_DISTANCE);
 
     _mp_11_inversed = (float)(1.0 / m_MatProj._11);
     _mp_22_inversed = (float)(1.0 / m_MatProj._22);
@@ -727,10 +728,24 @@ void CMatrixCamera::BeforeDraw(void) {
 
     D3DXMatrixInverse(&m_MatViewInversed, NULL, &m_MatView);
 
-    float lz = g_MatrixMap->GetZ(m_MatViewInversed._41, m_MatViewInversed._42) + 10.0f;
+    const float ground = g_MatrixMap->GetZ(m_MatViewInversed._41, m_MatViewInversed._42);
+    float lz = ground + 10.0f;
     if (m_MatViewInversed._43 < lz) {
         m_MatViewInversed._43 = lz;
         D3DXMatrixInverse(&m_MatView, NULL, &m_MatViewInversed);
+    }
+
+    // The far view: the near clip plane follows the camera's height above the ground. At 1 the depth buffer told apart
+    // only 1-2 units at the distances a far zoom sees, and what lies on the ground (its surfaces, the liquid) fought the
+    // ground there, flickering as the camera moved. Over a robot or a turret driven too (the camera above and behind
+    // it is farther from it than from the ground under itself); not from inside one (first person) or the fly camera.
+    const auto near_plane = ModHooks::hooks().near_plane;
+    const bool outside = !m_FirstPerson && !FLAG(g_MatrixMap->m_Flags, MMFLAG_FLYCAM);
+    const float near_clip = Mods::switches().far_view && near_plane && outside
+                                ? near_plane(m_MatViewInversed._43 - ground) : 1.0f;
+    if (near_clip != m_Near) {
+        m_Near = near_clip;
+        D3DXMatrixPerspectiveFovLH(&m_MatProj, CAM_HFOV, float(g_ScreenX) * _res_y_inversed, m_Near, MAX_VIEW_DISTANCE);
     }
 
     // frustum update

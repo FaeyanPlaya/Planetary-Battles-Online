@@ -3,7 +3,7 @@ FlyerOrders {
 		ReplaceBlocks=1
 		CallPoints=150
 		SelfRepairHead=%MOD%\reparator.vo
-		SelfRepairHeadTexture=Matrix\Robot\Weapon10
+		SelfRepairHeadTexture=%MOD%\reparator
 		90 {
 			BotArmor=5
 			BotChassis=5

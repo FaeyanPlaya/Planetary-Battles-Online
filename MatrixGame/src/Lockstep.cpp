@@ -474,7 +474,7 @@ void Session::receive(int peer, const std::string &line) {
     if (tag == "C") {
         Commands::Command c;
         if (!Commands::from_line(line, c)) {
-            m_Events.push_back(std::format("bad command from side {}: {}", p.side, line));
+            m_Events.push_back(std::format("bad command from side {}: {}", p.side, line.substr(0, 200)));
         }
         else if (!m_Host) {
             m_Incoming.push_back(std::move(c));
@@ -569,6 +569,8 @@ void Session::receive(int peer, const std::string &line) {
         in >> time >> std::hex >> hash;
         // A person replaying the history sends hashes long forgotten here (but for a resync's time).
         if (!m_OwnHashes.empty() && time < m_OwnHashes.begin()->first && !m_Checkpoints.contains(time)) return;
+        // (A hash a second for each person, gone once compared: so many are only a peer filling this PC's memory.)
+        if (m_PeerHashes.size() >= 4096 && !m_PeerHashes.contains({time, peer})) return;
         m_PeerHashes[{time, peer}] = hash;
         compare(time);
     }
@@ -678,7 +680,7 @@ void Session::receive(int peer, const std::string &line) {
         lost(peer);
     }
     else {
-        m_Events.push_back(std::format("unknown line from side {}: {}", p.side, line));
+        m_Events.push_back(std::format("unknown line from side {}: {}", p.side, line.substr(0, 200)));
     }
 }
 

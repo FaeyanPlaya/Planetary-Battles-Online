@@ -1342,6 +1342,10 @@ void CMatrixMap::BeforeDraw(void) {
 
     ++m_CurFrame;  // uniq number per ~500 days
 
+    // The far view: a shadow volume asked to go down len goes len * |light.z| along a slanted light, so under a low sun
+    // its open end stayed above the water plane (see DrawWaterDepth); lengthened to reach it.
+    CVOShadowStencil::s_LengthScale = Mods::switches().far_view ? 1.0f / std::max(0.2f, std::fabs(m_LightMain.z)) : 1.0f;
+
     m_Camera.BeforeDraw();
 
     CPoint p(m_Cursor.GetPos());
@@ -2067,6 +2071,66 @@ void CMatrixMap::DrawShadowsProjFast(void) {
     ASSERT_DX(g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP));
 }
 
+// The far view: the water is drawn without its depth, so the depth buffer kept the sea floor under it. A shadow volume
+// open at its far end (it reaches the water plane, see BeforeDraw) then shadowed the floor beyond that end, and the
+// floor's shadow showed through the water as dark outlines of buildings and robots, far out on a far zoom. With the
+// surface's depth the volumes end on it. Only where the water is (its alpha mask on the map, all of it outside).
+void CMatrixMap::DrawWaterDepth(void) {
+    DTRACE();
+
+    if (!m_Water->IsReadyForDraw())
+        return;
+
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0));
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZENABLE, TRUE));
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZWRITEENABLE, TRUE));
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE));
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_LIGHTING, FALSE));
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL));
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHAREF, 0x40));
+
+    ASSERT_DX(g_D3DD->SetFVF(MATRIX_WATER_VERTEX_FORMAT));
+    ASSERT_DX(g_D3DD->SetStreamSource(0, GET_VB(m_Water->m_VB), 0, sizeof(SMatrixMapWaterVertex)));
+    ASSERT_DX(g_D3DD->SetIndices(GET_IB(m_Water->m_IB)));
+
+    g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+    g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    ASSERT_DX(g_D3DD->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0));
+    SetColorOpSelect(0, D3DTA_TEXTURE);
+    SetAlphaOpSelect(0, D3DTA_TEXTURE);
+    SetColorOpDisable(1);
+
+    D3DXMATRIX m = GetIdentityMatrix();
+    m._11 *= GLOBAL_SCALE * (float)(MAP_GROUP_SIZE) / (float)(WATER_SIZE);
+    m._22 *= GLOBAL_SCALE * (float)(MAP_GROUP_SIZE) / (float)(WATER_SIZE);
+    m._33 *= GLOBAL_SCALE * (float)(MAP_GROUP_SIZE) / (float)(WATER_SIZE);
+    m._43 = WATER_LEVEL;
+
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE));
+    int cnt = m_VisibleGroupsCount;
+    CMatrixMapGroup **md = m_VisibleGroups;
+    while ((cnt--) > 0) {
+        if ((*md)->HasWater()) {
+            ASSERT_DX(g_D3DD->SetTexture(0, (*md)->GetWaterAlpha()->Tex()));
+            const D3DXVECTOR2 &p = (*md)->GetPos0();
+            m._41 = p.x;
+            m._42 = p.y;
+            m_Water->Draw(m);
+        }
+        ++md;
+    }
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE));
+    for (const auto &item : m_VisWater) {
+        m._41 = item.x;
+        m._42 = item.y;
+        m_Water->Draw(m);
+    }
+
+    g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+    g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF));
+}
+
 void CMatrixMap::DrawShadows(const ShadowPasses &passes) {
     DTRACE();
 
@@ -2440,7 +2504,7 @@ void CMatrixMap::DrawSky(void) {
 
 float DrawShadowsDistanceSq() {
     const auto shadows = ModHooks::hooks().shadow_distance;  // the far view mod's
-    const float distance = Mods::switches().far_view && shadows ? shadows(Mods::view_scale()) : 1024.0f;
+    const float distance = Mods::switches().far_view && shadows ? shadows(float(MAX_VIEW_DISTANCE)) : 1024.0f;
     return distance * distance;
 }
 
@@ -2520,6 +2584,8 @@ void CMatrixMap::Draw(void) {
     CMatrixEffectLandscapeSpot::DrawAll();  // we should draw landscape spots immediately after draw landscape
 
     DrawWater();
+    if (Mods::switches().far_view)
+        DrawWaterDepth();
 
     fBias = 0.0f;
     for (int i = 0; i < 4; i++) {

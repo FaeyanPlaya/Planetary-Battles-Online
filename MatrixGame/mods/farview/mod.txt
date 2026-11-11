@@ -1,17 +1,23 @@
 # FarView: the far clip plane and the fog, the distance effects are made at and how many of each kind are
-# kept, all times the scale (FarViewScale=, 1.5 to 3 times, 2 by default); shadows drawn to 1536 times it
-# instead of 1024. Drawing only: the battle never reads it.
+# kept, all times the scale (FarViewScale=, 1.5 to 3 times, 2 by default); shadows drawn to where the fog begins
+# instead of 1024 from the camera; the camera's near clip plane at 0.15 of its height (the depth buffer's
+# precision: no flicker of what lies on the ground far away); the water's depth written before shadows and the
+# volumes reaching its plane (no outlines through it). Drawing only: the battle never reads it.
 Name=Дальняя прорисовка
 NameEn=Far view
 Description=Мир виден дальше.
 Description=- Дальность обзора и туман отодвигаются в выбранное число раз: от 1,5 до 3 (по умолчанию 2), выбор в этой же строке.
 Description=- Эффекты (взрывы, дым, выстрелы) видны дальше, и одновременно их может быть больше.
-Description=- Тени рисуются дальше.
+Description=- Тени рисуются до начала тумана, в том числе при сильно отдалённой камере.
+Description=- Без мерцания того, что лежит на земле, вдали и при отдалённой камере.
+Description=- Тени не проступают сквозь воду тёмными силуэтами построек и роботов.
 Description=- Меняет только картинку: на ход боя не влияет.
 DescriptionEn=The world is seen farther.
 DescriptionEn=- The view and the fog reach the chosen times farther: 1.5 to 3 (2 by default), chosen on this row.
 DescriptionEn=- Effects (blasts, smoke, shots) are seen farther, and more of them at once.
-DescriptionEn=- Shadows are drawn farther.
+DescriptionEn=- Shadows are drawn up to where the fog begins, with the camera far out too.
+DescriptionEn=- No flicker of what lies on the ground far away or with the camera far out.
+DescriptionEn=- Shadows no longer show through the water as dark outlines of buildings and robots.
 DescriptionEn=- Only the picture: the battle is not changed.
 Author=Planetary Battles Online
 Kind=personal

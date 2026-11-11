@@ -118,6 +118,13 @@ std::vector<ModRef> unverified(const Person &person);
 // nullopt when the line is not a hello.
 std::optional<Hello> parse_hello(std::string_view line);
 
+// A map's path as another PC sent it (UTF-8): nullopt when it is not text a file name and the screen can hold (control
+// characters, or what the interface's text templates and Windows' file names keep for themselves).
+std::optional<std::wstring> map_name(std::string_view text);
+
+// Another PC's line for the log: its first 200 bytes, without control characters.
+std::string brief(std::string_view text);
+
 // Someone in the lobby already plays under this name (PlayerName::same).
 bool name_taken(const State &state, const std::wstring &name);
 

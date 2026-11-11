@@ -104,7 +104,23 @@ bool store(const std::string &hash, std::string_view bytes) {
     return !error;
 }
 
+bool map_file(std::wstring_view name) {
+    if (name.size() < 6 || name.size() > 260 || name.front() == L'\\' || name.front() == L'/' ||
+        name.find(L':') != std::wstring_view::npos || _wcsicmp(std::wstring(name.substr(name.size() - 5)).c_str(), L".cmap") != 0)
+        return false;
+    for (std::size_t begin = 0; begin <= name.size();) {
+        std::size_t end = name.find_first_of(L"\\/", begin);
+        if (end == std::wstring_view::npos) end = name.size();
+        if (name.substr(begin, end - begin) == L"..") return false;
+        begin = end + 1;
+    }
+    return true;
+}
+
 bool use(const std::wstring &map, const std::string &hash) {
+    // The name is the host's word, and from here on it is read from the host's copy: only a map's own name (another
+    // file's would have the game read the host's bytes in that file's place).
+    if (!map_file(map)) return false;
     const std::wstring file = stored(hash);
     const auto bytes = file_bytes(file);
     if (!bytes || fingerprint(*bytes) != hash) return false;

@@ -178,6 +178,7 @@ class CMatrixCamera : public CMain {
     const CMatrixMapStatic *m_TurretView = nullptr;  // the turret it was set for
     bool m_RearView = false;  // ManualExtras: in a robot, looking back (X); off out of it
     bool m_FirstPerson = false;  // FirstPerson: looking from the robot or turret driven; off out of it
+    float m_Near = 1.0f;         // the projection's near clip plane (the far view moves it, see BeforeDraw)
     float m_FirstPersonBlend = 0;  // its way in: 0 entering, 1 held to the robot or turret
 
     SAutoFlyData *m_AFD;

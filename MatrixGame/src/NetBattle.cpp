@@ -37,7 +37,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cfloat>
+#include <charconv>
 #include <chrono>
 #include <climits>
 #include <ctime>
@@ -98,8 +100,11 @@ std::vector<std::tuple<int, std::string, std::string>> parse_people(std::string_
         if (side < 1 || side > BattleRules::side_count) continue;
         std::string address = item.substr(eq + 1, slash - eq - 1), key = item.substr(slash + 1);
         if (address == "-") address = self;
-        if (address == "?") address.clear();
-        if (key == "-") key.clear();
+        // Another PC's word: only an address (it is connected to, kept in the ticket and put on the command line of the
+        // game's next start) and a key of letters and digits; anything else is not known.
+        else if (!NetLink::valid_address(address) && !NetLink::eos::is(address)) address.clear();
+        if (key.size() > 64 || !std::all_of(key.begin(), key.end(), [](char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0; }))
+            key.clear();
         people.emplace_back(side, std::move(address), std::move(key));
     }
     return people;
@@ -606,7 +611,7 @@ bool take_back(Battle &b, Battle::Back &back, const std::string &line) {
     NetLink::Connection &link = *back.link;
     const auto hello = Lobby::parse_hello(line);
     if (!hello) {
-        note(b, "a connection did not introduce itself: " + line);
+        note(b, "a connection did not introduce itself: " + Lobby::brief(line));
         return false;
     }
     if (hello->version != Lobby::protocol_version) {
@@ -730,7 +735,9 @@ bool take_member(Battle &b, Battle::Back &back, const std::string &line) {
 void poll_coming_back(Battle &b) {
     if (!b.listener) return;
     const auto t = std::chrono::steady_clock::now();
-    while (auto link = b.listener->accept(0)) b.coming_back.push_back({std::move(link), -1, t});
+    // (No more at once than a battle's people could be: the rest are closed, and may try again.)
+    while (auto link = b.listener->accept(0))
+        if (b.coming_back.size() < 16) b.coming_back.push_back({std::move(link), -1, t});
     for (std::size_t i = 0; i < b.coming_back.size();) {
         Battle::Back &back = b.coming_back[i];
         const bool open = back.link->pump();
@@ -1180,7 +1187,8 @@ void watch_host_gone(Battle &b) {
                 follow_relay(b, std::atoi(line.c_str() + 6));
                 return;
             }
-            note(b, std::format("{} answered: {}", a.side ? std::format("side {}", a.side) : std::string("the host's place"), line));
+            note(b, std::format("{} answered: {}", a.side ? std::format("side {}", a.side) : std::string("the host's place"),
+                                Lobby::brief(line)));
             done = true;
         }
         if (!done && open && t - a.since < std::chrono::seconds(5)) return;  // one question at a time
@@ -1940,7 +1948,9 @@ std::optional<Start> parse_start(std::string_view line) {
     Start s;
     const auto map_at = line.find(" map=");
     if (map_at == std::string_view::npos) return std::nullopt;
-    s.map = utils::to_wstring(line.substr(map_at + 5));
+    const auto map = Lobby::map_name(line.substr(map_at + 5));  // the host's line: not this PC's own text
+    if (!map) return std::nullopt;
+    s.map = *map;
     std::istringstream in{std::string(line.substr(6, map_at - 6))};
     std::string pair;
     int seen = 0;
@@ -1950,7 +1960,10 @@ std::optional<Start> parse_start(std::string_view line) {
         const std::string key = pair.substr(0, eq), value = pair.substr(eq + 1);
         if (key == "side") s.side = std::atoi(value.c_str());
         else if (key == "host") s.host_side = std::atoi(value.c_str());
-        else if (key == "seed") s.seed = static_cast<std::uint32_t>(std::stoul(value));
+        else if (key == "seed") {
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), s.seed);
+            if (error != std::errc{} || end != value.data() + value.size()) return std::nullopt;
+        }
         else if (key == "humans") s.human_sides = parse_sides(value);
         else if (key == "turn") s.config.turn_ms = std::atoi(value.c_str());
         else if (key == "delay") s.config.delay = std::atoi(value.c_str());
@@ -1983,7 +1996,8 @@ std::optional<Start> parse_start(std::string_view line) {
         ++seen;
     }
     if (seen != 7 || s.map.empty() || s.side < 1 || s.side > BattleRules::side_count || s.config.step_ms <= 0 ||
-        s.config.turn_ms <= 0 || s.config.turn_ms % s.config.step_ms != 0 || s.config.delay < 1 ||
+        s.config.turn_ms <= 0 || s.config.turn_ms > 1000 || s.config.turn_ms % s.config.step_ms != 0 || s.config.delay < 1 ||
+        s.config.delay > 1000 ||
         !(s.human_sides & (1u << s.side)) || s.host_side < 1 || s.host_side > BattleRules::side_count ||
         !(s.human_sides & (1u << s.host_side)))
         return std::nullopt;
@@ -1994,7 +2008,7 @@ namespace {
 
 // Coming back failed: why, then the startup menu (the game starts again there).
 void back_failed(const wchar_t *russian_text, const wchar_t *english, const std::string &log) {
-    lgr.error("Net: cannot come back to the battle: {}")(log);
+    lgr.error("Net: cannot come back to the battle: {}")(Lobby::brief(log));
     forget_rejoin_ticket();
     const bool ru = system_russian();
     MessageBoxW(nullptr, ru ? russian_text : english,
@@ -2102,7 +2116,7 @@ std::optional<Start> connect_host_back(const Options &options, const StandaloneS
             else if (line.starts_with("refused")) break;
         }
         if (!theirs || !their_rules) {
-            lgr.warning("Net: side {} at {} does not take the host back: {}")(side, address, line);
+            lgr.warning("Net: side {} at {} does not take the host back: {}")(side, address, Lobby::brief(line));
             continue;
         }
         theirs->rules = *their_rules;
@@ -2260,7 +2274,7 @@ std::optional<Start> connect(const Options &options, const StandaloneSettings::V
             std::string line;
             const auto hello = link->wait_line(line, 10000) ? Lobby::parse_hello(line) : std::nullopt;
             if (!hello) {
-                lgr.warning("Net: a connection did not introduce itself: {}")(line);
+                lgr.warning("Net: a connection did not introduce itself: {}")(Lobby::brief(line));
                 continue;
             }
             if (hello->version != Lobby::protocol_version) {
@@ -2302,7 +2316,7 @@ std::optional<Start> connect(const Options &options, const StandaloneSettings::V
         else if (line.starts_with("refused")) break;
     }
     if (!start || !rules) {
-        fail("The host did not start the battle: " + line);
+        fail("The host did not start the battle: " + Lobby::brief(line));
         return std::nullopt;
     }
     start->rules = *rules;

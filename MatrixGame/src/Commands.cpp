@@ -114,24 +114,25 @@ bool from_line(const std::string &line, Command &c) {
     std::istringstream in(line);
     std::string tag, name;
     std::uint32_t x = 0, y = 0;
-    std::size_t units = 0, params = 0;
-    if (!(in >> tag >> c.time >> c.side >> name) || tag != "C")
+    // The line may come from another PC: its counts size the lists, so they are bounded before anything is made.
+    long long units = 0, params = 0;
+    if (!(in >> tag >> c.time >> c.side >> name) || tag != "C" || c.side < 0 || c.side > max_side)
         return false;
     auto it = std::find(std::begin(g_names), std::end(g_names), name);
     if (it == std::begin(g_names) || it == std::end(g_names))
         return false;
     c.type = static_cast<Type>(it - std::begin(g_names));
-    if (!(in >> std::hex >> x >> y >> std::dec >> c.target >> units))
+    if (!(in >> std::hex >> x >> y >> std::dec >> c.target >> units) || units < 0 || units > max_units)
         return false;
     c.x = std::bit_cast<float>(x);
     c.y = std::bit_cast<float>(y);
-    c.units.resize(units);
+    c.units.resize(std::size_t(units));
     for (int &id : c.units)
         if (!(in >> id))
             return false;
-    if (!(in >> params))
+    if (!(in >> params) || params < 0 || params > max_params)
         return false;
-    c.params.resize(params);
+    c.params.resize(std::size_t(params));
     for (int &p : c.params)
         if (!(in >> p))
             return false;
@@ -172,6 +173,24 @@ bool design_from_params(const std::vector<int> &p, SSpecialBot &design, int &cou
     for (int i = 0; i < MAX_WEAPON_CNT; i++) {
         design.m_Weapon[i].m_Unit.m_nKind = ERobotUnitKind(p[5 + 2 * i]);
         design.m_Weapon[i].m_Pos = p[6 + 2 * i];
+    }
+    return true;
+}
+
+bool design_valid(const SSpecialBot &design, int team) {
+    const auto within = [](unsigned kind, unsigned least, unsigned most) { return kind >= least && kind <= most; };
+    if (team < 0 || team >= MAX_TEAM_CNT || !within(design.m_Chassis.m_nKind, 1, ROBOT_CHASSIS_CNT) ||
+        !within(design.m_Armor.m_Unit.m_nKind, 1, ROBOT_ARMOR_CNT) || !within(design.m_Head.m_nKind, 0, ROBOT_HEAD_CNT))
+        return false;
+    const int pylons = g_MatrixMap->m_RobotWeaponMatrix[design.m_Armor.m_Unit.m_nKind - 1].cnt;
+    for (int i = 0; i < MAX_WEAPON_CNT; i++) {
+        const unsigned kind = design.m_Weapon[i].m_Unit.m_nKind;
+        if (kind == 0)
+            continue;
+        // (A mount past the hull's pylons is the constructor's own: the robot finds the pylon that takes the weapon.)
+        if (!within(kind, 1, ROBOT_WEAPON_CNT) || pylons < 1 || design.m_Weapon[i].m_Pos < 1 ||
+            design.m_Weapon[i].m_Pos > MAX_WEAPON_CNT)
+            return false;
     }
     return true;
 }

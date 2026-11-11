@@ -88,7 +88,8 @@ bool bridge_answer(Connection &link, std::string &line) {
 
 bool eos::is(const std::string &address) {
     if (!address.starts_with(prefix) || address.size() != prefix.size() + 32) return false;
-    return std::all_of(address.begin() + prefix.size(), address.end(), [](char ch) { return std::isxdigit(ch); });
+    return std::all_of(address.begin() + prefix.size(), address.end(),
+                       [](char ch) { return std::isxdigit(static_cast<unsigned char>(ch)) != 0; });
 }
 
 bool eos::available() {
@@ -127,6 +128,18 @@ std::string field(const std::wstring &text) {
     std::string out = utf8(text);
     for (char &ch : out)
         if (ch == '\x1f' || ch == '\n' || ch == '\r') ch = ' ';
+    return out;
+}
+
+// A room's text as anybody on the internet wrote it, for this PC's screen: no control characters, nothing the
+// interface's text templates read as their own ('|' ends a text, '<' opens a tag), and no longer than `most`.
+std::wstring shown(const std::string &text, std::size_t most) {
+    std::wstring out;
+    for (const wchar_t ch : from_utf8(text)) {
+        if (out.size() >= most) break;
+        if (ch < L' ' || ch == 0x7f || ch == L'|') continue;
+        out += ch == L'<' ? L'‹' : ch == L'>' ? L'›' : ch;
+    }
     return out;
 }
 
@@ -232,14 +245,14 @@ bool eos::RoomSearch::poll() {
             room.port = std::atoi(line.substr(a + 1, b - a - 1).c_str());
             const std::string text = line.substr(b + 1);
             const auto x = text.find('\x1f'), y = x == std::string::npos ? x : text.find('\x1f', x + 1);
-            room.host = from_utf8(text.substr(0, x));
-            if (x != std::string::npos) room.map = from_utf8(text.substr(x + 1, y == std::string::npos ? y : y - x - 1));
+            room.host = shown(text.substr(0, x), 32);
+            if (x != std::string::npos) room.map = shown(text.substr(x + 1, y == std::string::npos ? y : y - x - 1), 64);
             const auto z = y == std::string::npos ? y : text.find('\x1f', y + 1);
-            if (y != std::string::npos) room.people = from_utf8(text.substr(y + 1, z == std::string::npos ? z : z - y - 1));
+            if (y != std::string::npos) room.people = shown(text.substr(y + 1, z == std::string::npos ? z : z - y - 1), 16);
             const auto w = z == std::string::npos ? z : text.find('\x1f', z + 1);
             room.locked = z != std::string::npos && text.substr(z + 1, w == std::string::npos ? w : w - z - 1) == "1";
             if (w != std::string::npos) room.created = std::atoll(text.c_str() + w + 1);
-            if (is(room.address) && room.port > 0) m_Rooms.push_back(std::move(room));
+            if (is(room.address) && room.port > 0 && room.port < 65536 && m_Rooms.size() < 64) m_Rooms.push_back(std::move(room));
         }
     }
     if (!m_Connecting) {
@@ -295,6 +308,14 @@ bool Connection::pump() {
         const int n = ::recv(sock(m_Socket), buffer, sizeof(buffer), 0);
         if (n > 0) {
             m_In.append(buffer, std::size_t(n));
+            // No line of ours is near max_line: an end that sends so much without a line end only fills this PC's
+            // memory (looked at here, not after the loop: a fast sender keeps this loop reading).
+            if (m_In.size() - m_InAt > max_line && m_In.find('\n', m_InAt) == std::string::npos) {
+                m_In.clear();
+                m_InAt = 0;
+                m_Open = false;
+                return false;
+            }
             continue;
         }
         if (n < 0 && WSAGetLastError() == WSAEWOULDBLOCK) break;
@@ -315,11 +336,27 @@ bool Connection::pump() {
 }
 
 bool Connection::next_line(std::string &line) {
-    const auto end = m_In.find('\n');
-    if (end == std::string::npos) return false;
-    line.assign(m_In, 0, end);
+    const auto end = m_In.find('\n', m_InAt);
+    if (end == std::string::npos) {
+        // What is left is the start of a line still coming: moved to the front once (not after every line: a battle's
+        // whole history, thousands of lines in one read, was moved up again for each of them).
+        if (m_InAt) {
+            m_In.erase(0, m_InAt);
+            m_InAt = 0;
+        }
+        return false;
+    }
+    line.assign(m_In, m_InAt, end - m_InAt);
     if (!line.empty() && line.back() == '\r') line.pop_back();
-    m_In.erase(0, end + 1);
+    m_InAt = end + 1;
+    if (m_InAt == m_In.size()) {
+        m_In.clear();
+        m_InAt = 0;
+    }
+    else if (m_InAt >= max_line) {  // (a reader that stops between lines must not keep what it has read)
+        m_In.erase(0, m_InAt);
+        m_InAt = 0;
+    }
     return true;
 }
 
@@ -531,7 +568,9 @@ std::unique_ptr<Connection> Connector::poll() {
 
 bool valid_address(const std::string &address) {
     sockaddr_in addr;
-    return std::count(address.begin(), address.end(), '.') == 3 && address_of(address, 1, addr);
+    // Digits and dots only: inet_addr also takes "1.2.3.4 anything", and an address goes into command lines and files.
+    return address.size() <= 15 && std::all_of(address.begin(), address.end(), [](char ch) { return (ch >= '0' && ch <= '9') || ch == '.'; }) &&
+           std::count(address.begin(), address.end(), '.') == 3 && address_of(address, 1, addr);
 }
 
 std::vector<std::string> local_addresses() {

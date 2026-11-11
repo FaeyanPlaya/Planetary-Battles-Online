@@ -60,6 +60,9 @@ constexpr int TURRET_AT_POINT = 1;
 // Units value meaning "every live robot and flyer of the side" (scripts and bots).
 constexpr int ALL_UNITS = -1;
 
+// What a command's line may hold at most (from_line refuses more: the line may be another PC's).
+constexpr int max_side = 31, max_units = 1024, max_params = 64;
+
 struct Command {
     int time = -1;           // game time (ms) of execution; -1 until scheduled
     int side = 0;
@@ -104,5 +107,8 @@ CMatrixMapStatic *find(int sim_id);
 // BuildRobot params: count, team, chassis, armor, head, then kind and mount of each weapon.
 std::vector<int> design_params(const SSpecialBot &design, int count, int team);
 bool design_from_params(const std::vector<int> &params, SSpecialBot &design, int &count, int &team);
+// Whether a design from a command's numbers can be built: every part's kind is one the game has (they index its
+// tables), each weapon's mount is a constructor slot, the team is one of the side's.
+bool design_valid(const SSpecialBot &design, int team);
 
 }  // namespace Commands

@@ -15,6 +15,9 @@ namespace NetLink {
 
 bool startup();  // WSAStartup; false when Winsock is unavailable
 
+// The longest line a connection takes (a map file's line is 64 KiB); one that sends more without a line end is closed.
+inline constexpr std::size_t max_line = 1u << 20;
+
 class Connection {
 public:
     Connection(std::uintptr_t socket);
@@ -42,6 +45,7 @@ private:
     std::uintptr_t m_Socket;
     bool m_Open = true;
     std::string m_In, m_Out;
+    std::size_t m_InAt = 0;  // where the next line begins in m_In
     std::string m_Remote;  // set: a stream through the EOS bridge, and who is at its other end
 };
 

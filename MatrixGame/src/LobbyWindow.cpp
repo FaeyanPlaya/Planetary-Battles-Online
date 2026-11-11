@@ -624,7 +624,12 @@ std::wstring load_text(const wchar_t *file) {
     std::string line;
     std::getline(in, line);
     if (!line.empty() && line.back() == '\r') line.pop_back();
-    return utils::to_wstring(line);
+    try {
+        return utils::to_wstring(line);
+    }
+    catch (...) {
+        return {};  // not UTF-8 (the file was edited by hand): as no text
+    }
 }
 
 void save_text(const wchar_t *file, const std::wstring &text) {

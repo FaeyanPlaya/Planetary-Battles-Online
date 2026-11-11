@@ -7,6 +7,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 using Base::CBlockPar;
@@ -73,6 +74,50 @@ void copy(CBlockPar &to, CBlockPar &from, const std::wstring &folder) {
         copy(*to.BlockAdd(from.BlockGetName(i)), *from.BlockGet(i), folder);
 }
 
+void take_off(Change &c) {
+    switch (c.kind) {
+        case Change::Kind::Param: {
+            if (c.existed)
+                c.block->ParSetAdd(c.name, c.old);
+            else if (const int i = param_index(*c.block, c.name); i >= 0)
+                c.block->ParDelete(i);
+            break;
+        }
+        case Change::Kind::Block:
+            if (const int i = block_index(*c.block, c.added); i >= 0)
+                c.block->BlockDelete(i);
+            break;
+        case Change::Kind::Blocks:
+            while (c.block->BlockCount())
+                c.block->BlockDelete(0);
+            for (auto &[name, saved] : c.blocks)
+                c.block->BlockAdd(name)->CopyFrom(*saved);
+            break;
+    }
+}
+
+void blocks_below(CBlockPar &block, std::unordered_set<const CBlockPar *> &out) {
+    for (int i = 0; i < block.BlockCount(); ++i) {
+        out.insert(block.BlockGet(i));
+        blocks_below(*block.BlockGet(i), out);
+    }
+}
+
+// Before `game`'s blocks go (ReplaceBlocks): what earlier mods laid inside them, or added among them, is taken off,
+// the latest first. Those changes point into blocks that are deleted here: taken off later (undo) they would write to
+// freed blocks, and the blocks kept for undo would hold the earlier mods' values as if they were the game's.
+void take_off_inside(CBlockPar &game) {
+    std::unordered_set<const CBlockPar *> inside;
+    blocks_below(game, inside);
+    for (std::size_t i = g_changes.size(); i-- > 0;) {
+        Change &c = g_changes[i];
+        if (!inside.contains(c.block) && !(c.kind == Change::Kind::Block && c.block == &game))
+            continue;
+        take_off(c);
+        g_changes.erase(g_changes.begin() + std::ptrdiff_t(i));
+    }
+}
+
 void lay(CBlockPar &game, CBlockPar &mod, const std::wstring &folder) {
     const bool replace = mod.ParGetNE(replace_blocks).GetInt() == 1;
     for (int i = 0; i < mod.ParCount(); ++i) {
@@ -89,6 +134,7 @@ void lay(CBlockPar &game, CBlockPar &mod, const std::wstring &folder) {
         g_changes.push_back(std::move(change));
     }
     if (replace) {
+        take_off_inside(game);
         Change change;
         change.kind = Change::Kind::Blocks;
         change.block = &game;
@@ -123,26 +169,7 @@ void lay(CBlockPar &game, CBlockPar &mod, const std::wstring &folder) {
 
 void undo() {
     while (!g_changes.empty()) {
-        Change &c = g_changes.back();
-        switch (c.kind) {
-            case Change::Kind::Param: {
-                if (c.existed)
-                    c.block->ParSetAdd(c.name, c.old);
-                else if (const int i = param_index(*c.block, c.name); i >= 0)
-                    c.block->ParDelete(i);
-                break;
-            }
-            case Change::Kind::Block:
-                if (const int i = block_index(*c.block, c.added); i >= 0)
-                    c.block->BlockDelete(i);
-                break;
-            case Change::Kind::Blocks:
-                while (c.block->BlockCount())
-                    c.block->BlockDelete(0);
-                for (auto &[name, saved] : c.blocks)
-                    c.block->BlockAdd(name)->CopyFrom(*saved);
-                break;
-        }
+        take_off(g_changes.back());
         g_changes.pop_back();
     }
 }

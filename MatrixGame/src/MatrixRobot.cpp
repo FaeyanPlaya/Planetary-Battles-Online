@@ -1679,21 +1679,24 @@ void CMatrixRobotAI::ZoneMoveCalc() {
     ASSERT(m_ZoneCur >= 0);
     //	ASSERT(m_ZoneNear>=0);
 
+    // Every other live robot and turret of the battle (four sides of 60 robots, and the turrets): the original's 200
+    // overflowed in a large battle, unchecked in a release build.
+    constexpr int other_max = 1024;
     int other_cnt = 0;
-    int other_size[200];
-    CPoint *other_path_list[200];
-    int other_path_cnt[200];
-    CPoint other_des[200];
+    int other_size[other_max];
+    CPoint *other_path_list[other_max];
+    int other_path_cnt[other_max];
+    CPoint other_des[other_max];
 
     m_MoveTestChange = g_MatrixMap->GetTime();
 
     CMatrixMapStatic *obj = CMatrixMapStatic::GetFirstLogic();
-    while (obj) {
+    while (obj && other_cnt < other_max) {
         if (obj->IsLiveRobot() && obj != this) {
             CMatrixRobotAI *r = (CMatrixRobotAI *)obj;
             CPoint tp;
             if (r->GetMoveToCoords(tp)) {
-                ASSERT(other_cnt < 200);
+                ASSERT(other_cnt < other_max);
                 other_size[other_cnt] = 4;
                 if (r->m_MovePathCur < r->m_MovePathCnt) {
                     other_path_list[other_cnt] = r->m_MovePath + r->m_MovePathCur;
@@ -1707,7 +1710,7 @@ void CMatrixRobotAI::ZoneMoveCalc() {
                 other_cnt++;
             }
             else {
-                ASSERT(other_cnt < 200);
+                ASSERT(other_cnt < other_max);
                 other_size[other_cnt] = 4;
                 other_path_list[other_cnt] = NULL;
                 other_path_cnt[other_cnt] = 0;
@@ -1716,7 +1719,7 @@ void CMatrixRobotAI::ZoneMoveCalc() {
             }
         }
         else if (obj->IsLiveCannon()) {
-            ASSERT(other_cnt < 200);
+            ASSERT(other_cnt < other_max);
             other_size[other_cnt] = 4;
             other_path_list[other_cnt] = NULL;
             other_path_cnt[other_cnt] = 0;

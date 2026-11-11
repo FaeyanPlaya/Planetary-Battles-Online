@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <stdexcept>
 #include <format>
 #include <time.h>
@@ -1544,6 +1545,10 @@ void CMatrixSideUnit::ExecuteDrive(const Commands::Command &command, CMatrixMapS
     using Commands::DriveAction;
     if (command.params.size() != 3 && command.params.size() != 5)
         return;
+    // The aim's height and rates are float bits, maybe another PC's: only numbers go into the battle.
+    for (std::size_t i = 2; i < command.params.size(); ++i)
+        if (!std::isfinite(std::bit_cast<float>(command.params[i])))
+            return;
     if (target && target->IsCannon()) {
         ExecuteTurretDrive(command, target->AsCannon());
         return;
@@ -9374,6 +9379,12 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
     }
     if (!g_MatrixMap->IsHumanSide(m_Id))
         return;
+    // A command may be another PC's: a point that is no number (or far beyond any map) would become a cell outside
+    // the map's tables. The interface gives none such.
+    constexpr float farthest = 1.0e6f;
+    if (!std::isfinite(command.x) || !std::isfinite(command.y) || std::fabs(command.x) > farthest ||
+        std::fabs(command.y) > farthest)
+        return;
     CMatrixMapStatic *target = Commands::find(command.target);
 
     switch (command.type) {
@@ -9384,11 +9395,30 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
             SSpecialBot design;
             int count = 0, team = 0;
             if (!target || !target->IsLiveBuilding() || target->GetSide() != m_Id || !target->AsBuilding()->IsBase() ||
-                !Commands::design_from_params(command.params, design, count, team) || count <= 0)
+                !Commands::design_from_params(command.params, design, count, team) || count <= 0 ||
+                !Commands::design_valid(design, team))
                 return;
-            m_Constructor->StackDesign(target->AsBuilding(), design, count, team);
+            // As the constructor's counter allows, but now: an order given a moment before this one (both on their
+            // way in a shared battle) may have taken the queue's room or the money since the counter showed them.
+            // No more robots than the base's queue holds and the side can pay for.
+            constexpr int queue_holds = 6;  // CConstructor::StackRobot
             int res[MAX_RESOURCES];
             CConstructor::DesignPrice(design, res);
+            count = std::min(count, queue_holds - target->AsBuilding()->m_BS.GetItemsCnt());
+            const auto paid = [&](int robots) {
+                for (int r = 0; r < MAX_RESOURCES; r++)
+                    if (res[r] * robots > GetResourcesAmount(ERes(r)))
+                        return false;
+                return true;
+            };
+            while (count > 0 && !paid(count))
+                --count;
+            if (count <= 0) {
+                if (IsLocalSide())
+                    CSound::Play(S_CANTBE, SL_INTERFACE);
+                return;
+            }
+            m_Constructor->StackDesign(target->AsBuilding(), design, count, team);
             for (int r = 0; r < MAX_RESOURCES; r++)
                 AddResourceAmount(ERes(r), -res[r] * count);
             return;
@@ -9420,11 +9450,14 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
             ca->SetInvulnerability();
             ca->m_Pos.x = command.x;
             ca->m_Pos.y = command.y;
-            ca->m_Place = command.params[1];
+            // The place is found here from the point (the command's own number is what the interface found the same
+            // way; another PC's could be any, and it indexes the road network's places).
+            ca->m_Place = g_MatrixMap->m_RN.FindInPL(at);
             ca->SetSide(m_Id);
             ca->UnitInit(num);
 
-            ca->m_Angle = std::bit_cast<float>(command.params[2]);
+            const float angle = std::bit_cast<float>(command.params[2]);
+            ca->m_Angle = std::isfinite(angle) ? angle : 0.0f;
             ca->m_AddH = 0;
 
             ca->m_ShadowType = SHADOW_STENCIL;
@@ -9443,7 +9476,8 @@ void CMatrixSideUnit::ExecuteCommand(const Commands::Command &command) {
             return;
         }
         case Type::CancelBuild:
-            if (target && target->IsLiveBuilding() && target->GetSide() == m_Id && command.params.size() == 1)
+            if (target && target->IsLiveBuilding() && target->GetSide() == m_Id && command.params.size() == 1 &&
+                command.params[0] >= 1 && command.params[0] <= target->AsBuilding()->m_BS.GetItemsCnt())
                 target->AsBuilding()->m_BS.DeleteItem(command.params[0]);
             return;
         case Type::Maintenance:
@@ -10394,24 +10428,27 @@ void CMatrixSideUnit::PGAssignPlace(int no, CPoint center) {
 }
 
 void CMatrixSideUnit::PGAssignPlacePlayer(int no, const CPoint &center) {
+    // Every live robot and turret of the battle may be here (four sides of 60 robots, and the turrets): the
+    // original's 200 overflowed in a large battle, unchecked in a release build.
+    constexpr int other_max = 1024;
     int other_cnt = 0;
-    int other_size[200];
-    CPoint other_des[200];
+    int other_size[other_max];
+    CPoint other_des[other_max];
 
     CMatrixMapStatic *obj = CMatrixMapStatic::GetFirstLogic();
-    while (obj) {
+    while (obj && other_cnt < other_max) {
         if (obj->IsLiveRobot()) {
             CMatrixRobotAI *r = (CMatrixRobotAI *)obj;
             if (r->GetSide() != m_Id || r->GetGroupLogic() != no) {
                 if (r->GetEnv()->m_Place >= 0) {
-                    ASSERT(other_cnt < 200);
+                    ASSERT(other_cnt < other_max);
 
                     other_size[other_cnt] = 4;
                     other_des[other_cnt] = g_MatrixMap->m_RN.GetPlace(r->GetEnv()->m_Place)->m_Pos;
                     other_cnt++;
                 }
                 else if (r->GetEnv()->m_PlaceAdd.x >= 0) {
-                    ASSERT(other_cnt < 200);
+                    ASSERT(other_cnt < other_max);
 
                     other_size[other_cnt] = 4;
                     other_des[other_cnt] = r->GetEnv()->m_PlaceAdd;
@@ -10420,7 +10457,7 @@ void CMatrixSideUnit::PGAssignPlacePlayer(int no, const CPoint &center) {
             }
         }
         else if (obj->IsLiveCannon()) {
-            ASSERT(other_cnt < 200);
+            ASSERT(other_cnt < other_max);
 
             other_size[other_cnt] = 4;
             other_des[other_cnt] = g_MatrixMap->m_RN.GetPlace(obj->AsCannon()->m_Place)->m_Pos;
@@ -10438,15 +10475,18 @@ void CMatrixSideUnit::PGAssignPlacePlayer(int no, const CPoint &center) {
             g_MatrixMap->PlaceFindNear(r->m_Unit[0].u1.s1.m_Kind - 1, 4, mx, my, other_cnt, other_size, other_des);
             PGSetPlace(r, CPoint(mx, my));
 
-            if (r->GetEnv()->m_Place >= 0) {
-                ASSERT(other_cnt < 200);
+            if (other_cnt >= other_max) {
+                // (no room to note its place: never in a battle the game can hold)
+            }
+            else if (r->GetEnv()->m_Place >= 0) {
+                ASSERT(other_cnt < other_max);
 
                 other_size[other_cnt] = 4;
                 other_des[other_cnt] = g_MatrixMap->m_RN.GetPlace(r->GetEnv()->m_Place)->m_Pos;
                 other_cnt++;
             }
             else if (r->GetEnv()->m_PlaceAdd.x >= 0) {
-                ASSERT(other_cnt < 200);
+                ASSERT(other_cnt < other_max);
 
                 other_size[other_cnt] = 4;
                 other_des[other_cnt] = r->GetEnv()->m_PlaceAdd;

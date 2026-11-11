@@ -408,12 +408,19 @@ std::string hex(std::uint64_t value) { return std::format("{:016x}", value); }
 
 const std::string &data_fingerprint() {
     static const std::string value = [] {
-        // The configuration the game reads: robots.dat, else the text files beside it.
-        std::uint64_t h = hash_file(L"DATA\\robots.pkg");
-        if (file_exists(L"CFG\\robots.dat")) h = hash_file(L"CFG\\robots.dat", h);
+        // The configuration the game reads: robots.dat, else the text files beside it. A file that cannot be read
+        // counts as such, with the ones before it (hash_file's 0 for it forgot them: two people's different packages
+        // gave the same word once a later file was missing).
+        std::uint64_t h = 14695981039346656037ull;
+        const auto add = [&h](const wchar_t *file) {
+            const std::uint64_t with = hash_file(file, h);
+            h = with ? with : hash_bytes("no file", 7, h);
+        };
+        add(L"DATA\\robots.pkg");
+        if (file_exists(L"CFG\\robots.dat")) add(L"CFG\\robots.dat");
         else {
-            h = hash_file(L"CFG\\robots\\data.txt", h);
-            h = hash_file(L"CFG\\robots\\iface.txt", h);
+            add(L"CFG\\robots\\data.txt");
+            add(L"CFG\\robots\\iface.txt");
         }
         return hex(h);
     }();

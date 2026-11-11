@@ -30,9 +30,11 @@ namespace ModHooks {
 
 struct Hooks {
     // Дальняя прорисовка (farview, FarView): how many times farther the view, the fog, effects and objects reach,
-    // from the person's choice (FarViewScale=); how far shadows are drawn at that scale.
+    // from the person's choice (FarViewScale=); how far shadows are drawn with the view reaching so far; the near clip
+    // plane of the strategy camera so high above the ground (the depth buffer's precision follows it).
     float (*view_scale)(float chosen) = nullptr;
-    float (*shadow_distance)(float scale) = nullptr;
+    float (*shadow_distance)(float view_distance) = nullptr;
+    float (*near_plane)(float height) = nullptr;
 
     // Вид от первого лица (firstperson, FirstPerson): the wheel turned in with the camera all the way in (true: the
     // step was the mod's: the view goes into the robot or turret); whether the view stays in it in this camera mode.

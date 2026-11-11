@@ -208,8 +208,8 @@ if (NOT MATRIXGAME_BUILD_DLL)
             DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/mod.txt)
         list(APPEND MATRIXGAME_MOD_FOLDERS ${folder})
         list(APPEND MATRIXGAME_MOD_FILES ${folder}/mod.txt)
-        # A mod's models (sky's reparator.vo) and its data (data.txt: ModData) go beside its mod.txt.
-        file(GLOB mod_models CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/*.vo
+        # A mod's models and textures (sky's reparator.vo and .png) and its data (data.txt: ModData) go beside its mod.txt.
+        file(GLOB mod_models CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/*.vo ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/*.png
              ${CMAKE_CURRENT_SOURCE_DIR}/mods/${mod}/data.txt)
         foreach(model ${mod_models})
             get_filename_component(model_name ${model} NAME)

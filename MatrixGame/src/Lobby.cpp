@@ -35,7 +35,16 @@ std::string encode_name(const std::wstring &name) {
     return PlayerName::valid(name) ? utils::from_wstring(name) : std::string("-");
 }
 
+// A fingerprint as GameData::hex writes one: letters and digits only (another PC's goes into the lobby's lines, whose
+// separators it must not hold, and onto the screen).
+bool fingerprint_text(std::string_view text) {
+    return !text.empty() && text.size() <= 64 && std::all_of(text.begin(), text.end(), [](char ch) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+    });
+}
+
 std::optional<std::vector<ModRef>> parse_mods(std::string_view list, char separator = ',') {
+    constexpr std::size_t most = 64;  // far more than a mods folder holds
     std::vector<ModRef> mods;
     if (list == "-") return mods;
     while (!list.empty()) {
@@ -43,9 +52,9 @@ std::optional<std::vector<ModRef>> parse_mods(std::string_view list, char separa
         const auto item = list.substr(0, comma);
         list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
         const auto colon = item.find(':');
-        if (colon == std::string_view::npos) return std::nullopt;
+        if (colon == std::string_view::npos || mods.size() >= most) return std::nullopt;
         ModRef mod{std::string(item.substr(0, colon)), std::string(item.substr(colon + 1))};
-        if (Mods::id_of(std::wstring(mod.id.begin(), mod.id.end())) != mod.id || mod.hash.empty()) return std::nullopt;
+        if (Mods::id_of(std::wstring(mod.id.begin(), mod.id.end())) != mod.id || !fingerprint_text(mod.hash)) return std::nullopt;
         mods.push_back(std::move(mod));
     }
     return mods;
@@ -148,7 +157,9 @@ std::optional<Received> from_line(std::string_view line) {
     const auto map_at = line.find(" map=");
     if (map_at == std::string_view::npos) return std::nullopt;
     Received r;
-    r.state.map = utils::to_wstring(line.substr(map_at + 5));
+    const auto map = map_name(line.substr(map_at + 5));
+    if (!map) return std::nullopt;
+    r.state.map = *map;
     std::string_view fields = line.substr(head.size(), map_at - head.size());
     std::string_view pings, personal;
     int seen = 0;
@@ -198,12 +209,14 @@ std::optional<Received> from_line(std::string_view line) {
             continue;  // optional
         }
         else if (key == "maphash") {
+            if (value != "-" && !fingerprint_text(value)) return std::nullopt;
             r.state.map_hash = value == "-" ? std::string() : std::string(value);
             continue;  // optional
         }
         else if (key == "mappack") {
             if (value != "-" && (value.find(':') == std::string_view::npos ||
-                                 Mods::id_of(std::wstring(value.begin(), value.begin() + value.find(':'))).empty()))
+                                 Mods::id_of(std::wstring(value.begin(), value.begin() + value.find(':'))).empty() ||
+                                 !fingerprint_text(value.substr(value.find(':') + 1))))
                 return std::nullopt;
             r.state.map_pack = value == "-" ? std::string() : std::string(value);
             continue;  // optional
@@ -253,6 +266,29 @@ std::optional<Received> from_line(std::string_view line) {
     return r;
 }
 
+std::optional<std::wstring> map_name(std::string_view text) {
+    std::wstring name;
+    try {
+        name = utils::to_wstring(text);
+    }
+    catch (...) {
+        return std::nullopt;  // not UTF-8
+    }
+    if (name.size() > 260) return std::nullopt;
+    for (const wchar_t ch : name)
+        if (ch < L' ' || ch == 0x7f || std::wstring_view(L"|<>\"*?").find(ch) != std::wstring_view::npos) return std::nullopt;
+    return name;
+}
+
+std::string brief(std::string_view text) {
+    constexpr std::size_t most = 200;
+    std::string out(text.substr(0, most));
+    for (char &ch : out)
+        if (static_cast<unsigned char>(ch) < ' ') ch = ' ';
+    if (text.size() > most) out += "...";
+    return out;
+}
+
 std::string hello_line(BattleChoice::Bonus bonus, const std::string &data, const std::string &build,
                        const std::wstring &name, const std::string &rejoin, const std::vector<ModRef> &personal,
                        const std::string &password) {
@@ -285,11 +321,11 @@ std::optional<Hello> parse_hello(std::string_view line) {
         const auto pair = rest.substr(0, end);
         rest = end == std::string_view::npos ? std::string_view{} : rest.substr(end + 1);
         if (pair.starts_with("bonus=")) hello.bonus = BattleRules::parse_bonus(pair.substr(6)).value_or(BattleChoice::Bonus::None);
-        else if (pair.starts_with("data=")) hello.data = pair.substr(5);
-        else if (pair.starts_with("build=")) hello.build = pair.substr(6);
+        else if (pair.starts_with("data=")) hello.data = pair.substr(5, 64);
+        else if (pair.starts_with("build=")) hello.build = pair.substr(6, 64);
         else if (pair.starts_with("name=")) hello.name = decode_name(pair.substr(5));
-        else if (pair.starts_with("rejoin=")) hello.rejoin = pair.substr(7);
-        else if (pair.starts_with("password=")) hello.password = pair.substr(9);
+        else if (pair.starts_with("rejoin=")) hello.rejoin = pair.substr(7, 64);
+        else if (pair.starts_with("password=")) hello.password = pair.substr(9, 64);
         else if (pair.starts_with("personal=")) {
             if (auto mods = parse_mods(pair.substr(9), ';')) hello.personal = std::move(*mods);
         }

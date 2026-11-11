@@ -33,6 +33,8 @@ bool store(const std::string &hash, std::string_view bytes);
 // Reads `map` from the kept copy with this fingerprint from now on (a bundle: unpacked once, its files found first
 // for that map); false when there is none.
 bool use(const std::wstring &map, const std::string &hash);
+// Whether the name is a map's inside the game's folder (relative, not climbing out, .cmap): what use() takes.
+bool map_file(std::wstring_view name);
 // Whether `map` is read from a kept copy (use).
 bool used(const std::wstring &map);
 // The fingerprint of the kept copy `map` is read from, or nullopt.

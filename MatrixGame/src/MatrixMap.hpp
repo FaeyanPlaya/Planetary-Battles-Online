@@ -818,6 +818,7 @@ public:
      */
     void DrawObjects(void);
     void DrawWater(void);
+    void DrawWaterDepth(void);  // the far view: the water's surface into the depth buffer (see MatrixMap.cpp)
     void DrawShadowsProjFast(void);
     void DrawShadows(const ShadowPasses &passes);
     void DrawEffects(void);

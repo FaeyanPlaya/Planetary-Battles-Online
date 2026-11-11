@@ -55,7 +55,9 @@ bool Host::poll() {
     if (!m_Listener) return false;
     bool changed = false;
     const auto now = std::chrono::steady_clock::now();
-    while (auto link = m_Listener->accept(0)) m_Pending.push_back({std::move(link), now});
+    // (No more waiting to say hello than a lobby's people could be: the rest are closed, and may try again.)
+    while (auto link = m_Listener->accept(0))
+        if (m_Pending.size() < 16) m_Pending.push_back({std::move(link), now});
 
     for (std::size_t i = 0; i < m_Pending.size();) {
         auto &link = *m_Pending[i].link;
@@ -64,7 +66,7 @@ bool Host::poll() {
         if (link.next_line(line)) {
             const auto hello = Lobby::parse_hello(line);
             if (!hello) {
-                m_Events.push_back("a connection did not introduce itself: " + line);
+                m_Events.push_back("a connection did not introduce itself: " + Lobby::brief(line));
             }
             else if (hello->version != Lobby::protocol_version) {
                 refuse(link, std::format("version {}", Lobby::protocol_version));
@@ -72,11 +74,11 @@ bool Host::poll() {
             }
             else if (hello->build != m_Build) {
                 refuse(link, "build");
-                m_Events.push_back("refused a client with another build " + hello->build);
+                m_Events.push_back("refused a client with another build " + Lobby::brief(hello->build));
             }
             else if (hello->data != m_Data) {
                 refuse(link, "data");
-                m_Events.push_back("refused a client with other game files " + hello->data);
+                m_Events.push_back("refused a client with other game files " + Lobby::brief(hello->data));
             }
             else if (!m_Password.empty() && hello->password != m_Password) {
                 refuse(link, "password");

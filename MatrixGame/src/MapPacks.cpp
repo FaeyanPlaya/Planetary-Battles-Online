@@ -477,10 +477,33 @@ bool safe(std::wstring_view path) {
         std::size_t end = path.find_first_of(L"\\/", begin);
         if (end == std::wstring_view::npos) end = path.size();
         const auto part = path.substr(begin, end - begin);
-        if (part.empty() || part == L"." || part == L"..") return false;
+        // (Windows drops a name's last dots and spaces: ".. " would be "..". A device's name is no file.)
+        if (part.empty() || part == L"." || part == L".." || part.back() == L'.' || part.back() == L' ') return false;
+        const std::wstring stem = folded(part.substr(0, part.find(L'.')));
+        for (const wchar_t *device : {L"con", L"prn", L"aux", L"nul"})
+            if (stem == device) return false;
+        if (stem.size() == 4 && (stem.starts_with(L"com") || stem.starts_with(L"lpt")) && stem[3] >= L'0' && stem[3] <= L'9') return false;
         begin = end + 1;
     }
     return true;
+}
+
+// What a bundle holds (bundle_files): the map, its mod's sky and water list and names, textures and models. A host's
+// bundle with anything else (a program, the game's own data under its name: the pack's folder is searched first) is
+// refused.
+bool carried(std::wstring_view path) {
+    const std::wstring name = folded(path);
+    const auto slash = name.find_last_of(L'\\');
+    const std::wstring folder = slash == std::wstring::npos ? std::wstring() : name.substr(0, slash);
+    const std::wstring file = name.substr(slash == std::wstring::npos ? 0 : slash + 1);
+    const auto dot = file.find_last_of(L'.');
+    const std::wstring ext = dot == std::wstring::npos ? std::wstring() : file.substr(dot);
+    if (ext == L".cmap") return folder == folded(maps_folder);
+    if (folder == L"cfg\\rus\\robots" || folder == L"cfg\\eng\\robots") return file == L"cache.txt";
+    if (folder == L"cfg\\rus" || folder == L"cfg\\eng") return file == L"lang.dat";
+    for (const wchar_t *kind : {L".png", L".jpg", L".bmp", L".dds", L".strg", L".tga", L".vo"})
+        if (ext == kind) return true;
+    return false;
 }
 }  // namespace
 
@@ -598,7 +621,7 @@ bool unpack(std::string_view bytes, const std::filesystem::path &folder) {
         catch (...) {
             return false;
         }
-        if (!safe(path)) return false;
+        if (!safe(path) || !carried(path)) return false;
         const auto file = folder / path;
         std::error_code error;
         std::filesystem::create_directories(file.parent_path(), error);

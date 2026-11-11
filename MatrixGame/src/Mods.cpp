@@ -261,6 +261,10 @@ std::vector<Mod> scan(const std::filesystem::path &folder) {
         if (mod.name.empty()) mod.name = utils::to_wstring(id);
         if (mod.name_en.empty()) mod.name_en = mod.name;
         if (mod.description_en.empty()) mod.description_en = mod.description;
+        // Shown through the interface's text templates, where '|' ends a text: another's mod.txt must not break the
+        // lists it is shown in.
+        for (std::wstring *text : {&mod.name, &mod.name_en, &mod.description, &mod.description_en, &mod.author})
+            std::replace(text->begin(), text->end(), L'|', L'/');
         mod.folder = it->path();
         mod.hash = folder_hash(it->path());
         mods.push_back(std::move(mod));
