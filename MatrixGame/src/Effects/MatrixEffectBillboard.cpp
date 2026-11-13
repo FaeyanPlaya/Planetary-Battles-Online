@@ -150,6 +150,7 @@ void CMatrixEffectBillboard::Draw(const D3DXMATRIX &m, DWORD color, CTextureMana
 
     SetColorOpDisable(1);
 
+    if (g_WorldDrawHook) g_WorldDrawHook(false);  // (a shader pack's effects: laid in the world, not facing)
     g_D3DD->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0, 2);
 
     if (intense)

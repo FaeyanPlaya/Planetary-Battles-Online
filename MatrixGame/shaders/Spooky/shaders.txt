@@ -1,0 +1,88 @@
+# Spooky: a night pack. Its own code; the mood after Spooklementary (see About).
+Name=Жуть
+NameEn=Spooky
+Description=Ночь над полем боя: холодный лунный свет, туман в низинах, живой свет пожаров и взрывов.
+DescriptionEn=Night over the battlefield: cold moonlight, fog in the lowlands, the living light of fires and blasts.
+Author=PBO
+
+# Numbers: "<" and ">" stop at the first and the last value (range); a word list would go round (cycle).
+Setting.NIGHT=0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8|0.5|Темнота ночи|Night darkness
+Setting.FOG=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2,2.25,2.5,2.75,3|2|Туман у земли|Ground fog
+Setting.FOGHEIGHT=10,20,30,40,50,60,70,80,90,100,120,140,160,180,200|40|Высота тумана|Fog height
+Setting.FIRELIGHT=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2|1|Свет огня|Firelight
+Setting.GLOW=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Свечение|Glow
+Setting.FLICKER=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Мерцание огня|Fire flicker
+Setting.AO=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Затенение углов|Corner shading
+Setting.SHADOWS=0,0.25,0.5,0.75,1|1|Контактные тени|Contact shadows
+Setting.NORMALS=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Рельеф текстур|Texture relief
+Setting.GEOMETRY=On,Off|On|Нормали моделей|Model normals|cycle
+Setting.SHAFTS=On,Off|On|Объёмные лучи|Light shafts|cycle
+Setting.RAYS=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Сила лучей|Shaft strength
+Setting.VIGNETTE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|1|Виньетка|Vignette
+Setting.GRAIN=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Зерно|Film grain
+Setting.SOFTFX=0,5,10,15,20,30,40|15|Мягкие эффекты|Soft effects
+
+# Several settings at once, by how much they cost the video card.
+Profile.LOW=Низкий|Low|AO=0 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0
+Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.5 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15
+Profile.HIGH=Высокий|High|AO=1 SHADOWS=1 NORMALS=1 GEOMETRY=On SHAFTS=On SOFTFX=15
+
+Note.ABOUT=О наборе|About the pack
+
+Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: затенение углов, контактные тени, рельеф текстур, объёмные лучи и мягкие эффекты. «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: corner shading, contact shadows, texture relief, light shafts and soft effects. Custom: when they are set otherwise.
+Info.NIGHT=Насколько день становится ночью: темнее, серее, холоднее. 0 — день как есть.|How much the day becomes night: darker, greyer, colder. 0: the day as it is.
+Info.FOG=Туман лежит в низинах и над водой и медленно плывёт; вдали всё уходит в дымку. Огонь подсвечивает его.|The fog lies in the lowlands and over the water and drifts slowly; far away everything fades into the haze. Fire lights it up.
+Info.FIRELIGHT=Как сильно пожары, взрывы, выстрелы, лазеры и всё светящееся освещают землю, стены и роботов рядом.|How much fires, explosions, shots, lasers and everything glowing light the ground, walls and robots near them.
+Info.GLOW=Ореол вокруг огня, вспышек и выстрелов.|The halo around fire, flashes and shots.
+Info.FLICKER=Огонь дрожит, каждый по-своему. 0 — ровный свет.|Fire trembles, each in its own way. 0: a steady light.
+Info.AO=Тень в углах, у стен и под роботами. 2 — сильнее.|Shade in corners, by walls and under robots. 2: stronger.
+Info.SHADOWS=Короткие тени от солнца карты у самых предметов, рядом с тенями игры. 0 — без них.|Short shadows from the map's sun right by things, next to the game's own shadows. 0: none.
+Info.FOGHEIGHT=Как высоко поднимается туман от земли и воды. Выше — гуще и дальше вверх по склонам.|How high the fog rises from the ground and the water. Higher: thicker, further up the slopes.
+Info.NORMALS=Генерируемые нормали: светлое и тёмное на поверхностях становится выпуклым и впалым под луной и у огня. 0 — без них.|Generated normals: the light and dark of surfaces become raised and sunken under the moon and by fire. 0: none.
+Info.GEOMETRY=Свет огня и вспышек ложится по настоящей форме роботов, зданий и земли: движок рисует мир ещё раз шейдером набора. Выкл — форма берётся из глубины кадра, и видеокарте легче.|The light of fire and flashes follows the true shape of robots, buildings and the land: the engine draws the world once more with the pack's shader. Off: the shape is taken from the frame's depth, easier on the video card.
+Info.SHAFTS=Лунный свет в тумане: тени роботов, деревьев и зданий встают от земли столбами к луне. Выкл — без них, и видеокарте легче.|The moonlight in the fog: the shadows of robots, trees and buildings rise from the ground in columns towards the moon. Off: none, and easier on the video card.
+Info.RAYS=Насколько заметны объёмные лучи.|How strong the light shafts are.
+Info.VIGNETTE=Края экрана темнее.|The screen's edges darker.
+Info.GRAIN=Едва заметный шум, как на плёнке.|A faint noise, as on film.
+Info.SOFTFX=Огонь, дым и вспышки тают там, где касаются земли и стен, а не обрезаются резкой линией. Число — на каком расстоянии. 0 — как в игре.|Fire, smoke and flashes fade where they touch the ground and walls instead of being cut by a hard line. The number: over how far. 0: as in the game.
+Info.ABOUT=Ночь, туман и огонь на поле боя. Настроение навеяно наборами Spooklementary (SpacEagle17) и Complementary (EminGT) для Minecraft; код свой, их код не использован.|Night, fog and fire on the battlefield. The mood is inspired by the Spooklementary (SpacEagle17) and Complementary (EminGT) packs for Minecraft; the code is its own, none of theirs is used.
+
+# The game's own fog off: this pack makes its own haze, in the map's colours.
+Game.Fog=Off
+
+Screen=PROFILE - NIGHT FOG FOGHEIGHT FIRELIGHT GLOW SOFTFX - [Light] [Materials] [Camera] - ABOUT
+Screen.Light=Свет и тени|Light and shadow|FLICKER AO SHADOWS SHAFTS RAYS
+Screen.Materials=Материалы|Materials|NORMALS GEOMETRY
+Screen.Camera=Камера|Camera|VIGNETTE GRAIN
+
+# The world's depth as the moon sees it, for the rays (drawn only while they are on: the world is drawn twice).
+Shadow=2048|2000|SHAFTS
+
+# The world drawn by world.hlsl: the surfaces' normals, what each thing is (only while GEOMETRY is on).
+Target.WorldN=1|rgba8
+Target.WorldM=1|rgba8
+World=world.hlsl|WorldN WorldM|GEOMETRY
+
+# The effects drawn by its own shader in the game's place.
+Effects=effects.hlsl|SOFTFX
+
+Target.Half=0.5|rgba16f
+Target.HalfDir=0.5|rgba16f
+Target.Glow=0.25|rgba16f
+Target.GlowH=0.25|rgba16f
+Target.GlowB=0.25|rgba16f
+Target.Wide=0.0625|rgba16f
+Target.Lit=1|rgba16f
+Target.Rays=0.5|rgba8
+Target.RaysB=0.5|rgba8
+
+Pass=half.hlsl|Half
+Pass=halfdir.hlsl|HalfDir
+Pass=glow.hlsl|Glow
+Pass=glowh.hlsl|GlowH
+Pass=glowv.hlsl|GlowB
+Pass=wide.hlsl|Wide
+Pass=lit.hlsl|Lit
+Pass=rays.hlsl|Rays
+Pass=raysblur.hlsl|RaysB
+Pass=final.hlsl|screen

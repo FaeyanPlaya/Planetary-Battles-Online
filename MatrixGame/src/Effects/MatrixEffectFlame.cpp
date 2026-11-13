@@ -31,6 +31,8 @@ CFlamePuff::CFlamePuff(CMatrixEffectFlame *owner, const D3DXVECTOR3 &pos, const 
     // if (n > 5)
     {
         CMatrixEffect::CreatePointLight(&m_Light, pos, 20, 0xFFFFFFFF, false);
+        if (m_Light.effect)
+            ((CMatrixEffectPointLight *)m_Light.effect)->SetShaderKind(ShaderLights::Kind::Fire);
         // n = 0;
     }  // else
     //{

@@ -4,6 +4,7 @@
 // Refer to the LICENSE file included
 
 #pragma once
+#include "../ShaderLights.hpp"
 
 #include <vector>
 
@@ -131,6 +132,7 @@ class CMatrixEffectPointLight : public CMatrixEffect {
     CBillboard *m_Bill;
 
     std::vector<SMapPointLight> m_PointLum;
+    ShaderLights::Kind m_ShaderKind = ShaderLights::Kind::Flash;
 
     CMatrixEffectPointLight(const D3DXVECTOR3 &pos, float r, DWORD color, bool drawbill = false);
     virtual ~CMatrixEffectPointLight();
@@ -182,6 +184,10 @@ public:
     void Kill(float time);
 
     DWORD GetColor(void) { return m_Color; }
+    void SetShaderKind(ShaderLights::Kind kind) { m_ShaderKind = kind; }
+    virtual void AddShaderLights(void) const override {
+        ShaderLights::add_argb(m_Pos, m_Radius, m_Color, m_ShaderKind, this);
+    }
 
     virtual void BeforeDraw(void) {
         if (FLAG(m_before_draw_done, BDDF_PLIGHT))

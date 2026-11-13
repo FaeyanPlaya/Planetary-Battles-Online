@@ -9,6 +9,8 @@
 #include "Interface.h"
 #include "CConstructor.h"
 
+#include <initializer_list>
+
 class CIFaceImage;
 class CIFaceStatic;
 class CMatrixCannon;
@@ -310,6 +312,7 @@ public:
 
     CIFaceElement *m_Turrets[4 /*define expected*/];
     CIFaceElement *m_BuildCa;
+    CIFaceElement *m_MenuButton = nullptr;  // the battle's Menu button (mm): the frame rate under it (DrawFps)
 
     CIFaceCounter *m_RCountControl;
 
@@ -349,6 +352,9 @@ public:
 
     void CreateGroupIcons();
     void DeleteGroupIcons();
+    // Textures about to be destroyed (a robot's pictures as it goes): the interface's own pictures of them go first,
+    // so none draws a freed texture. Returns how many were still there (each a selection path that kept them).
+    int ForgetTextures(std::initializer_list<const CTextureManaged *> textures);
 
     void DeleteProgressBars(CMatrixMapStatic *from);
 
@@ -389,6 +395,8 @@ public:
     void HideHintButtons();
     void HideHintButton(EHintButton butt);
     void DisableMainMenuButton(EHintButton butt, bool dim = false);
+    // The frame rate under the Menu button while the settings' Show FPS is on (after the interface is drawn).
+    void DrawFps() const;
     void EnableMainMenuButton(EHintButton butt);
     void HintButtonId2Name(EHintButton butt, std::wstring &name);
     void PressHintButton(EHintButton butt);

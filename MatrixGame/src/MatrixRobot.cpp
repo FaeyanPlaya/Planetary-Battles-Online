@@ -26,6 +26,7 @@
 
 #include <bit>
 #include <format>
+#include <stupid_logger.hpp>
 
 namespace {
 
@@ -5267,8 +5268,10 @@ void CMatrixRobotAI::ReleaseMe(void) {
     // Its person drove it: the side leaves it on every peer (and this client's interface comes back).
     if (CMatrixSideUnit *driver = Driver()) driver->LeaveRobot();
 
+    int selection = -1;  // the player's, for the log below
     if (GetSide() == PLAYER_SIDE) {
         CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
+        selection = int(ps->m_CurrSel);
 
         ps->RemoveFromSelection(this);
 
@@ -5335,6 +5338,18 @@ void CMatrixRobotAI::ReleaseMe(void) {
         Carry(NULL);
     }
 
+    // Its pictures go: whatever of the interface still shows them goes first (a group's icons were rebuilt above
+    // only while a group was the selection; an icon kept past it drew the freed texture: the X-Ray crash).
+    if (g_IFaceList) {
+        const int kept = g_IFaceList->ForgetTextures({m_BigTexture, m_MedTexture,
+#ifdef USE_SMALL_TEXTURE_IN_ROBOT_ICON
+                                                      m_SmallTexture
+#endif
+        });
+        if (kept)
+            lgr.notice("Interface: {} picture(s) of a robot that went were still shown (side {}, selection {})")(
+                    kept, GetSide(), selection);
+    }
     if (m_BigTexture) {
         g_Cache->Destroy(m_BigTexture);
         m_BigTexture = NULL;

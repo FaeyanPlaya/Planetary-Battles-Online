@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "NewBattle.hpp"
+#include "GameLanguage.hpp"
 #include "NetBattle.hpp"
 #include "SettingsModel.hpp"
 #include "MatrixMap.hpp"
@@ -24,8 +25,7 @@ bool available() { return Display::enabled() && g_MatrixMap && !Commands::deferr
 
 void customize_menu(std::wstring &menu_template) {
     if (!Display::enabled()) return;
-    const bool russian = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
-                         SettingsModel::Language::Russian;
+    const bool russian = GameLanguage::russian();
     utils::replace(menu_template, L"[help]", russian ? L"\u041d\u043e\u0432\u0430\u044f \u0431\u0438\u0442\u0432\u0430 (N)" : L"New battle (N)");
 }
 

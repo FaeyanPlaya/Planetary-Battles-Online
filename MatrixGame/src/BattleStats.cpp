@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "BattleStats.hpp"
+#include "GameLanguage.hpp"
 #include "Factions.hpp"
 #include "PlayerName.hpp"
 #include "SettingsModel.hpp"
@@ -45,8 +46,7 @@ int g_wide_extra = -1;                 // how much longer it is
 const wchar_t *text(bool russian, const wchar_t *english, const wchar_t *ru) { return russian ? ru : english; }
 
 bool russian() {
-    return SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
-           SettingsModel::Language::Russian;
+    return GameLanguage::russian();
 }
 
 void release() {

@@ -21,6 +21,7 @@ constexpr std::array window_modes{Mode::Windowed, Mode::Borderless, Mode::Exclus
 constexpr std::array fullscreen_modes{Mode::Borderless, Mode::Exclusive};
 constexpr std::array skyboxes{Skybox::Off, Skybox::Low, Skybox::High};
 constexpr std::array themes{StandaloneSettings::Theme::System, StandaloneSettings::Theme::Light, StandaloneSettings::Theme::Dark};
+constexpr std::array languages{GameLanguage::Choice::System, GameLanguage::Choice::Russian, GameLanguage::Choice::English};
 constexpr std::array far_views{0, 150, 200, 300};  // off, then the scale in percent
 constexpr std::array saved_designs{1, 10, 20, 30, 40, 50};
 
@@ -77,10 +78,27 @@ bool is_group(int row) {
 
 bool mods_row(int row) { return row >= mods_first && row < row_count; }
 
-bool opener(int row) { return row == static_cast<int>(Row::Keys) || row == static_cast<int>(Row::Mods); }
+bool opener(int row) {
+    return row == static_cast<int>(Row::Keys) || row == static_cast<int>(Row::Mods) || row == static_cast<int>(Row::Shaders);
+}
 
 namespace {
 bool g_battle_rules_locked = false;
+}
+
+std::vector<int> main_page() {
+    std::vector<int> rows;
+    for (int row = 0; row < main_rows; ++row) {
+        if (row > 0 && is_group(row)) rows.push_back(-1);
+        rows.push_back(row);
+    }
+    return rows;
+}
+
+int rows_for_screen(int screen_height) {
+    // The frame (21), the battle's OK and Cancel under it (28) or the startup's buttons (34), a little room.
+    constexpr int around = Layout::first_row_y + 2 + Layout::row_height + 21 + StartupLayout::buttons_room + 6;
+    return std::clamp((screen_height - around) / Layout::row_height, least_rows, tall_rows);
 }
 
 void lock_battle_rules(bool locked) { g_battle_rules_locked = locked; }
@@ -88,20 +106,11 @@ void lock_battle_rules(bool locked) { g_battle_rules_locked = locked; }
 bool needs_restart(int row) {
     const auto value = static_cast<Row>(row);
     // NewSky: the sky is loaded with the map, so from the next battle; SavedDesigns: a battle loads that many.
-    return value == Row::Skybox || value == Row::RobotShadows || value == Row::RandomGenerator || value == Row::NewSky ||
+    return value == Row::Skybox || value == Row::Language || value == Row::RobotShadows || value == Row::RandomGenerator || value == Row::NewSky ||
            value == Row::SavedDesigns || (value == Row::DelayedDamage && g_battle_rules_locked);
 }
 
-int row_top(int row) { return Layout::first_row_y + (mods_row(row) ? row - mods_first : row) * Layout::row_height; }
-
-Hit hit(int x, int y, bool mods_page) {
-    if (y < Layout::first_row_y || x < Layout::label_x - 10 || x >= Layout::cell_right + 10) return {};
-    const int place = (y - Layout::first_row_y) / Layout::row_height;
-    const int row = mods_page ? mods_first + place : place;
-    if (!is_option(row) || mods_row(row) != mods_page) return {};
-    if (x < Layout::previous_x) return {row, 0};
-    return {row, x < Layout::value_x + Layout::value_width / 2 ? -1 : 1};
-}
+int row_top(int place) { return Layout::first_row_y + place * Layout::row_height; }
 
 std::vector<Resolution> resolution_choices(std::vector<Resolution> modes, Resolution current) {
     std::erase_if(modes, [](const Resolution &mode) { return mode.width < 640 || mode.height < 480; });
@@ -121,12 +130,14 @@ Language detect_language(const std::wstring &menu_text) {
 Window::Window(StandaloneSettings::Values values, std::vector<Resolution> resolutions, Language language,
                std::vector<std::string> default_personal, std::vector<std::string> unavailable,
                KeyBindings::Keys keys, KeyBindings::Keys base, const std::vector<Mods::Mod> &mods,
-               Mods::SettingValues mod_settings)
+               Mods::SettingValues mod_settings, std::vector<ShaderPacks::Pack> packs, ShaderPacks::Choice shaders)
   : m_Values(values), m_Original(values), m_Resolutions(std::move(resolutions)), m_Language(language),
     m_Selected(static_cast<int>(Row::Resolution)), m_DefaultPersonal(std::move(default_personal)),
     m_Unavailable(std::move(unavailable)), m_Keys(keys), m_KeysOriginal(keys), m_KeysBase(base),
-    m_Installed(mods), m_ModSettings(mod_settings), m_ModSettingsOriginal(std::move(mod_settings)) {
+    m_Installed(mods), m_ModSettings(mod_settings), m_ModSettingsOriginal(std::move(mod_settings)),
+    m_ShaderMenu(std::move(packs), std::move(shaders), language == Language::Russian) {
     m_Resolutions = resolution_choices(std::move(m_Resolutions), {values.display.width, values.display.height});
+    fit_header();
     // The keys page: each group's engine actions, then its mods' ones.
     const auto actions = KeyBindings::actions();
     m_ModActions.assign(KeyBindings::mod_actions().begin(), KeyBindings::mod_actions().end());
@@ -210,30 +221,41 @@ bool Window::setting_row(int row) const {
     return row >= row_count && row < row_count + int(m_FolderRows.size()) && m_FolderRows[row - row_count].setting >= 0;
 }
 
-void Window::mods_show(int row) {
-    const auto found = std::ranges::find(m_ModsOrder, row);
-    if (found == m_ModsOrder.end()) return;
-    const int place = int(found - m_ModsOrder.begin());
-    if (place < m_ModsTop) m_ModsTop = place;
-    if (place >= m_ModsTop + mods_rows_shown) m_ModsTop = place - mods_rows_shown + 1;
+void Window::show(int row) {
+    const auto &order = page_rows();
+    const auto found = std::ranges::find(order, row);
+    if (found == order.end()) return;
+    int place = int(found - order.begin());
+    int &top = m_ModsPage ? m_ModsTop : m_MainTop;
+    // Up to a row: its group's too (and the empty row before it).
+    if (place < top) top = place >= 1 && is_group(order[place - 1]) && !m_ModsPage ? std::max(0, place - 2) : place;
+    if (place >= top + m_Rows) top = place - m_Rows + 1;
 }
 
-void Window::mods_scroll(int rows) {
-    m_ModsTop = std::clamp(m_ModsTop + rows, 0, std::max(0, int(m_ModsOrder.size()) - mods_rows_shown));
+void Window::scroll(int rows) {
+    int &top = m_ModsPage ? m_ModsTop : m_MainTop;
+    top = std::clamp(top + rows, 0, std::max(0, int(page_rows().size()) - m_Rows));
+}
+
+void Window::set_rows(int rows) {
+    m_Rows = std::clamp(rows, 1, tall_rows);
+    m_MainTop = m_ModsTop = 0;
+    m_KeyTop = 0;
+    show(m_Selected);
 }
 
 int Window::top(int row) const {
-    if (!m_ModsPage) return row_top(row);
-    const auto found = std::ranges::find(m_ModsOrder, row);
-    return Layout::first_row_y + (int(found - m_ModsOrder.begin()) - m_ModsTop) * Layout::row_height;
+    const auto &order = page_rows();
+    const auto found = std::ranges::find(order, row);
+    return row_top(int(found - order.begin()) - page_top());
 }
 
 Hit Window::hit(int x, int y) const {
-    if (!m_ModsPage) return SettingsModel::hit(x, y);
     if (y < Layout::first_row_y || x < Layout::label_x - 10 || x >= Layout::cell_right + 10) return {};
     const int place = (y - Layout::first_row_y) / Layout::row_height;
-    if (place >= mods_rows_shown || m_ModsTop + place >= int(m_ModsOrder.size())) return {};
-    const int row = m_ModsOrder[m_ModsTop + place];
+    const auto &order = page_rows();
+    if (place >= m_Rows || page_top() + place >= int(order.size())) return {};
+    const int row = order[page_top() + place];
     if (!option(row)) return {};
     if (info_row(row) && x >= Layout::info_x && x < Layout::info_x + Layout::button_size) return {row, 0, true};
     if (x < Layout::previous_x) return {row, 0};
@@ -294,8 +316,18 @@ bool Window::personal(const char *id) const {
     return std::ranges::find(ids, id) != ids.end();
 }
 
+std::optional<bool> Window::shader_decided(int row) const {
+    const auto value = static_cast<Row>(row);
+    const char *name = value == Row::StencilShadows     ? "StencilShadows"
+                       : value == Row::ProjectedShadows ? "ProjectedShadows"
+                                                        : nullptr;
+    if (!name) return std::nullopt;
+    return ShaderPacks::game_setting(m_ShaderMenu.packs(), m_ShaderMenu.applied(), name);
+}
+
 bool Window::enabled(int row) const {
     if (!option(row)) return false;
+    if (shader_decided(row)) return false;
     if (row >= row_count) return m_Mods[m_FolderRows[row - row_count].mod].problem == Mods::Problem::None;
     const auto value = static_cast<Row>(row);
     const char *id = value == Row::NewSky           ? "newsky"
@@ -315,21 +347,25 @@ void Window::set_personal(const char *id, bool on) {
 }
 
 bool Window::select(int row) {
-    if (!enabled(row) || (mods_row(row) || row >= row_count) != m_ModsPage || row == m_Selected) return false;
+    const bool on_page = m_ShadersPage ? false
+                         : m_ModsPage  ? mods_row(row) || row >= row_count
+                                       : row < row_count && !mods_row(row);
+    if (!enabled(row) || !on_page || row == m_Selected) return false;
     m_Selected = row;
-    if (m_ModsPage) mods_show(row);
+    show(row);
     return true;
 }
 
 void Window::move(int delta) {
-    if (m_ModsPage) {
-        const int count = int(m_ModsOrder.size());
-        int place = int(std::ranges::find(m_ModsOrder, m_Selected) - m_ModsOrder.begin());
+    if (mods_page()) {
+        const auto &order = mods_rows();
+        const int count = int(order.size());
+        int place = int(std::ranges::find(order, m_Selected) - order.begin());
         do {
             place = (place + delta + count) % count;
-        } while (!enabled(m_ModsOrder[place]));
-        m_Selected = m_ModsOrder[place];
-        mods_show(m_Selected);
+        } while (!enabled(order[place]));
+        m_Selected = order[place];
+        show(m_Selected);
         return;
     }
     const int first = m_ModsPage ? mods_first : 0;
@@ -339,11 +375,19 @@ void Window::move(int delta) {
         row = first + (row - first + delta + count) % count;
     } while (!enabled(row));
     m_Selected = row;
+    show(row);
 }
 
 void Window::close_mods() {
-    m_ModsPage = false;
     m_Selected = static_cast<int>(Row::Mods);
+    m_ModsPage = false;
+    show(m_Selected);
+}
+
+void Window::close_shaders() {
+    m_Selected = static_cast<int>(Row::Shaders);
+    m_ShadersPage = false;
+    show(m_Selected);
 }
 
 bool Window::change(int row, int direction) {
@@ -358,6 +402,12 @@ bool Window::change(int row, int direction) {
         m_ModsTop = 0;
         return true;
     }
+    if (row == static_cast<int>(Row::Shaders)) {
+        m_ShadersPage = true;
+        m_ShaderMenu.open();
+        fit_header();
+        return true;
+    }
     if (!enabled(row) || direction == 0) return false;
     if (row >= row_count) {  // a mods folder's mod: on and off, or its setting's values in turn
         const FolderRow &place = m_FolderRows[row - row_count];
@@ -368,9 +418,9 @@ bool Window::change(int row, int direction) {
         }
         const Mods::SettingLine &setting = mod.settings[place.setting];
         const auto before = m_ModSettings;
-        const int count = int(setting.values.size());
         const auto now = std::ranges::find(setting.values, Mods::setting_value(mod, setting, m_ModSettings));
-        const int index = (int(now - setting.values.begin()) + direction + count) % count;
+        if (now == setting.values.end()) return false;
+        const int index = Mods::step_index(setting, int(now - setting.values.begin()), direction > 0 ? 1 : -1);
         m_ModSettings[mod.id + "." + setting.id] = setting.values[index];
         return m_ModSettings != before;
     }
@@ -396,12 +446,14 @@ bool Window::change(int row, int direction) {
             if (display.mode != Mode::Windowed) display.mode = display.fullscreen;
             break;
         case Row::Theme: values.theme = cycle(themes, values.theme, direction); break;
+        case Row::Language: values.language = cycle(languages, values.language, direction); break;
         case Row::SoundVolume: values.sound_volume = step(values.sound_volume, direction, 10, 0, 100); break;
         case Row::MusicVolume: values.music_volume = step(values.music_volume, direction, 10, 0, 100); break;
         case Row::StencilShadows: values.stencil_shadows = !values.stencil_shadows; break;
         case Row::ProjectedShadows: values.projected_shadows = !values.projected_shadows; break;
         case Row::Skybox: values.skybox = cycle(skyboxes, values.skybox, direction); break;
         case Row::RobotShadows: values.robot_shadows = !values.robot_shadows; break;
+        case Row::ShowFps: values.show_fps = !values.show_fps; break;
         case Row::FarView: {
             const int next = cycle(far_views, personal("farview") ? values.far_view_scale : 0, direction);
             set_personal("farview", next != 0);
@@ -443,11 +495,54 @@ bool Window::change(int row, int direction) {
     return m_Values != before;
 }
 
+std::wstring Window::fit(const std::wstring &text, const wchar_t *font, int width) const {
+    const int room = width - 6;  // the hint's text box is a little narrower than its width
+    if (!m_TextWidth || m_TextWidth(text, font) <= room) return text;
+    std::wstring cut = text;
+    while (!cut.empty() && m_TextWidth(cut + L"...", font) > room) cut.pop_back();
+    while (!cut.empty() && cut.back() == L' ') cut.pop_back();
+    return cut + L"...";
+}
+
+std::vector<std::wstring> Window::lines(const std::wstring &text, const wchar_t *font, int width, int count) const {
+    std::vector<std::wstring> result;
+    std::wstring rest = text;
+    while (!rest.empty() && int(result.size()) < count) {
+        if (int(result.size()) == count - 1 || text_width(rest, font) <= width - 6) {
+            result.push_back(fit(rest, font, width));
+            break;
+        }
+        // As many words as fit (a word longer than the line: cut there).
+        std::size_t end = 0;
+        for (std::size_t space = rest.find(L' '); space != std::wstring::npos; space = rest.find(L' ', space + 1)) {
+            if (text_width(rest.substr(0, space), font) > width - 6) break;
+            end = space;
+        }
+        if (end == 0) {
+            result.push_back(fit(rest, font, width));
+            break;
+        }
+        result.push_back(rest.substr(0, end));
+        rest = rest.substr(end + 1);
+    }
+    return result;
+}
+
+int Window::text_width(const std::wstring &text, const wchar_t *font) const {
+    return m_TextWidth ? m_TextWidth(text, font) : int(text.size()) * 7;
+}
+
+int Window::content_height() const {
+    if (m_ShadersPage) return Layout::content_height + m_ShaderMenu.extra_rows() * Layout::row_height;
+    return legend_y() + Layout::row_height;  // (a failed save's text in the legend's place)
+}
+
 const wchar_t *Window::text(const wchar_t *english, const wchar_t *russian) const {
     return m_Language == Language::Russian ? russian : english;
 }
 
 std::wstring Window::title() const {
+    if (m_ShadersPage) return m_ShaderMenu.title();
     if (m_ModsPage) return text(L"Mods", L"\u041c\u043e\u0434\u044b");  // Mody
     return text(L"Settings", L"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438");  // Nastroiki
 }
@@ -457,9 +552,9 @@ std::wstring Window::label(int row) const {
         const FolderRow &place = m_FolderRows[row - row_count];
         const Mods::Mod &mod = m_Mods[place.mod];
         const bool russian = m_Language == Language::Russian;
-        if (place.setting < 0) return russian || mod.name_en.empty() ? mod.name : mod.name_en;
+        if (place.setting < 0) return GameLanguage::pick(russian, mod.name, mod.name_en);
         const Mods::SettingLine &setting = mod.settings[place.setting];
-        return russian || setting.english.empty() ? setting.russian : setting.english;
+        return GameLanguage::pick(russian, setting.russian, setting.english);
     }
     std::wstring result;
     switch (static_cast<Row>(row)) {
@@ -472,6 +567,7 @@ std::wstring Window::label(int row) const {
             break;
         case Row::FullscreenMode: result = L"Alt+Enter"; break;
         case Row::Theme: result = text(L"Theme", L"\u0422\u0435\u043c\u0430"); break;
+        case Row::Language: result = text(L"Language", L"\u042f\u0437\u044b\u043a"); break;
         case Row::SoundGroup: result = text(L"Sound", L"\u0417\u0432\u0443\u043a"); break;
         case Row::SoundVolume:
             result = text(L"Volume", L"\u0413\u0440\u043e\u043c\u043a\u043e\u0441\u0442\u044c");
@@ -490,6 +586,9 @@ std::wstring Window::label(int row) const {
         case Row::RobotShadows:
             result = text(L"Robot shadows", L"\u0422\u0435\u043d\u0438 \u0440\u043e\u0431\u043e\u0442\u043e\u0432");
             break;
+        case Row::ShowFps:  // Pokazyvat' FPS
+            result = text(L"Show FPS", L"\u041f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0442\u044c FPS");
+            break;
         case Row::FarView:
             result = text(L"Far view", L"\u0414\u0430\u043b\u044c\u043d\u044f\u044f \u043f\u0440\u043e\u0440\u0438\u0441\u043e\u0432\u043a\u0430");
             break;
@@ -507,6 +606,7 @@ std::wstring Window::label(int row) const {
         case Row::GameplayGroup: result = text(L"Gameplay", L"\u0418\u0433\u0440\u0430"); break;
         case Row::Keys: result = text(L"Keys", L"\u041a\u043b\u0430\u0432\u0438\u0448\u0438"); break;  // Klavishi
         case Row::Mods: result = text(L"Mods", L"\u041c\u043e\u0434\u044b"); break;
+        case Row::Shaders: result = text(L"Shaders", L"\u0428\u0435\u0439\u0434\u0435\u0440\u044b"); break;
         case Row::CameraSpeed:
             result = text(L"Camera speed", L"\u0421\u043a\u043e\u0440\u043e\u0441\u0442\u044c \u043a\u0430\u043c"
                                            L"\u0435\u0440\u044b");
@@ -557,10 +657,17 @@ std::wstring Window::value(int row) const {
                 case StandaloneSettings::Theme::Dark: return text(L"Dark", L"\u0422\u0451\u043c\u043d\u0430\u044f");
             }
             return {};
+        case Row::Language:  // each language by its own name
+            switch (values.language) {
+                case GameLanguage::Choice::System: return text(L"As Windows", L"\u041a\u0430\u043a \u0432 \u0441\u0438\u0441\u0442\u0435\u043c\u0435");
+                case GameLanguage::Choice::Russian: return L"\u0420\u0443\u0441\u0441\u043a\u0438\u0439";
+                case GameLanguage::Choice::English: return L"English";
+            }
+            return {};
         case Row::SoundVolume: return std::to_wstring(values.sound_volume) + L"%";
         case Row::MusicVolume: return std::to_wstring(values.music_volume) + L"%";
-        case Row::StencilShadows: return on_off(values.stencil_shadows);
-        case Row::ProjectedShadows: return on_off(values.projected_shadows);
+        case Row::StencilShadows: return on_off(shader_decided(row).value_or(values.stencil_shadows));
+        case Row::ProjectedShadows: return on_off(shader_decided(row).value_or(values.projected_shadows));
         case Row::Skybox:
             switch (values.skybox) {
                 case Skybox::Off: return on_off(false);
@@ -569,6 +676,7 @@ std::wstring Window::value(int row) const {
             }
             return {};
         case Row::RobotShadows: return on_off(values.robot_shadows);
+        case Row::ShowFps: return on_off(values.show_fps);
         case Row::FarView: {
             if (!personal("farview")) return on_off(false);
             const int scale = values.far_view_scale;
@@ -582,6 +690,13 @@ std::wstring Window::value(int row) const {
         case Row::SavedDesigns: return std::to_wstring(values.saved_designs);
         case Row::Keys:
         case Row::Mods: return text(L"Change", L"\u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c");  // Izmenit'
+        case Row::Shaders: {
+            const auto &menu = m_ShaderMenu;
+            const auto &applied = menu.applied();
+            for (int i = 0; applied.on && i < int(menu.packs().size()); ++i)
+                if (menu.packs()[i].id == applied.pack) return menu.pack_name(i);
+            return on_off(false);
+        }
         case Row::CameraSpeed: return std::to_wstring(values.camera_speed) + L"%";
         case Row::RandomGenerator: return utils::to_wstring(RandomConfiguration::name(values.random));
         case Row::DelayedDamage:
@@ -593,6 +708,10 @@ std::wstring Window::value(int row) const {
 }
 
 std::wstring Window::legend() const {
+    if (m_ShadersPage) {
+        bool error = false;
+        return m_ShaderMenu.legend(m_ShadersProblem, error);
+    }
     return text(L"* Applies after restart", L"* \u041f\u0440\u0438\u043c\u0435\u043d\u044f\u0435\u0442\u0441\u044f "
                                             L"\u043f\u043e\u0441\u043b\u0435 \u043f\u0435\u0440\u0435\u0437\u0430"
                                             L"\u043f\u0443\u0441\u043a\u0430");
@@ -643,11 +762,11 @@ void Window::key_move(int delta) {
     // Scrolled to it, with its group's row when that is just above it.
     const int first = key_group(row - 1) ? row - 1 : row;
     if (first < m_KeyTop) m_KeyTop = first;
-    if (row >= m_KeyTop + key_rows_shown) m_KeyTop = row - key_rows_shown + 1;
+    if (row >= m_KeyTop + m_Rows) m_KeyTop = row - m_Rows + 1;
 }
 
 void Window::key_scroll(int rows) {
-    m_KeyTop = std::clamp(m_KeyTop + rows, 0, std::max(0, key_row_count() - key_rows_shown));
+    m_KeyTop = std::clamp(m_KeyTop + rows, 0, std::max(0, key_row_count() - m_Rows));
 }
 
 void Window::key_activate() {
@@ -716,7 +835,7 @@ std::wstring Window::keys_legend() const {
 int Window::key_hit(int x, int y) const {
     if (y < Layout::first_row_y || x < Layout::label_x - 10 || x >= Layout::cell_right + 10) return -1;
     const int row = m_KeyTop + (y - Layout::first_row_y) / Layout::row_height;
-    if (row - m_KeyTop >= key_rows_shown || !key_selectable(row)) return -1;
+    if (row - m_KeyTop >= m_Rows || !key_selectable(row)) return -1;
     return row;
 }
 
@@ -730,28 +849,43 @@ namespace {
 std::wstring options_text(const Window &window);
 }
 
+int Window::width() const { return m_ShadersPage ? ShaderMenu::Layout::width : Layout::width; }
+
+void Window::fit_header() {
+    const auto fitted = [&](ShaderMenu::Button button) {
+        return text_width(m_ShaderMenu.button_text(button), L"Font.Heavy14") + 2 * ShaderMenu::Layout::header_button_pad;
+    };
+    m_ShaderMenu.set_header_widths(fitted(ShaderMenu::Button::Back), fitted(ShaderMenu::Button::Reset));
+}
+
 std::wstring hint_template(const Window &window) {
     // The blank block sizes the frame. The copied holes are transparent, so the OK and Cancel hint
     // buttons placed at their positions show through, as in the Exit/Reset/Surrender confirmations.
-    return std::to_wstring(UiTheme::border()) + L"|_BORDER:0:0:0:28|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
-           std::to_wstring(Layout::content_height) +
-           L"|_TEXTP:L|_TEXT: |_MOD:COPY|_BITMAP:bhole2:CL:6|_MOD:COPY|_BITMAP:bhole2:CR:6|_TEXTP:B" + options_text(window);
+    // The shaders screens have their own buttons: no holes.
+    const std::wstring holes = window.shaders_page() ? L"" : L"|_MOD:COPY|_BITMAP:bhole2:CL:6|_MOD:COPY|_BITMAP:bhole2:CR:6";
+    return std::to_wstring(UiTheme::border()) + L"|_BORDER:0:0:0:28|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(window.width()) + L"|_HEIGHT:" +
+           std::to_wstring(window.content_height()) + L"|_TEXTP:L|_TEXT: " + holes + L"|_TEXTP:B" + options_text(window);
 }
 
 std::wstring startup_template(const Window &window) {
-    std::wstring result = std::to_wstring(UiTheme::border()) + L"|_BORDER:0:0:0:0|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(Layout::width) + L"|_HEIGHT:" +
-                          std::to_wstring(StartupLayout::content_height) + L"|_TEXTP:L|_TEXT: |_TEXTP:B" + options_text(window);
+    std::wstring result = std::to_wstring(UiTheme::border()) + L"|_BORDER:0:0:0:0|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(window.width()) + L"|_HEIGHT:" +
+                          std::to_wstring(window.content_height() + StartupLayout::buttons_room) +
+                          L"|_TEXTP:L|_TEXT: |_TEXTP:B" + options_text(window);
+    if (window.shaders_page()) return result;
     const bool russian = window.language() == Language::Russian;
+    const int buttons_y = window.content_height();
     result += text_element(russian ? L"( \u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c )" : L"( Apply )",
-                           L"Font.Heavy14", selected_color(), StartupLayout::apply_x, StartupLayout::buttons_y,
+                           L"Font.Heavy14", selected_color(), StartupLayout::apply_x, buttons_y,
                            StartupLayout::button_width, 1);
     result += text_element(russian ? L"( \u041e\u0442\u043c\u0435\u043d\u0430 )" : L"( Cancel )", L"Font.Heavy14",
-                           selected_color(), StartupLayout::cancel_x, StartupLayout::buttons_y, StartupLayout::button_width, 1);
+                           selected_color(), StartupLayout::cancel_x, buttons_y, StartupLayout::button_width, 1);
     return result;
 }
 
-int startup_button(int x, int y) {
-    if (y < StartupLayout::buttons_y || y >= StartupLayout::buttons_y + Layout::row_height) return 0;
+int startup_button(const Window &window, int x, int y) {
+    if (window.shaders_page()) return 0;
+    const int buttons_y = window.content_height();
+    if (y < buttons_y || y >= buttons_y + Layout::row_height) return 0;
     if (x >= StartupLayout::apply_x && x < StartupLayout::apply_x + StartupLayout::button_width) return 1;
     if (x >= StartupLayout::cancel_x && x < StartupLayout::cancel_x + StartupLayout::button_width) return -1;
     return 0;
@@ -761,7 +895,7 @@ namespace {
 std::wstring keys_text(const Window &window) {
     std::wstring result;
     result += text_element(window.keys_title(), L"Font.2Ranger", text_color(), 0, Layout::title_y, Layout::width, 1);
-    const int last = std::min(window.key_row_count(), window.key_top() + Window::key_rows_shown);
+    const int last = std::min(window.key_row_count(), window.key_top() + window.rows_shown());
     for (int row = window.key_top(); row < last; ++row) {
         const int y = row_top(row - window.key_top());
         if (window.key_label(row).empty()) continue;  // the empty row
@@ -783,27 +917,186 @@ std::wstring keys_text(const Window &window) {
                                Layout::cell_right - Layout::next_x, 0);
     if (window.key_more_below())
         result += text_element(down_arrow, L"Font.Arrows14", group_color(), Layout::next_x,
-                               row_top(Window::key_rows_shown - 1), Layout::cell_right - Layout::next_x, 0);
+                               row_top(window.rows_shown() - 1), Layout::cell_right - Layout::next_x, 0);
     result += text_element(window.error() ? window.error_text() : window.keys_legend(), L"Font.Heavy13",
-                           window.error() ? error_color() : legend_color(), Layout::label_x, Layout::legend_y,
+                           window.error() ? error_color() : legend_color(), Layout::label_x, window.legend_y(),
                            Layout::cell_right - Layout::label_x, 0);
+    return result;
+}
+
+uint32_t with_alpha(uint32_t color, uint32_t alpha) { return (color & 0x00FFFFFF) | (alpha << 24); }
+
+std::wstring frame_name(int width, int height, uint32_t border, uint32_t fill) {
+    return L"SettingsFrame" + std::to_wstring(width) + L"x" + std::to_wstring(height) + L"_" + hex(border) + hex(fill);
+}
+
+// The frames of the shaders screens, where they are drawn: the pack chosen, the buttons.
+struct Placed {
+    Frame frame;
+    int x, y;
+};
+std::vector<Placed> shader_frames(const Window &window) {
+    std::vector<Placed> result;
+    const auto add = [&](int x, int y, int width, int height, uint32_t border, uint32_t fill) {
+        result.push_back({{frame_name(width, height, border, fill), width, height, border, fill}, x, y});
+    };
+    using SL = ShaderMenu::Layout;
+    const auto &menu = window.shader_menu();
+    const int place = menu.chosen() - menu.list_top();
+    if (!menu.settings() && menu.chosen() >= 0 && place >= 0 && place < menu.list_rows())
+        add(SL::left, menu.row_y(place) - 1, SL::right - SL::left, SL::row_height + 2, selected_color(),
+            with_alpha(selected_color(), 0x24));
+    for (const auto &button : menu.buttons()) {
+        const bool enabled = menu.enabled(button.button), hover = enabled && menu.hover() == button.button;
+        const uint32_t border = !enabled ? with_alpha(disabled_color(), 0x90) : hover ? selected_color() : arrow_color();
+        const uint32_t fill = !enabled ? 0 : hover ? with_alpha(selected_color(), 0x30) : with_alpha(text_color(), 0x14);
+        add(button.x, button.y, button.width, SL::button_height, border, fill);
+    }
+    return result;
+}
+
+std::wstring bitmap_at(int x, int y, const std::wstring &bitmap) {
+    return L"|_POS:" + std::to_wstring(x) + L":" + std::to_wstring(y) + L"|_BITMAP:" + bitmap + L":B";
+}
+
+std::wstring shaders_text(const Window &window) {
+    using SL = ShaderMenu::Layout;
+    const auto &menu = window.shader_menu();
+    // The list's title on one line (a pack's long name cut; the legend says it whole); a settings screen's in two lines
+    // between its Back and Reset.
+    std::wstring result;
+    if (!menu.settings())
+        result += text_element(window.fit(window.title(), L"Font.2Ranger", SL::width - 40), L"Font.2Ranger",
+                               text_color(), 0, Layout::title_y, SL::width, 1);
+    else {
+        const auto lines = window.lines(window.title(), L"Font.Heavy14", menu.title_width(), 2);
+        const int first = SL::header_y + (lines.size() == 1 ? SL::row_height / 2 : 0);
+        for (std::size_t i = 0; i < lines.size(); ++i)
+            result += text_element(lines[i], L"Font.Heavy14", text_color(), menu.title_left(),
+                                   first + int(i) * SL::row_height, menu.title_width(), 1);
+    }
+    const auto frames = shader_frames(window);
+    std::size_t next_frame = 0;
+    // A text longer than its place is cut; the focused row's (the pack chosen's) then said whole in the legend.
+    std::wstring whole;
+    const auto fitted = [&](const std::wstring &text, int width, bool focused) {
+        std::wstring shown = window.fit(text, L"Font.Heavy14", width);
+        if (focused && shown != text) whole = whole.empty() ? text : whole + L": " + text;
+        return shown;
+    };
+    constexpr int text_x = SL::left + 8;  // the packs' names and the settings' labels
+    if (!menu.settings()) {
+        // Shaders on or off, an empty row, the packs (the one chosen framed).
+        const bool none = menu.packs().empty();
+        const uint32_t color = none ? disabled_color() : menu.focus() < 0 ? selected_color() : text_color();
+        // In the middle: the word, its switch next to it.
+        const std::wstring word = menu.russian() ? L"Шейдеры" : L"Shaders";
+        const int word_width = window.text_width(word, L"Font.Heavy14");
+        const int left = (SL::width - word_width - SL::switch_gap - Layout::button_size) / 2;
+        result += text_element(word, L"Font.Heavy14", color, left, SL::on_y, word_width + 6, 0);
+        result += bitmap_at(left + word_width + SL::switch_gap, SL::on_y, switch_bitmap(menu.on()));
+        if (menu.chosen() >= 0 && menu.chosen() >= menu.list_top() && menu.chosen() < menu.list_top() + menu.list_rows()) {
+            const auto &chosen = frames[next_frame++];
+            result += bitmap_at(chosen.x, chosen.y, chosen.frame.name);
+        }
+        for (int place = 0; place < menu.list_rows() && menu.list_top() + place < int(menu.packs().size()); ++place) {
+            const int pack = menu.list_top() + place;
+            const uint32_t name_color = !menu.packs()[pack].problem.empty() ? disabled_color()
+                                        : pack == menu.chosen()              ? selected_color()
+                                                                             : text_color();
+            const int width = SL::right - 8 - text_x;
+            result += text_element(fitted(menu.pack_name(pack), width, pack == menu.chosen()), L"Font.Heavy14", name_color,
+                                   text_x, menu.row_y(place), width, 0);
+        }
+    }
+    else {
+        for (int place = 0; place < menu.shown() && menu.top() + place < menu.row_count(); ++place) {
+            const int row = menu.top() + place;
+            const auto item = menu.item(row);
+            if (item.kind == ShaderPacks::Item::Kind::Empty) continue;
+            const int y = menu.row_y(place);
+            const bool focused = row == menu.row_focus();
+            const uint32_t color = focused ? selected_color() : text_color();
+            const bool info = !menu.comment(row).empty();
+            const bool note = item.kind == ShaderPacks::Item::Kind::Note;
+            const int label_right = info ? SL::info_x - 4 : note ? SL::cell_right : SL::previous_x;
+            result += text_element(fitted(menu.label(row), label_right - text_x, focused), L"Font.Heavy14",
+                                   note && !focused ? legend_color() : color, text_x, y, label_right - text_x, 0);
+            if (info) result += bitmap_at(SL::info_x, y, info_bitmap());
+            if (note) continue;
+            const bool setting = item.kind == ShaderPacks::Item::Kind::Setting ||
+                                 item.kind == ShaderPacks::Item::Kind::Profile;  // (its < value > too)
+            const uint32_t arrows = focused ? selected_color() : arrow_color();
+            // A range at its end: that arrow dimmed (it goes no further).
+            const uint32_t back = menu.can_step(row, -1) ? arrows : with_alpha(disabled_color(), 0x90);
+            const uint32_t on = menu.can_step(row, 1) ? arrows : with_alpha(disabled_color(), 0x90);
+            if (setting)
+                result += text_element(L"<", L"Font.Heavy14", back, SL::previous_x, y, SL::value_x - SL::previous_x, 0);
+            const std::wstring value = menu.value(row);
+            const std::wstring shown = window.fit(value, L"Font.Heavy14", SL::value_width);
+            if (focused && shown != value) whole = menu.label(row) + L": " + value;
+            result += text_element(shown, L"Font.Heavy14", color, SL::value_x, y, SL::value_width, 1);
+            if (setting)
+                result += text_element(L">", L"Font.Heavy14", on, SL::next_x, y, SL::cell_right - SL::next_x, 0);
+        }
+        if (menu.row_count() == 0)
+            result += text_element(menu.russian() ? L"У набора нет настроек"
+                                                  : L"The pack has no settings",
+                                   L"Font.Heavy14", legend_color(), 0, menu.rows_y(), SL::width, 1);
+    }
+    // Scrolled: arrows right of the first and the last row shown while it goes on that way.
+    const int first_y = menu.row_y(0), last_y = menu.row_y(menu.shown() - 1);
+    if (menu.more_above())
+        result += text_element(up_arrow, L"Font.Arrows14", group_color(), SL::cell_right + 4, first_y, SL::width - SL::cell_right - 8, 0);
+    if (menu.more_below())
+        result += text_element(down_arrow, L"Font.Arrows14", group_color(), SL::cell_right + 4, last_y, SL::width - SL::cell_right - 8, 0);
+    bool error = false;
+    std::wstring legend = window.error() ? window.error_text() : menu.legend(window.shaders_problem(), error);
+    error = error || window.error();
+    const uint32_t legend_colour = error ? error_color() : legend_color();
+    if (!menu.settings()) {
+        if (!error && !whole.empty()) legend = whole;
+        result += text_element(window.fit(legend, L"Font.Heavy13", SL::buttons_right - SL::buttons_left), L"Font.Heavy13",
+                               legend_colour, SL::buttons_left, menu.legend_y(), SL::buttons_right - SL::buttons_left, 1);
+    }
+    else {
+        // Under the rows: the chosen row's name (with its value when that is cut) in two lines; a problem instead.
+        std::wstring name;
+        if (menu.focusable(menu.row_focus())) {
+            name = menu.label(menu.row_focus());
+            const std::wstring value = menu.value(menu.row_focus());
+            if (!value.empty() && window.fit(value, L"Font.Heavy14", SL::value_width) != value) name += L": " + value;
+        }
+        const auto lines = window.lines(error ? legend : name, L"Font.Heavy14", SL::buttons_right - SL::buttons_left, 2);
+        for (std::size_t i = 0; i < lines.size(); ++i)
+            result += text_element(lines[i], L"Font.Heavy14", error ? error_color() : text_color(), SL::buttons_left,
+                                   menu.name_y() + int(i) * SL::row_height, SL::buttons_right - SL::buttons_left, 1);
+    }
+    // The buttons: under the rows, not scrolled.
+    const auto places = menu.buttons();
+    for (std::size_t i = 0; i < places.size(); ++i) {
+        const auto &frame = frames[next_frame + i];
+        const auto &button = places[i];
+        result += bitmap_at(frame.x, frame.y, frame.frame.name);
+        const bool enabled = menu.enabled(button.button);
+        const uint32_t color = !enabled ? disabled_color() : menu.hover() == button.button ? selected_color() : text_color();
+        result += text_element(window.fit(menu.button_text(button.button), L"Font.Heavy14", button.width), L"Font.Heavy14",
+                               color, button.x, button.y + 2, button.width, 1);  // as much room over the text as under it
+    }
     return result;
 }
 
 std::wstring options_text(const Window &window) {
     if (window.keys_page()) return keys_text(window);
+    if (window.shaders_page()) return shaders_text(window);
     std::wstring result;
     result += text_element(window.title(), L"Font.2Ranger", text_color(), 0, Layout::title_y, Layout::width, 1);
-    std::vector<int> rows;
-    if (window.mods_page()) {
-        const auto &order = window.mods_rows();
-        const int last = std::min(int(order.size()), window.mods_top() + Window::mods_rows_shown);
-        rows.assign(order.begin() + window.mods_top(), order.begin() + last);
-    }
-    else
-        for (int row = 0; row < main_rows; ++row) rows.push_back(row);
-    for (const int row : rows) {
-        const int y = window.top(row);
+    const auto &order = window.page_rows();
+    const int last = std::min(int(order.size()), window.page_top() + window.rows_shown());
+    for (int place = window.page_top(); place < last; ++place) {
+        const int row = order[place];
+        if (row < 0) continue;  // an empty row
+        const int y = row_top(place - window.page_top());
         if (is_group(row)) {
             result += text_element(window.label(row), L"Font.Heavy13", group_color(), Layout::label_x, y,
                                    Layout::previous_x - Layout::label_x, 0);
@@ -840,19 +1133,27 @@ std::wstring options_text(const Window &window) {
             result += text_element(L">", L"Font.Heavy14", arrows, Layout::next_x, y,
                                    Layout::cell_right - Layout::next_x, 0);
     }
-    // The mods page scrolled: arrows right of the first and the last row shown while it can go on that way.
-    if (window.mods_page() && window.mods_more_above())
+    // Scrolled: arrows right of the first and the last row shown while it can go on that way.
+    if (window.more_above())
         result += text_element(up_arrow, L"Font.Arrows14", group_color(), Layout::cell_right + 4, row_top(0),
                                Layout::width - Layout::cell_right - 8, 0);
-    if (window.mods_page() && window.mods_more_below())
+    if (window.more_below())
         result += text_element(down_arrow, L"Font.Arrows14", group_color(), Layout::cell_right + 4,
-                               row_top(Window::mods_rows_shown - 1), Layout::width - Layout::cell_right - 8, 0);
+                               row_top(window.rows_shown() - 1), Layout::width - Layout::cell_right - 8, 0);
     // A failed save's text in the legend's place (the window has no room for both).
     result += text_element(window.error() ? window.error_text() : window.legend(), L"Font.Heavy13",
-                           window.error() ? error_color() : legend_color(), Layout::label_x, Layout::legend_y,
+                           window.error() ? error_color() : legend_color(), Layout::label_x, window.legend_y(),
                            Layout::cell_right - Layout::label_x, 0);
     return result;
 }
 }  // namespace
+
+std::vector<Frame> frames(const Window &window) {
+    std::vector<Frame> result;
+    if (!window.shaders_page()) return result;
+    for (const auto &placed : shader_frames(window))
+        if (std::ranges::find(result, placed.frame) == result.end()) result.push_back(placed.frame);
+    return result;
+}
 
 }  // namespace SettingsModel

@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "GameData.hpp"
+#include "GameLanguage.hpp"
 #include "ExecutablePath.hpp"
 
 #include <windows.h>
@@ -79,7 +80,7 @@ std::string read_text(const fs::path &file) {
     return std::string(std::istreambuf_iterator<char>(in), {});
 }
 
-bool russian_ui() { return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN; }
+bool russian_ui() { return GameLanguage::russian(); }
 
 const wchar_t *text(bool ru, const wchar_t *english, const wchar_t *russian) { return ru ? russian : english; }
 
@@ -245,6 +246,31 @@ std::vector<Copy> files_to_copy(const fs::path &install, const fs::path &game, b
             break;
         }
     return out;
+}
+
+std::vector<Copy> language_files(const fs::path &install, const fs::path &game) {
+    std::vector<Copy> out;
+    for (const wchar_t *language : {L"Rus", L"Eng"}) {
+        for (const wchar_t *name : {L"Lang.dat", L"robots.dat"})
+            if (file_exists(install / L"CFG" / language / name))
+                out.push_back({install / L"CFG" / language / name, game / L"CFG" / language / name});
+        const std::wstring voices = std::wstring(L"voices") + language + L".pkg";
+        if (file_exists(install / L"DATA" / voices)) out.push_back({install / L"DATA" / voices, game / L"DATA" / voices});
+    }
+    return out;
+}
+
+void import_languages(const fs::path &game) {
+    if (_wgetenv(L"PBO_NO_SETUP")) return;
+    const auto saved = load_install(game);
+    if (!saved || saved->path.empty() || !is_install(saved->path)) return;
+    for (const Copy &c : language_files(saved->path, game)) {
+        if (file_exists(c.to)) continue;
+        std::error_code error;
+        fs::create_directories(c.to.parent_path(), error);
+        if (CopyFileW(c.from.c_str(), c.to.c_str(), TRUE)) lgr.notice("Languages: copied {}")(c.from.string());
+        else lgr.warning("Languages: cannot copy {} (Windows error {})")(c.from.string(), GetLastError());
+    }
 }
 
 bool setup(const fs::path &game, bool assume_yes) {

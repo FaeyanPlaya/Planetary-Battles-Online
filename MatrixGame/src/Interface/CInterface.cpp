@@ -9,6 +9,8 @@
 #include <stdexcept>
 
 #include "CIFaceButton.h"
+#include "GameLanguage.hpp"
+#include "InterfaceHide.hpp"
 #include "CIFaceStatic.h"
 #include "CInterface.h"
 #include "CIFaceImage.h"
@@ -32,6 +34,8 @@
 #include "../BattleNotice.hpp"
 
 #include "../Text/Render.hpp"
+#include "../Text/Font.hpp"
+#include "../StandaloneRuntime.hpp"
 #include <input.hpp>
 
 #include <stupid_logger.hpp>
@@ -370,6 +374,7 @@ bool CInterface::Load(CBlockPar &bp, const wchar *name) {
                 FSET(ON_UN_PRESS, pButton, g_IFaceList, CIFaceList::PlayerAction);
             }
             else if (pButton->m_strName == IF_MAIN_MENU_BUTTON) {
+                g_IFaceList->m_MenuButton = pButton;
                 FSET(ON_UN_PRESS, pButton, g_IFaceList, CIFaceList::PlayerAction);
             }
             else if (pButton->m_strName == IF_BASE_CHASSIS3) {
@@ -3664,7 +3669,8 @@ bool CIFaceList::CursorOnMinimap() {
 
 void CIFaceList::LogicTakt(int ms) {
     g_IFaceList->m_InFocus = UNKNOWN;
-    if (g_IFaceList->OnMouseMove(g_MatrixMap->m_Cursor.GetPos())) {
+    // (the interface hidden, InterfaceHide: it takes no pointer)
+    if (!InterfaceHide::hidden() && g_IFaceList->OnMouseMove(g_MatrixMap->m_Cursor.GetPos())) {
         g_IFaceList->m_InFocus = INTERFACE;
     }
 
@@ -4623,6 +4629,30 @@ void CIFaceList::DeleteGroupIcons() {
     m_TurretIcons.clear();
 }
 
+int CIFaceList::ForgetTextures(std::initializer_list<const CTextureManaged *> textures) {
+    int forgotten = 0;
+    const auto shows = [&](const CIFaceElement *element) {
+        for (const auto &state : element->m_StateImages)
+            for (const CTextureManaged *texture : textures)
+                if (texture && state.pImage == texture) return true;
+        return false;
+    };
+    for (CInterface *interfaces = m_First; interfaces; interfaces = interfaces->m_NextInterface) {
+        bool deleted = false;
+        for (CIFaceElement *element = interfaces->m_FirstElement; element;) {
+            if (element->m_Type == IFACE_DYNAMIC_STATIC && shows(element)) {
+                element = interfaces->DelElement(element);
+                deleted = true;
+                ++forgotten;
+                continue;
+            }
+            element = element->m_NextElement;
+        }
+        if (deleted) interfaces->SortElementsByZ();
+    }
+    return forgotten;
+}
+
 void CIFaceList::CreatePersonal() {
     DTRACE();
     CMatrixSideUnit *player_side = g_MatrixMap->GetPlayerSide();
@@ -5237,6 +5267,29 @@ void CIFaceList::DisableMainMenuButton(EHintButton butt, bool dim) {
     }
 }
 
+void CIFaceList::DrawFps() const {
+    if (!StandaloneSettings::current().show_fps || !m_MenuButton || !m_MenuButton->GetVisibility()) return;
+    // Centred under the button, light on a dark outline (on the land or the sky alike).
+    const std::wstring text = std::format(L"FPS {}", g_DrawFPS);
+    const CIFaceElement &button = *m_MenuButton;
+    const int width = std::max(int(button.m_xSize), 80);
+    const int left = int(button.m_PosElInX + button.m_xSize / 2) - width / 2;
+    const int top = int(button.m_PosElInY + button.m_ySize) + 22;
+    try {
+        const auto &font = Text::GetFont(g_D3DD, L"Font.2Normal");
+        if (!font) return;
+        const auto draw = [&](int dx, int dy, D3DCOLOR color) {
+            RECT r{left + dx, top + dy, left + width + dx, top + 20 + dy};
+            font->DrawTextW(nullptr, text.c_str(), int(text.size()), &r, DT_CENTER | DT_TOP | DT_SINGLELINE | DT_NOCLIP,
+                            color);
+        };
+        for (const auto &[dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {1, 1}}) draw(dx, dy, 0xE0000000);
+        draw(0, 0, 0xFFE8F0D8);
+    }
+    catch (...) {  // (a device that makes no fonts: the headless tests')
+    }
+}
+
 void CIFaceList::EnableMainMenuButton(EHintButton butt) {
     std::wstring sname;
     HintButtonId2Name(butt, sname);
@@ -5369,8 +5422,7 @@ bool CIFaceList::CorrectCoordinates(int screen_width, int screen_height, int &po
 
 std::wstring CIFaceList::ModHint(const std::wstring &element) {
     CMatrixSideUnit *ps = g_MatrixMap->GetPlayerSide();
-    const bool ru = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
-                    SettingsModel::Language::Russian;
+    const bool ru = GameLanguage::russian();
     if (const auto bomb = ModHooks::hooks().bomb_hint;
         element == IF_ORDER_BOMB && Mods::switches().auto_boom && bomb && !ps->IsArcadeMode())
         return bomb(ru);  // the auto detonation mod's

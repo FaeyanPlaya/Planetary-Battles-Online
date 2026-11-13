@@ -445,6 +445,8 @@ public:
             m_EffectHandler->effect = NULL;
     }
     EEffectType GetType(void) { return m_EffectType; }
+    // The light it gives a shader pack this frame (ShaderLights; called while a pack draws).
+    virtual void AddShaderLights(void) const {}
 
     static void CreatePoolDefaultResources(void);
     static void ReleasePoolDefaultResources(void);

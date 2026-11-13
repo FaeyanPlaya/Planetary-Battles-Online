@@ -77,6 +77,11 @@ class CMatrixWater : public CMain {
 public:
     D3D_VB m_VB;
     D3D_IB m_IB;
+    // The open sea's blocks: BLOCK x BLOCK tiles in one mesh, each vertex the tile's (its place, wave, normal and
+    // texture's place): one draw where the far view saw thousands of tiles, each drawn by itself, several times a frame.
+    static constexpr int BLOCK = 8;
+    D3D_VB m_BlockVB;
+    D3D_IB m_BlockIB;
     CTextureManaged *m_WaterTex1;
     CTextureManaged *m_WaterTex2;
 
@@ -90,6 +95,10 @@ public:
 
     void BeforeDraw(void);
     void Draw(const D3DXMATRIX &m);
+    // A block's corner in m (the tile's scale); its streams set by BlockStreams, the tiles' again by TileStreams.
+    void DrawBlock(const D3DXMATRIX &m);
+    void BlockStreams();
+    void TileStreams();
 
     void Takt(int step);
     void FillVB(int k);

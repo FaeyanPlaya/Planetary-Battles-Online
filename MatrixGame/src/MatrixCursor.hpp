@@ -42,6 +42,7 @@ public:
     void Takt(int ms);
     void Clear(void);
     void SetVisible(bool flag);
+    bool IsVisible() const { return (m_CursorFlags & CURSOR_VISIBLE) != 0; }
 
     const CPoint &GetPos(void) const { return m_Pos; }
     int GetPosX(void) const { return m_Pos.x; }

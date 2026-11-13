@@ -223,6 +223,8 @@ public:
     inline float GetResYInversed(void) const { return _res_y_inversed; }
 
     inline void SetAngleParam(float p) { m_AngleParam[m_ModeIndex] = p; }
+    // 0: as near as the wheel goes, 1: as far.
+    inline void SetZoom(float k) { m_DistParam[m_ModeIndex] = LERPFLOAT(k, 0.25f, MaxDistParam(m_ModeIndex)); }
 
     inline float GetAngleX(void) const { return m_AngleX; }
     inline float GetAngleZ(void) const { return m_AngleZ; }

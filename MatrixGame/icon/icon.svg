@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Planetary Battles Online: a globe in a sight (the owner's Blender render, icon.png), 64 px and up. White inside
+       the globe (globe-fill.png, made from icon.png by globe-fill.ps1). -->
+  <image href="globe-fill.png" x="0" y="0" width="256" height="256"/>
+  <image href="icon.png" x="0" y="0" width="256" height="256"/>
+</svg>

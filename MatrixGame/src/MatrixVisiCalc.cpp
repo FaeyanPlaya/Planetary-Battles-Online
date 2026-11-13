@@ -706,6 +706,7 @@ void CMatrixMap::CalcMapGroupVisibility(void) {
             }
         }
     }
+    SplitVisWater();
 
     // DM("TIME", "TIME_END");
 }

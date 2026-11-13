@@ -119,6 +119,7 @@ void CMatrixEffectKonus::Draw(void) const
 
     SetColorOpDisable(1);
 
+    if (g_WorldDrawHook) g_WorldDrawHook(true);  // (a shader pack's effects)
     g_D3DD->DrawPrimitive(D3DPT_TRIANGLEFAN, 0, KONUS_NUM_SECTORS);
     // g_D3DD->DrawPrimitive(D3DPT_TRIANGLELIST,0, 1);
 

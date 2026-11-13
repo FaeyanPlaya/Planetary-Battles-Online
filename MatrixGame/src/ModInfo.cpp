@@ -105,10 +105,17 @@ Page page(const Info &info, Language l) {
         p.paragraphs.push_back({L"", Role::Text});
         p.paragraphs.push_back({info.problem, Role::Problem});
     }
+    // Without the line under the title (a setting's "i", a lobby's switch) its room is over the text: as much under it.
+    if (p.subtitle.empty()) p.paragraphs.push_back({L"", Role::Text});
     return p;
 }
 
 Page page(const Question &q, Language l) {
+    if (!q.lines.empty()) {
+        Page p{q.mod, q.subtitle};
+        for (const auto &line : q.lines) p.paragraphs.push_back({line, Role::Text});
+        return p;
+    }
     Page p{q.mod, text(l, L"It needs other mods", L"Ему нужны другие моды")};
     p.paragraphs.push_back({text(l, L"It works only together with: ",
                                  L"Он работает только вместе с: ") +

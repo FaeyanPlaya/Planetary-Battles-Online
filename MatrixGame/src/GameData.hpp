@@ -34,6 +34,12 @@ struct Copy {
 // language first, the Russian robots.dat. Optional files the install lacks are left out.
 std::vector<Copy> files_to_copy(const std::filesystem::path &install, const std::filesystem::path &game, bool russian);
 
+// Each language's own files the install has, for the settings' Language (GameLanguage): its maps' names
+// (CFG\<Rus|Eng>\Lang.dat), its texts (CFG\<Rus|Eng>\robots.dat) and its speech (DATA\voices<Rus|Eng>.pkg).
+std::vector<Copy> language_files(const std::filesystem::path &install, const std::filesystem::path &game);
+// Those the game folder lacks, from the install saved (CFG\game-path.txt), quietly. PBO_NO_SETUP turns it off.
+void import_languages(const std::filesystem::path &game);
+
 // First start without DATA\robots.pkg: finds the game, asks (assume_yes: takes the first install
 // found, for tests), copies. The install is only read. False when robots.pkg is still missing.
 // The environment variable PBO_NO_SETUP turns it off (startup tests).

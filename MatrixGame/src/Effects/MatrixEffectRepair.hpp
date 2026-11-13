@@ -55,6 +55,7 @@ public:
 
     virtual void BeforeDraw(void);
     virtual void Draw(void) const override;
+    virtual void AddShaderLights(void) const override;
     virtual void Takt(float step);
     virtual void Release(void);
 

@@ -257,6 +257,7 @@ void CMatrixEffectBigBoom::Draw(void) const {
     ASSERT_DX(g_D3DD->SetTransform(D3DTS_TEXTURE0, &m_TMat));
 
     ASSERT_DX(g_D3DD->SetTransform(D3DTS_WORLD, &m_Mat));
+    if (g_WorldDrawHook) g_WorldDrawHook(true);  // (a shader pack's effects)
     g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, BB_PTS_CNT, 0, BB_TRI_CNT);
 
     ASSERT_DX(g_D3DD->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE));

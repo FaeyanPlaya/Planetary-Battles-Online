@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "BattleHistory.hpp"
+#include "GameLanguage.hpp"
 
 #include "Interface/MatrixHint.hpp"
 #include "MatrixMap.hpp"
@@ -33,8 +34,7 @@ bool g_dirty = true;
 int g_screen_x = 0, g_screen_y = 0;
 
 bool russian() {
-    return SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
-           SettingsModel::Language::Russian;
+    return GameLanguage::russian();
 }
 
 void hide() {

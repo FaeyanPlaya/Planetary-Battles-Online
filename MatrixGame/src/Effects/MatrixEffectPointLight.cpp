@@ -726,6 +726,7 @@ void CMatrixEffectPointLight::Draw(void) const
 
     ASSERT_DX(g_D3DD->SetIndices(GET_IB(m_DX->DX_GetIB())));
 
+    if (g_WorldDrawHook) g_WorldDrawHook(false);  // (a shader pack's effects: the light's spot on the land)
     ASSERT_DX(g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, 0, 0, m_NumVerts, 0, m_NumTris));
 
     g_D3DD->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);

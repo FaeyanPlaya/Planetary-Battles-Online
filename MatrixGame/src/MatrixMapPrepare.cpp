@@ -4,6 +4,7 @@
 // Refer to the LICENSE file included
 
 #include "MatrixMap.hpp"
+#include "ShaderRender.hpp"
 #include "MatrixLoadProgress.hpp"
 #include "Common.hpp"
 #include "MatrixObjectBuilding.hpp"
@@ -2089,6 +2090,7 @@ void CMatrixMap::ReleasePoolDefaultResources(void) {
     }
 
     CMatrixEffect::ReleasePoolDefaultResources();
+    ShaderRender::release();
 
     WaterClear();
     if (IS_VB(m_ShadowVB))

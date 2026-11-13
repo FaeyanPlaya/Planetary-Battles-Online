@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "NetBattle.hpp"
+#include "GameLanguage.hpp"
 
 #include "NetLink.hpp"
 #include "ExecutablePath.hpp"
@@ -28,6 +29,7 @@
 #include "MatrixObjectBuilding.hpp"
 #include "MatrixObjectCannon.hpp"
 #include "Interface/CInterface.h"
+#include "ShaderPacks.hpp"
 #include "SimLab.hpp"
 #include "SoundBridge.hpp"
 #include "random.hpp"
@@ -231,8 +233,8 @@ std::wstring rejoin_arguments(const std::string &address, int port, const std::w
     return arguments;
 }
 
-// Before the battle's data is loaded the game's language is not known: Windows' is.
-bool system_russian() { return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN; }
+// Before the battle's data is loaded: the language chosen (GameLanguage).
+bool system_russian() { return GameLanguage::russian(); }
 
 struct Battle {
     Options options;
@@ -345,8 +347,7 @@ struct Battle {
 };
 
 bool russian() {
-    return SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
-           SettingsModel::Language::Russian;
+    return GameLanguage::russian();
 }
 
 void update_title(Battle &b) {
@@ -1000,8 +1001,27 @@ void preload_turrets(Battle &b) {
 }
 
 // Bookkeeping after a step that brought the game time to `now` (and once at the start).
+// --net-test-shaders: the window's shaders as the test says at the start, the other way at its time (drawing only:
+// the battles must stay the same).
+void test_shaders(Battle &b, int now) {
+    const auto &o = b.options;
+    static bool started = false, flipped = false;
+    if (o.test_shaders_on < 0) return;
+    const bool flip = o.test_shaders_flip_ms >= 0 && now >= o.test_shaders_flip_ms;
+    if (started && (flipped || !flip)) return;
+    started = true;
+    flipped = flip;
+    ShaderPacks::Choice choice = ShaderPacks::choice();
+    const bool on = (o.test_shaders_on != 0) != flip;
+    if (choice.on == on) return;
+    choice.on = on;
+    ShaderPacks::set_choice(std::move(choice));
+    note(b, std::format("test: shaders {}", on ? "on" : "off"));
+}
+
 void stepped(Battle &b, int now) {
     b.session.stepped(now);
+    test_shaders(b, now);
     BattleHistory::set_time(now);
     b.draws.emplace_back(now, random::draw_count());
     if (b.draws.size() > 2000) b.draws.pop_front();
@@ -1872,6 +1892,8 @@ Options parse(std::vector<std::wstring_view> &arguments) {
         else if (a == L"--net-test-remove") o.test_remove_ms = parse_int(value(), "remove time");
         else if (a == L"--net-test-kick") o.test_kick_ms = parse_int(value(), "kick time");
         else if (a == L"--net-test-tab") o.test_tab_ms = parse_int(value(), "tab time");
+        else if (a == L"--net-test-shaders")
+            std::tie(o.test_shaders_on, o.test_shaders_flip_ms) = parse_pair(value(), "--net-test-shaders");
         else if (a == L"--net-test-history") std::tie(o.test_history_ms, o.test_history_lines) = parse_pair(value(), "history");
         else if (a == L"--net-test-leave") o.test_leave_ms = parse_int(value(), "leave time");
         else if (a == L"--net-test-lag") std::tie(o.test_lag_ms, o.test_lag) = parse_pair(value(), "lag");

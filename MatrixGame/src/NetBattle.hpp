@@ -125,6 +125,9 @@ struct Options {
     int test_history_ms = -1;
     int test_history_lines = 0;
     int test_tab_ms = -1;
+    // --net-test-shaders on,ms: this window's shaders on (1) or off (0) from the start, the other way at ms (-1:
+    // never); the person's CFG\shaders.txt left as it is (their pack, its settings).
+    int test_shaders_on = -1, test_shaders_flip_ms = -1;
     int test_lag_ms = -1, test_lag = 0, test_lag_end_ms = -1;
     bool test_desync_again = false;
     bool test_no_deputy = false;

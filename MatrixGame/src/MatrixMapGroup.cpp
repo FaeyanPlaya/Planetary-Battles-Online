@@ -529,6 +529,8 @@ void CMatrixMapGroup::Draw(void) {
 
             ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0));
             ASSERT_DX(g_D3DD->SetTexture(0, NULL));
+            if (g_WorldDrawHook)
+                g_WorldDrawHook(false);
             ASSERT_DX(g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, vbase, bg->minvidx, bg->vertcnt,
                                                    ibase + bg->idxbase, bg->tricnt));
             ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF));
@@ -541,6 +543,8 @@ void CMatrixMapGroup::Draw(void) {
             for (int pass = 0; pass < g_Render->m_TerBotPass[type]; ++pass) {
                 g_Render->m_TerBotTex[type](bg->texture, pass);
                 g_Render->m_TerBot[type](pass);
+                if (g_WorldDrawHook)
+                    g_WorldDrawHook(true);
 
                 ASSERT_DX(g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, vbase, bg->minvidx, bg->vertcnt,
                                                        ibase + bg->idxbase, bg->tricnt));

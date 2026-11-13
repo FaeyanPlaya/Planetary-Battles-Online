@@ -418,7 +418,7 @@ public:
     static void OnEndOfDraw(void);  // this must be called before any sorting stuf
 
     static void SortEndRecalcTerainColor(void);
-    static void SortEndDraw(void);
+    static void SortEndDraw(bool (*each)(const CMatrixMapStatic &) = nullptr);  // each: before an object's drawing (false: not drawn)
     static void SortEndBeforeDraw(void);
     static void SortEndDrawShadowProj(void);
     static void SortEndDrawShadowStencil(void);

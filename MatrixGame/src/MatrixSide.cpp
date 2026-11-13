@@ -501,7 +501,7 @@ void CMatrixSideUnit::LogicTakt(int ms) {
         if (this == g_MatrixMap->GetPlayerSide()) {
             // Selection belongs to this client's interface; other people's sides
             // act only through commands.
-            if (CMultiSelection::m_GameSelection) {
+            if (CMultiSelection::m_GameSelection && CMultiSelection::TakeLook()) {
                 SCallback cbs;
                 cbs.mp = g_MatrixMap->m_Cursor.GetPos();
                 cbs.calls = 0;

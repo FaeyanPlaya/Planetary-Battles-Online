@@ -4,8 +4,12 @@
 #include "StandaloneSettings.hpp"
 #include "KeyBindings.hpp"
 #include "Mods.hpp"
+#include "ShaderPacks.hpp"
+#include "ShaderMenu.hpp"
 
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,7 +21,7 @@ struct Question;
 
 namespace SettingsModel {
 
-enum class Language { English, Russian };
+using GameLanguage::Language;
 
 // The frame of this project's windows (the hint markup's first number): the game's large panel without its help mark
 // (CMatrixHint makes it from border 2).
@@ -29,6 +33,7 @@ enum class Row {
     WindowMode,
     FullscreenMode,
     Theme,           // the windows' look: as Windows', light, dark (UiTheme)
+    Language,        // the texts' (GameLanguage): as Windows', Russian, English; from the next start
     SoundGroup,
     SoundVolume,
     MusicVolume,
@@ -37,6 +42,8 @@ enum class Row {
     ProjectedShadows,
     Skybox,
     RobotShadows,
+    ShowFps,         // the frame rate under the battle's Menu button
+    Shaders,         // opens the shaders page (ShaderPacks): on, the pack, its settings
     GameplayGroup,
     CameraSpeed,
     RandomGenerator,
@@ -52,10 +59,17 @@ enum class Row {
 };
 
 constexpr int row_count = static_cast<int>(Row::Count);
-// The main page has the rows up to Mods, the mods page the rest (and the rows of the mods folder's personal mods,
-// numbered from row_count: Window); the window is main_rows high on every page.
+// The main page has the rows up to Mods, an empty row before each group but the first; the mods page the rest (and
+// the rows of the mods folder's personal mods, numbered from row_count: Window). The window is as many rows high on
+// every page (Window::rows_shown): the main page's all where the screen has the room, fewer on a small screen (the
+// pages scroll).
 constexpr int main_rows = static_cast<int>(Row::Mods) + 1;
 constexpr int mods_first = static_cast<int>(Row::FarView);
+constexpr int main_groups = 4;
+constexpr int tall_rows = main_rows + main_groups - 1;  // the main page with its empty rows
+constexpr int least_rows = 21;                           // the window on a 640x480 screen
+// The main page's rows in order, -1 an empty one.
+std::vector<int> main_page();
 
 struct Resolution {
     int width;
@@ -66,8 +80,10 @@ struct Resolution {
 // Window geometry in pixels, relative to the window's top-left corner.
 struct Layout {
     static constexpr int width = 460;
+    // The window's height on the least screen; the shaders screens' (with no extra rows) on every screen. The other
+    // pages: Window::legend_y and Window::content_height, by the rows shown.
     static constexpr int title_y = 30;
-    static constexpr int first_row_y = 58;
+    static constexpr int first_row_y = 55;
     static constexpr int row_height = 17;  // (15 while the mods were rows of the main page: 640x480)
     static constexpr int label_x = 70;
     static constexpr int previous_x = 250;  // "<" marker; the left half of the value cell steps back.
@@ -80,7 +96,7 @@ struct Layout {
     static constexpr int button_size = 16;
     static constexpr int switch_x = value_x + (value_width - button_size) / 2;
     static constexpr int info_x = switch_x - 6 - button_size;
-    static constexpr int legend_y = first_row_y + main_rows * row_height + 5;
+    static constexpr int legend_y = first_row_y + least_rows * row_height + 2;
     static constexpr int content_height = legend_y + row_height;  // (a failed save's text in the legend's place)
 };
 
@@ -101,9 +117,10 @@ bool opener(int row);
 bool needs_restart(int row);
 // A battle shared by several people keeps its rules: rule rows then apply from the next battle.
 void lock_battle_rules(bool locked);
-// On the main page or the mods page (rows by their place on their page, without the mods folder's: Window::hit).
-Hit hit(int x, int y, bool mods_page = false);
-int row_top(int row);
+// The top of the window's row at a place (0 the first shown).
+int row_top(int place);
+// The rows a screen this high has room for (the window with its frame and buttons on it), least_rows to tall_rows.
+int rows_for_screen(int screen_height);
 
 // Adapter modes become a sorted, unique list of at least 640x480 that always contains the current size.
 std::vector<Resolution> resolution_choices(std::vector<Resolution> modes, Resolution current);
@@ -121,7 +138,8 @@ public:
     Window(StandaloneSettings::Values values, std::vector<Resolution> resolutions, Language language,
            std::vector<std::string> default_personal = {}, std::vector<std::string> unavailable = {},
            KeyBindings::Keys keys = KeyBindings::base(), KeyBindings::Keys base = KeyBindings::base(),
-           const std::vector<Mods::Mod> &mods = {}, Mods::SettingValues mod_settings = {});
+           const std::vector<Mods::Mod> &mods = {}, Mods::SettingValues mod_settings = {},
+           std::vector<ShaderPacks::Pack> packs = {}, ShaderPacks::Choice shaders = {});
 
     const StandaloneSettings::Values &values() const { return m_Values; }
     bool changed() const { return m_Values != m_Original || m_Keys != m_KeysOriginal || mod_settings_changed(); }
@@ -129,11 +147,34 @@ public:
     bool keys_changed() const { return m_Keys != m_KeysOriginal; }
     const Mods::SettingValues &mod_settings() const { return m_ModSettings; }
     bool mod_settings_changed() const { return m_ModSettings != m_ModSettingsOriginal; }
+    // The shaders as their screens applied them (their Done, Apply...: the window saves them at once; the window's own
+    // OK and Cancel leave them).
+    const ShaderPacks::Choice &shaders() const { return m_ShaderMenu.applied(); }
+    // Why the pack applied does not draw (ShaderRender::problem): the shaders screens' legend.
+    void set_shaders_problem(std::wstring problem) { m_ShadersProblem = std::move(problem); }
+    const std::wstring &shaders_problem() const { return m_ShadersProblem; }
+    // The drawn width of a text in a font (the window sets the game's): a text longer than its place on the shaders
+    // screens is cut with "..." (the legend then says it whole). Without it (tests) nothing is cut.
+    using TextWidth = std::function<int(const std::wstring &, const wchar_t *font)>;
+    void set_text_width(TextWidth width) { m_TextWidth = std::move(width); }
+    int width() const;  // the window's on the page shown (Layout::width; the shaders screens' wider)
+    // A text cut to a place of a text element `width` wide.
+    std::wstring fit(const std::wstring &text, const wchar_t *font, int width) const;
+    int text_width(const std::wstring &text, const wchar_t *font) const;
+    // A text in at most `count` lines of a place `width` wide, broken at spaces (the last cut with "...").
+    std::vector<std::wstring> lines(const std::wstring &text, const wchar_t *font, int width, int count) const;
+    // The shaders screens' window taller by these rows (as the screen allows): more packs and settings shown.
+    void set_extra_rows(int rows) { m_ShaderMenu.set_extra_rows(rows); }
+    // The window's content height on the page shown (the shaders screens' Layout::content_height and their extra rows).
+    int content_height() const;
+    // The rows shown on the main, keys and mods pages (tall_rows unless set: rows_for_screen).
+    int rows_shown() const { return m_Rows; }
+    void set_rows(int rows);
+    int legend_y() const { return Layout::first_row_y + m_Rows * Layout::row_height + 2; }
 
     // The keys page (Row::Keys opens it): a row per action under its group's (the engine's, then the mods' of
-    // KeyBindings::mod_actions as the window opens), then one that puts back all the game's keys; key_rows_shown of
+    // KeyBindings::mod_actions as the window opens), then one that puts back all the game's keys; rows_shown of
     // them at a time, scrolled to the selected one.
-    static constexpr int key_rows_shown = main_rows;
     int key_row_count() const { return int(m_KeyRows.size()); }
     bool key_group(int row) const;
     // An action's row or the last (not a group's, not the empty one before the last).
@@ -148,7 +189,7 @@ public:
     // The wheel: the page by rows, the selection kept.
     void key_scroll(int rows);
     bool key_more_above() const { return m_KeyTop > 0; }
-    bool key_more_below() const { return m_KeyTop + key_rows_shown < key_row_count(); }
+    bool key_more_below() const { return m_KeyTop + m_Rows < key_row_count(); }
     // Enter or a click: an action waits for its key; the last row puts back the game's keys.
     void key_activate();
     // A key while waiting: Esc cancels, any other becomes the action's.
@@ -170,11 +211,18 @@ public:
     bool mods_page() const { return m_ModsPage; }
     void close_mods();
     const std::vector<int> &mods_rows() const { return m_ModsOrder; }
-    static constexpr int mods_rows_shown = main_rows;
-    int mods_top() const { return m_ModsTop; }
-    void mods_scroll(int rows);
-    bool mods_more_above() const { return m_ModsTop > 0; }
-    bool mods_more_below() const { return m_ModsTop + mods_rows_shown < int(m_ModsOrder.size()); }
+    // The main page's or the mods page's rows (-1 an empty one), the first shown, scrolled by the wheel.
+    const std::vector<int> &page_rows() const { return m_ModsPage ? m_ModsOrder : m_MainOrder; }
+    int page_top() const { return m_ModsPage ? m_ModsTop : m_MainTop; }
+    void scroll(int rows);
+    bool more_above() const { return page_top() > 0; }
+    bool more_below() const { return page_top() + m_Rows < int(page_rows().size()); }
+    // The shaders screens (Row::Shaders opens them): ShaderMenu's list and a pack's settings; their Done and Cancel
+    // (close_shaders) back to the main page, Shaders selected.
+    bool shaders_page() const { return m_ShadersPage; }
+    void close_shaders();
+    ShaderMenu::Menu &shader_menu() { return m_ShaderMenu; }
+    const ShaderMenu::Menu &shader_menu() const { return m_ShaderMenu; }
     // A row of a mods folder's mod's setting (drawn further in).
     bool setting_row(int row) const;
     // A mod's own row (Far view, Interface fixes, First person, HD sky, a mods folder's mod): it has an "i".
@@ -199,6 +247,8 @@ public:
     int selected() const { return m_Selected; }
     // An option row that can be selected and changed (not one of a mod this PC lacks).
     bool enabled(int row) const;
+    // A row the shader pack applied decides (ShaderPacks::game_setting): grey, with the pack's value.
+    std::optional<bool> shader_decided(int row) const;
     Language language() const { return m_Language; }
 
     // Selects an option row of the page shown; group rows are ignored. Returns true when the selection changed.
@@ -252,9 +302,18 @@ private:
     std::vector<FolderRow> m_FolderRows;
     std::vector<int> m_ModsOrder;  // the mods page's rows in order
     int m_ModsTop = 0;
+    std::vector<int> m_MainOrder = main_page();
+    int m_MainTop = 0;
+    int m_Rows = tall_rows;
     Mods::SettingValues m_ModSettings, m_ModSettingsOriginal;
+    ShaderMenu::Menu m_ShaderMenu;
+    std::wstring m_ShadersProblem;
+    TextWidth m_TextWidth;
+    bool m_ShadersPage = false;
 
     std::string m_Asking;  // the mod a question is about (asking)
+
+    void fit_header();  // the shaders screens' Back and Reset: as wide as their texts (measured as the page opens)
 
     bool personal(const char *id) const;
     std::string row_mod(int row) const;  // the mod a row is (info_row); empty: none
@@ -263,7 +322,7 @@ private:
     void switch_mod(const std::string &id);
     void set_personal(const char *id, bool on);
     bool option(int row) const;
-    void mods_show(int row);
+    void show(int row);  // the main page or the mods page scrolled to a row of it
     int key_of(const KeyRow &row, const KeyBindings::Keys &keys) const;
     void set_key(const KeyRow &row, int key);
 
@@ -280,16 +339,25 @@ std::wstring text_element(const std::wstring &text, const wchar_t *font, uint32_
 std::wstring hint_template(const Window &window);
 
 // Over the startup menu there is no battle interface to place the OK and Cancel buttons: the window
-// draws text buttons under its options instead.
+// draws text buttons under its options instead (from the window's content height on).
 struct StartupLayout {
-    static constexpr int buttons_y = Layout::content_height;
-    static constexpr int content_height = buttons_y + 34;
+    static constexpr int buttons_room = 34;
     static constexpr int apply_x = 100;
     static constexpr int cancel_x = 230;
     static constexpr int button_width = 130;
 };
 std::wstring startup_template(const Window &window);
-// 1 apply, -1 cancel, 0 neither.
-int startup_button(int x, int y);
+// 1 apply, -1 cancel, 0 neither (the shaders screens have their own buttons instead).
+int startup_button(const Window &window, int x, int y);
+
+// The framed boxes the shaders screens draw (their buttons, the pack chosen): runtime bitmaps of these names, a border
+// line round a fill (SettingsWindow makes them before the window is built; the colours are the theme's).
+struct Frame {
+    std::wstring name;
+    int width, height;
+    uint32_t border, fill;  // ARGB
+    bool operator==(const Frame &) const = default;
+};
+std::vector<Frame> frames(const Window &window);
 
 }  // namespace SettingsModel

@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "StartupMenu.hpp"
+#include "GameLanguage.hpp"
 #include "UiTheme.hpp"
 #include "LobbyModel.hpp"
 #include "LobbyWindow.hpp"
@@ -144,8 +145,7 @@ class Form final : public CForm {
 public:
     explicit Form(StandaloneSettings::Values &settings) : values(settings) {
         m_Name = L"Startup menu";
-        russian = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
-                  SettingsModel::Language::Russian;
+        russian = GameLanguage::russian();
         can_rejoin = NetBattle::rejoin_ticket().has_value() || NetBattle::host_back_ticket();
         item = first_item();
     }

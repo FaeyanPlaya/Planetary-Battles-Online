@@ -441,6 +441,8 @@ void CTerSurface::Draw(void) {
     for (int pass = 0; pass < g_Render->m_TerSurfPass[type]; ++pass) {
         g_Render->m_TerSurfTex[type](m_Tex, m_TexGloss, pass);
         g_Render->m_TerSurf[type](pass, FLAG(m_Flags, SURFF_WRAPY));
+        if (g_WorldDrawHook)
+            g_WorldDrawHook(true);
 
         // if (iii == m_Index)
         {

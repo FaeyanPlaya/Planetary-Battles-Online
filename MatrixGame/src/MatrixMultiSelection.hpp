@@ -48,6 +48,7 @@ class CMultiSelection : public CMain {
     std::vector<CMatrixMapStatic*> m_SelItems;
 
     static int m_Time;
+    static inline bool s_Looked = false;  // NewFrame, TakeLook
 
     // CTextureManaged *m_Tex;
 
@@ -75,6 +76,16 @@ class CMultiSelection : public CMain {
 
 public:
     static CMultiSelection *m_GameSelection;
+
+    // The side's own look at the frame (its logic step, every 10 ms of the game): once a drawn frame. Each look tests
+    // every own robot and building on the screen to their vertices; a slow frame ran more steps, each the same look
+    // again (a long battle's many robots, the shaders' heavier frame: down to a few frames a second).
+    static void NewFrame() { s_Looked = false; }
+    static bool TakeLook() {
+        const bool first = !s_Looked;
+        s_Looked = true;
+        return first;
+    }
 
     static void StaticInit(void) {
         m_First = NULL;

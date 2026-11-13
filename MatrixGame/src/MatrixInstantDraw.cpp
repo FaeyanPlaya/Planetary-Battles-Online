@@ -240,6 +240,7 @@ void CInstDraw::ActualDraw(void) {
             }
         }
 
+        if (g_WorldDrawHook) g_WorldDrawHook(true);  // (a shader pack's effects)
         g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, cvb->disp + disp, 0, cvb->sets[i].accumcnt, 0,
                                      cvb->sets[i].accumcnt / 2);
 

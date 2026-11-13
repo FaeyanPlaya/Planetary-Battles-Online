@@ -186,6 +186,7 @@ class CLaser : public CMatrixEffect {
     CBillboard m_end;
     D3DXVECTOR3 m_From{0, 0, 0};
     D3DXVECTOR3 m_Dir{0, 0, 0};
+    float m_Length = 0;  // the beam's, to where it hits
     bool m_Turret;  // the laser turret's (its glow is larger, before the barrel)
     virtual ~CLaser() {
         m_bl.Release();
@@ -199,6 +200,7 @@ public:
     virtual void Draw(void) const override;
     virtual void Takt(float){};
     virtual void Release(void) { HDelete(CLaser, this, m_Heap); };
+    virtual void AddShaderLights(void) const override;
     virtual int Priority(void) { return MAX_EFFECT_PRIORITY; };
 
     void SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1);
@@ -209,6 +211,7 @@ class CVolcano : public CMatrixEffect {
     CBillboardLine m_bl1;
     CBillboardLine m_bl2;
     CBillboardLine m_bl3;
+    D3DXVECTOR3 m_From;  // the muzzle
 
     virtual ~CVolcano() {
         m_bl1.Release();
@@ -223,16 +226,19 @@ public:
     virtual void Draw(void) const override;
     virtual void Takt(float){};
     virtual void Release(void) { HDelete(CVolcano, this, m_Heap); };
+    virtual void AddShaderLights(void) const override;
 
     virtual int Priority(void) { return MAX_EFFECT_PRIORITY; };
 
     void SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1, const D3DXVECTOR3 &dir) {
+        m_From = pos0;
         m_bl1.SetPos(pos0, pos1);
         m_bl2.SetPos(pos0, pos1);
         m_bl3.SetPos(pos0, pos1);
         m_Konus.Modify(pos0, dir);
     }
     void SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1, const D3DXVECTOR3 &dir, float angle) {
+        m_From = pos0;
         m_bl1.SetPos(pos0, pos1);
         m_bl2.SetPos(pos0, pos1);
         m_bl3.SetPos(pos0, pos1);

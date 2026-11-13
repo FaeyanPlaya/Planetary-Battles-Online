@@ -112,10 +112,12 @@ public:
     virtual void Takt(float step);
     virtual void Release(void);
     virtual int Priority(void) { return 30; };
+    virtual void AddShaderLights(void) const override;
 };
 
 class CMatrixEffectFireStream : public CMatrixEffect {
     CBillboardLine m_bl1, m_bl2, m_bl3, m_bl4, m_bl5;
+    D3DXVECTOR3 m_From{0, 0, 0}, m_To{0, 0, 0};  // the jet (its light, ShaderLights)
 
     virtual ~CMatrixEffectFireStream() {
         m_bl1.Release();
@@ -137,6 +139,8 @@ public:
     virtual int Priority(void) { return MAX_EFFECT_PRIORITY; };
 
     void SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1) {
+        m_From = pos0;
+        m_To = pos1;
         m_bl1.SetPos(pos0, pos1);
         m_bl2.SetPos(pos0, pos1);
         m_bl3.SetPos(pos0, pos1);
@@ -182,6 +186,7 @@ public:
     virtual void Release(void) { HDelete(CMatrixEffectFireAnim, this, m_Heap); };
 
     virtual int Priority(void) { return 10; };
+    virtual void AddShaderLights(void) const override;
 
     void SetPos(const D3DXVECTOR3 &pos) {
         m_Pos = pos;

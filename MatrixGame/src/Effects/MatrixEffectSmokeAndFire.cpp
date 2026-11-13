@@ -10,6 +10,7 @@
 #include <math.h>
 
 #include "MatrixEffectSmokeAndFire.hpp"
+#include "../ShaderLights.hpp"
 #include "CosmeticRandom.hpp"  // visual-only effects: last include
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -371,6 +372,12 @@ CMatrixEffectFireStream::CMatrixEffectFireStream(const D3DXVECTOR3 &pos0, const 
 void CMatrixEffectFireStream::BeforeDraw(void) {}
 
 void CMatrixEffectFireStream::Draw(bool now) const {
+    // Its owner draws it (a robot's or a flyer's jet: not in the map's effects): its light as it is drawn.
+    const D3DXVECTOR3 way = m_To - m_From;
+    const float length = D3DXVec3Length(&way);
+    if (length > 0.01f)
+        ShaderLights::add(m_From + way * 0.35f, 22.0f + length * 1.5f, 1.0f, 0.55f, 0.2f, ShaderLights::Kind::Fire,
+                          this, true);
     int idx = g_MatrixMap->IsPaused() ? 2 : (IRND(5));
     if (now) {
         if (idx == 0)
@@ -425,6 +432,24 @@ CMatrixEffectFireAnim::CMatrixEffectFireAnim(const D3DXVECTOR3 &pos, float w, fl
 }
 
 void CMatrixEffectFireAnim::BeforeDraw(void) {}
+
+void CMatrixEffectFireAnim::AddShaderLights(void) const {
+    // Above the flames' foot, as far as they are tall.
+    const float size = std::max(m_HeightCurr, m_WidthCurr);
+    if (size <= 0)
+        return;
+    ShaderLights::add(m_Pos + D3DXVECTOR3(0, 0, m_HeightCurr * 0.4f), size * 1.8f + 10.0f, 1.0f, 0.5f, 0.16f,
+                      ShaderLights::Kind::Fire, this);
+}
+
+void CMatrixEffectFire::AddShaderLights(void) const {
+    // As strong as its flames are many (it dies down without them).
+    if (m_PuffCnt <= 0)
+        return;
+    const float k = std::min(1.0f, float(m_PuffCnt) / 6.0f);
+    ShaderLights::add(m_Pos + D3DXVECTOR3(0, 0, 4), 18.0f + m_DispFactor * 5.0f, 0.95f * k, 0.45f * k, 0.12f * k,
+                      ShaderLights::Kind::Fire, this);
+}
 
 void CMatrixEffectFireAnim::Takt(float t) {
     m_TTLcurr -= t;

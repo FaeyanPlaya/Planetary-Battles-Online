@@ -2,6 +2,7 @@
 #pragma once
 
 #include "DisplaySettings.hpp"
+#include "GameLanguage.hpp"
 #include "UiTheme.hpp"
 #include "BattleChoice.hpp"
 #include "random.hpp"
@@ -19,6 +20,7 @@ namespace StandaloneSettings {
 
 enum class Skybox { Off, Low, High };
 using Theme = UiTheme::Choice;  // Theme=System|Light|Dark: this project's windows
+using LanguageChoice = GameLanguage::Choice;  // Language=System|Russian|English: the texts (from the next start)
 // Attribution of ablaze and shorted pulses; Original restores the original game's behaviour.
 enum class DamageAttribution { Corrected, Original };
 // Cached AI group counts after regrouping; Original restores the original game's behaviour.
@@ -38,6 +40,7 @@ struct Values {
     bool projected_shadows = true;
     Skybox skybox = Skybox::High;
     bool robot_shadows = true;
+    bool show_fps = false;  // ShowFps=: the frame rate under the battle's Menu button
     DamageAttribution delayed_damage = DamageAttribution::Corrected;
     std::wstring map;  // Remembered battle map, Matrix\Map\<name>.cmap; empty selects Config/Map.
     BattleChoice::Bonus battle_bonus = BattleChoice::Bonus::None;
@@ -52,6 +55,7 @@ struct Values {
     int far_view_scale = 200;  // FarViewScale=: how far the far view reaches, percent of the original's (150-300)
     int saved_designs = 20;    // SavedDesigns=: how many robot designs built are kept between battles (1-50)
     Theme theme = Theme::System;
+    LanguageChoice language = LanguageChoice::System;
     bool operator==(const Values &) const = default;
 };
 
@@ -75,6 +79,7 @@ bool save(const Values &values, std::string &error, const wchar_t *path = L"CFG\
 
 const char *name(Skybox skybox);
 const char *name(Theme theme);
+const char *name(LanguageChoice language);
 const char *name(DamageAttribution attribution);
 const char *name(GroupCountMode mode);
 const char *name(PlaceContainmentMode mode);

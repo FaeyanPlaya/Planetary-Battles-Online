@@ -3,6 +3,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the LICENSE file included
 
+#include <algorithm>
 #include <new>
 
 #include "MatrixEffect.hpp"
@@ -10,6 +11,7 @@
 #include <math.h>
 
 #include "MatrixEffectLightening.hpp"
+#include "../ShaderLights.hpp"
 #include "CosmeticRandom.hpp"  // visual-only effects: last include
 
 CMatrixEffectLightening::CMatrixEffectLightening(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1, float ttl,
@@ -124,6 +126,26 @@ void CMatrixEffectLightening::Release(void) {
 }
 
 void CMatrixEffectLightening::BeforeDraw(void) {}
+
+void CMatrixEffectLightening::AddShaderLights(void) const {
+    // Along the bolt in its own colour (a fence's bolts can be of any): up to 4 lights, each lighting its stretch.
+    // (from its ends: m_Dir is of length 1)
+    const D3DXVECTOR3 span = m_Pos1 - m_Pos0;
+    const float length = D3DXVec3Length(&span);
+    const int count = std::clamp(int(length / 80.0f) + 1, 1, 4);
+    const float radius = 30.0f + length / float(count) * 0.6f;
+    // A discharge flickers hard: each frame from a glimmer to a flash, the whole bolt at once (held in a pause). Mostly
+    // dim, now and then a flash (about 1 on average); the base low enough that a fence's many bolts together do not
+    // reach the pack's soft limit, which flattened the flicker.
+    const float r = FRND(1.0f);
+    const float flicker = g_MatrixMap->IsPaused() ? 0.6f : 0.05f + 2.9f * r * r;
+    for (int i = 0; i < count; ++i) {
+        const float at = (float(i) + 0.5f) / float(count);
+        // (each its own giver: the drawing takes a giver's light once)
+        ShaderLights::add_argb(m_Pos0 + (m_Pos1 - m_Pos0) * at, radius, m_Color, ShaderLights::Kind::Shot,
+                               reinterpret_cast<const char *>(this) + i, 0.8f * flicker);
+    }
+}
 
 void CMatrixEffectLightening::Draw(void) const
 {

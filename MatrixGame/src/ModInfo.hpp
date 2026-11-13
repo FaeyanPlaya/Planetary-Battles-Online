@@ -65,9 +65,12 @@ int height(const std::vector<Line> &lines);                                     
 std::wstring hint_template(const Info &info, Language language, double scale, const TextWidth &width);
 
 // Switching a mod on that needs others: switch those on too (yes), or leave it off (no).
+// Any other question (lines given): its title (mod), the line under it, its lines, then Yes and No.
 struct Question {
     std::wstring mod;                 // its name
     std::vector<std::wstring> needs{};  // the names of those it needs that are off
+    std::wstring subtitle{};
+    std::vector<std::wstring> lines{};
     bool operator==(const Question &) const = default;
 };
 std::wstring question_template(const Question &question, Language language, double scale, const TextWidth &width);

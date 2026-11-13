@@ -1,5 +1,6 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "LobbyWindow.hpp"
+#include "GameLanguage.hpp"
 #include "LobbyModel.hpp"
 #include "NetLobby.hpp"
 #include "Lockstep.hpp"
@@ -318,7 +319,7 @@ std::string map_hash(const std::wstring &path) {
 }
 
 Language language() {
-    return SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup"));
+    return GameLanguage::current();
 }
 
 void load_maps(State &s) {
@@ -339,7 +340,7 @@ void load_maps(State &s) {
         if (!error.empty()) lgr.warning("Map mod {}: names: {}")(pack.id, error);
     }
     std::string diagnostic;
-    const auto metadata = MapMetadata::load(diagnostic);
+    const auto metadata = MapMetadata::load(diagnostic, GameLanguage::names_file(L"", GameLanguage::current()));
     if (!diagnostic.empty()) lgr.warning("Map metadata: {}")(diagnostic);
     for (const auto &map : s.maps) {
         std::wstring key = map.name + L".cmap";

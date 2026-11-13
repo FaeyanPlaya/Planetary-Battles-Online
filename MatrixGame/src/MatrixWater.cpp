@@ -9,6 +9,14 @@
 
 #include <random.hpp>
 
+#include <array>
+
+namespace {
+// The block's strips (as the tile's, BLOCK times as many vertices a side).
+constexpr int block_side = WATER_SIZE * CMatrixWater::BLOCK;
+constexpr int block_indices = (block_side * 2 + 2) * block_side + (block_side - 1) * 2;
+}  // namespace
+
 CTextureManaged *SInshorewave::m_Tex;
 D3D_VB SInshorewave::m_VB;
 int SInshorewave::m_VB_ref;
@@ -187,6 +195,8 @@ CMatrixWater::CMatrixWater() : CMain() {
 
     m_VB = NULL;
     m_IB = NULL;
+    m_BlockVB = NULL;
+    m_BlockIB = NULL;
 
     const int pole = (WATER_SIZE) * (WATER_SIZE);
     for (int i = 0; i < pole; ++i) {
@@ -212,6 +222,12 @@ void CMatrixWater::Clear() {
     }
     if (IS_IB(m_IB)) {
         DESTROY_IB(m_IB);
+    }
+    if (IS_VB(m_BlockVB)) {
+        DESTROY_VB(m_BlockVB);
+    }
+    if (IS_IB(m_BlockIB)) {
+        DESTROY_IB(m_BlockIB);
     }
     m_WaterTex1 = NULL;
     m_WaterTex2 = NULL;
@@ -259,6 +275,30 @@ void CMatrixWater::Init() {
     }
     UNLOCK_IB(m_IB);
 
+    // The block: the same strips over BLOCK times as many vertices a side.
+    {
+        constexpr int n = WATER_SIZE * BLOCK;
+        CREATE_VB_DYNAMIC((n + 1) * (n + 1) * sizeof(SMatrixMapWaterVertex), MATRIX_WATER_VERTEX_FORMAT, m_BlockVB);
+        CREATE_IB16(block_indices, m_BlockIB);
+        WORD *blocks;
+        LOCK_IB(m_BlockIB, &blocks);
+        int b = 0;
+        for (int i = 0; i < n; ++i) {
+            if (b > 0) {
+                blocks[b] = blocks[b - 1];
+                blocks[b + 1] = WORD((i + 1) * (n + 1));
+                b += 2;
+            }
+            blocks[b++] = WORD((i + 1) * (n + 1));
+            blocks[b++] = WORD(i * (n + 1));
+            for (int j = 0; j < n; ++j) {
+                blocks[b++] = WORD(j + (n + 2) + i * (n + 1));
+                blocks[b++] = WORD(j + 1 + i * (n + 1));
+            }
+        }
+        UNLOCK_IB(m_BlockIB);
+    }
+
     FillVB(0);
 }
 
@@ -288,7 +328,27 @@ void CMatrixWater::Draw(const D3DXMATRIX &m) {
     const int one_strip_idxs = (WATER_SIZE * 2 + 2);
     const int all_idxs = one_strip_idxs * WATER_SIZE + (WATER_SIZE - 1) * 2;
 
+    if (g_WorldDrawHook)
+        g_WorldDrawHook(true);  // (a shader pack's world pass)
     ASSERT_DX(g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, 0, 0, pole, 0, all_idxs - 2));
+}
+
+void CMatrixWater::DrawBlock(const D3DXMATRIX &m) {
+    constexpr int n = WATER_SIZE * BLOCK;
+    ASSERT_DX(g_D3DD->SetTransform(D3DTS_WORLD, &m));
+    if (g_WorldDrawHook)
+        g_WorldDrawHook(true);  // (a shader pack's world pass)
+    ASSERT_DX(g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, 0, 0, (n + 1) * (n + 1), 0, block_indices - 2));
+}
+
+void CMatrixWater::BlockStreams() {
+    ASSERT_DX(g_D3DD->SetStreamSource(0, GET_VB(m_BlockVB), 0, sizeof(SMatrixMapWaterVertex)));
+    ASSERT_DX(g_D3DD->SetIndices(GET_IB(m_BlockIB)));
+}
+
+void CMatrixWater::TileStreams() {
+    ASSERT_DX(g_D3DD->SetStreamSource(0, GET_VB(m_VB), 0, sizeof(SMatrixMapWaterVertex)));
+    ASSERT_DX(g_D3DD->SetIndices(GET_IB(m_IB)));
 }
 
 void CMatrixWater::Takt(int)
@@ -399,6 +459,28 @@ void CMatrixWater::FillVB(int k) {
 
             // vbuf[c].n *= (GLOBAL_SCALE * (float)(MAP_GROUP_SIZE) / (float)(WATER_SIZE));
         }
+    }
+
+    // The block: each vertex the tile's at the same place in its tile (a tile's last row and column are its
+    // first again), its place and its textures' places going on over the block (the texture repeats once a tile).
+    if (IS_VB(m_BlockVB)) {
+        constexpr int n = WATER_SIZE * BLOCK;
+        // (the tile's vertices read once: the buffer is the card's, slow to read)
+        std::array<SMatrixMapWaterVertex, (WATER_SIZE + 1) * (WATER_SIZE + 1)> tile;
+        std::copy(vbuf, vbuf + tile.size(), tile.begin());
+        SMatrixMapWaterVertex *block;
+        LOCK_VB_DYNAMIC(m_BlockVB, &block);
+        for (int j = 0; j <= n; ++j) {
+            for (int i = 0; i <= n; ++i) {
+                SMatrixMapWaterVertex v = tile[(j % WATER_SIZE) * (WATER_SIZE + 1) + (i % WATER_SIZE)];
+                v.v.x = float(i);
+                v.v.y = float(j);
+                v.tu = v.au = float(i) / float(WATER_SIZE);
+                v.tv = v.av = float(j) / float(WATER_SIZE);
+                block[j * (n + 1) + i] = v;
+            }
+        }
+        UNLOCK_VB(m_BlockVB);
     }
 
     UNLOCK_VB(m_VB);

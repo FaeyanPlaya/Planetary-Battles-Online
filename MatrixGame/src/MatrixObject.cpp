@@ -12,6 +12,7 @@
 #include "ShadowStencil.hpp"
 #include "MatrixSkinManager.hpp"
 #include "Interface/CConstructor.h"
+#include "ShaderRender.hpp"
 
 #include "Effects/MatrixEffectExplosion.hpp"
 
@@ -221,6 +222,8 @@ bool CMatrixMapObject::Damage(
             // RNeed(MR_ShadowProjGeom|MR_ShadowProjTex|MR_ShadowStencil);
             RESETFLAG(m_ObjectState, OBJECT_STATE_SHADOW_SPECIAL);
             Init(temp.GetStrPar(1, L",").GetInt());
+            // Its broken model in place of the whole one: out of the shaders' voxel copy, back in by the new shape.
+            ShaderRender::voxels_forget(this);
         }
     }
     else if (m_BehFlag == BEHF_ANIM) {
@@ -260,6 +263,7 @@ bool CMatrixMapObject::Damage(
                     int newstate = temp1.GetStrPar(3, L":").GetInt();
                     if (newstate >= 0) {
                         ApplyAnimState(newstate);
+                        ShaderRender::voxels_forget(this);  // its shape is the new state's (as above)
                         break;
                     }
                 }

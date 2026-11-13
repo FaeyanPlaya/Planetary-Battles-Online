@@ -103,6 +103,18 @@ public:
     static void Load(int i, BYTE *raw) { m_Surfaces[i].Load(raw); };
     static void LoadM(int i, BYTE *raw) { m_Surfaces[i].LoadM(raw); };
 
+    // The buffers take their stream for still set once they set it (till the next BeforeDrawAll): forgotten here,
+    // for a second drawing in a frame after something else took the device's streams (a shader pack's shadow map).
+    // The frame's list of surfaces stays.
+    static void ForgetStreams(void) {
+        if (m_BigVB)
+            m_BigVB->BeforeDraw();
+        if (m_BigVBM)
+            m_BigVBM->BeforeDraw();
+        if (m_BigIB)
+            m_BigIB->BeforeDraw();
+    }
+
     static void BeforeDrawAll(void) {
         if (m_BigVB)
             m_BigVB->BeforeDraw();

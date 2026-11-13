@@ -4,6 +4,9 @@
 // Refer to the LICENSE file included
 
 #include "MatrixFormGame.hpp"
+#include "InterfaceHide.hpp"
+#include "SimLab.hpp"
+#include "ShaderRender.hpp"
 #include "Interface/CHistory.h"
 #include "BattleNotice.hpp"
 #include "BattleHistory.hpp"
@@ -61,22 +64,23 @@ constexpr auto DOUBLEPRESS_TIME_DELTA = 200;
 
 } // namespace
 
-void make_screenshot()
+// Into the person's screenshots, said on the screen; or quietly into a file of its own (the lab's).
+void make_screenshot(const std::wstring &to = {})
 {
-    const std::wstring screenshots_dir{PathToOutputFiles(FOLDER_NAME_SCREENSHOTS)};
-
     static uint16_t index = 0;
     index++;
 
-    CreateDirectoryW(screenshots_dir.c_str(), NULL);
-
-    std::wstring filename =
-        utils::format(
+    std::wstring filename = to;
+    if (filename.empty()) {
+        const std::wstring screenshots_dir{PathToOutputFiles(FOLDER_NAME_SCREENSHOTS)};
+        CreateDirectoryW(screenshots_dir.c_str(), NULL);
+        filename = utils::format(
             L"%ls\\%ls-%ls-%03d.png",
             screenshots_dir.c_str(),
             FILE_NAME_SCREENSHOT,
             std::format(L"{:%Y-%m-%d-%H-%M-%S}", std::chrono::system_clock::now()).c_str(),
             index);
+    }
 
     DeleteFileW(filename.c_str());
 
@@ -134,7 +138,8 @@ void make_screenshot()
                             pSurface->UnlockRect();
 
                             bm.SaveInPNG(filename.c_str());
-                            g_MatrixMap->m_DI.T((L"Screen shot has been saved into " + filename).c_str(), L"");
+                            if (to.empty())
+                                g_MatrixMap->m_DI.T((L"Screen shot has been saved into " + filename).c_str(), L"");
                         }
                         else {
                             // LockRect fail
@@ -310,6 +315,7 @@ void CFormMatrixGame::Draw(void) {
     }
 
     g_MatrixMap->BeforeDraw();
+    ShaderRender::begin_frame();  // a shader pack's: the 3D into its texture (the clear below clears that)
 
     if (FLAG(g_Flags, GFLAG_STENCILAVAILABLE))
     {
@@ -326,14 +332,14 @@ void CFormMatrixGame::Draw(void) {
         ASSERT_DX(g_D3DD->Clear(0, NULL, D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, 0, 1.0f, 0));
 #endif
 
-        if (CInterface::ClearRects_GetCount())
+        if (CInterface::ClearRects_GetCount() && !InterfaceHide::hidden())  // (the panels' places: no 3D under them)
             ASSERT_DX(g_D3DD->Clear(CInterface::ClearRects_GetCount(), CInterface::ClearRects_Get(),
                                     D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, D3DCOLOR_XRGB(255, 0, 255), 0.0f, 0));
     }
     else {
         ASSERT_DX(g_D3DD->Clear(0, NULL, D3DCLEAR_ZBUFFER, D3DCOLOR_XRGB(255, 0, 255), 1.0f, 0));
 
-        if (CInterface::ClearRects_GetCount())
+        if (CInterface::ClearRects_GetCount() && !InterfaceHide::hidden())  // (the panels' places: no 3D under them)
             ASSERT_DX(g_D3DD->Clear(CInterface::ClearRects_GetCount(), CInterface::ClearRects_Get(), D3DCLEAR_ZBUFFER,
                                     D3DCOLOR_XRGB(255, 0, 255), 0.0f, 0));
     }
@@ -346,6 +352,7 @@ void CFormMatrixGame::Draw(void) {
 #endif
 
     g_MatrixMap->Draw();
+    ShaderRender::finish_scene();  // (Draw has done it, after the 3D; a frame never ends on the pack's texture)
 
     ASSERT_DX(g_D3DD->EndScene());
     if (m_ScreenshotPending) {
@@ -353,6 +360,7 @@ void CFormMatrixGame::Draw(void) {
         // Capture a complete frame before DISCARD presentation invalidates it.
         make_screenshot();
     }
+    if (const auto shot = SimLab::shot_due(g_MatrixMap->GetTime())) make_screenshot(*shot);
     const HRESULT presented = g_D3DD->Present(NULL, NULL, NULL, NULL);
     Rendering::CheckPresentResult(presented);
 #ifdef BUILD_EXE
@@ -416,6 +424,7 @@ void CFormMatrixGame::Takt(int step) {
     BattleStats::update();
     BattleHistory::update();
 
+    CMultiSelection::NewFrame();
     if (CMultiSelection::m_GameSelection) {
         SCallback cbs;
         cbs.mp = g_MatrixMap->m_Cursor.GetPos();
@@ -548,8 +557,10 @@ void CFormMatrixGame::MouseMove(int x, int y) {
     }
 
     g_MatrixMap->m_Cursor.SetPos(x, y);
-    SettingsWindow::mouse_move(x, y);
-    SettingsWindow::menu_mouse_move(x, y);
+    if (!InterfaceHide::hidden()) {  // (hidden: the windows take no pointer)
+        SettingsWindow::mouse_move(x, y);
+        SettingsWindow::menu_mouse_move(x, y);
+    }
     p_side->OnMouseMove();
 
     if (CMultiSelection::m_GameSelection) {
@@ -604,14 +615,18 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
         Input::onKeyUp(key);
     }
 
-    if ((status == B_DOWN || status == B_DOUBLE) && key == VK_LBUTTON &&
+    // The interface hidden: over a window the clicks go nowhere; the wheel and its button (turning) to the camera.
+    if (InterfaceHide::hidden() && FLAG(g_MatrixMap->m_Flags, MMFLAG_DIALOG_MODE) && status != B_WHEEL &&
+        key != VK_MBUTTON)
+        return;
+    if (!InterfaceHide::hidden() && (status == B_DOWN || status == B_DOUBLE) && key == VK_LBUTTON &&
         (NewBattle::menu_mouse_down(x, y) || SettingsWindow::mouse_down(x, y) || SettingsWindow::menu_mouse_down(x, y))) {
         return;
     }
 
     if (status == B_WHEEL) {
-        if (SettingsWindow::mouse_wheel(key)) return;  // the keys page scrolls, the camera stays
-        if (BattleHistory::wheel(key)) return;          // so does the battle's history
+        if (!InterfaceHide::hidden() && SettingsWindow::mouse_wheel(key)) return;  // the keys page scrolls, the camera stays
+        if (!InterfaceHide::hidden() && BattleHistory::wheel(key)) return;  // so does the battle's history
         while (key > 0) {
             g_MatrixMap->m_Camera.ZoomInStep();
             --key;
@@ -877,6 +892,10 @@ void CFormMatrixGame::Keyboard(bool down, uint8_t vk)
         else make_screenshot();
         return;
     }
+
+    // The interface fixes' HideInterface: its key hides the interface and shows it; over a window hidden, no other key.
+    if (InterfaceHide::key(vk, down)) return;
+    if (InterfaceHide::hidden() && FLAG(g_MatrixMap->m_Flags, MMFLAG_DIALOG_MODE)) return;
 
     if (NewBattle::menu_keyboard(vk, down) || SettingsWindow::keyboard(vk, down))
     {

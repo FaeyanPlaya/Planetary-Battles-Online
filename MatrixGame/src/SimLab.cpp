@@ -17,7 +17,9 @@
 #include "Commands.hpp"
 
 #include <float.h>
+#include <chrono>
 #include <cstring>
+#include <cwchar>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -70,6 +72,9 @@ struct Run {
     int next_hash_ms = 0;
     int next_camera_ms = 0;
     int camera_index = 0;
+    std::size_t next_shot = 0;  // in options.shots_at
+    std::ofstream slow;         // the slow frames (options.slow_frames_ms)
+    std::chrono::steady_clock::time_point last_wall{};
 } *g_run = nullptr;
 
 bool is_input(UINT m) {
@@ -166,8 +171,18 @@ void move_camera() {
     const float w = g_MatrixMap->m_Size.x * GLOBAL_SCALE;
     const float h = g_MatrixMap->m_Size.y * GLOBAL_SCALE;
     const int cell = g_run->camera_index++ % 9;
-    const D3DXVECTOR2 target(w * (0.2f + 0.3f * float(cell % 3)), h * (0.2f + 0.3f * float(cell / 3)));
+    const auto &at = g_run->options.camera_at;
+    const D3DXVECTOR2 target = at ? D3DXVECTOR2(w * float((*at)[0]) / 100.0f, h * float((*at)[1]) / 100.0f)
+                                  : D3DXVECTOR2(w * (0.2f + 0.3f * float(cell % 3)), h * (0.2f + 0.3f * float(cell / 3)));
     g_MatrixMap->m_Camera.SetXYStrategy(target);
+    if (at) g_MatrixMap->m_Camera.InitStrategyAngle(float((*at)[2]) * 0.017453293f);
+    if (g_run->options.camera_tilt >= 0) {
+        g_MatrixMap->m_Camera.SetAngleParam(float(g_run->options.camera_tilt) / 100.0f);
+        if (!at) g_MatrixMap->m_Camera.InitStrategyAngle(float(cell) * 1.5707963f);
+    }
+    if (g_run->options.camera_zoom >= 0) {
+        g_MatrixMap->m_Camera.SetZoom(float(g_run->options.camera_zoom) / 100.0f);
+    }
 }
 
 void record(bool detail = false) {
@@ -185,6 +200,13 @@ void record(bool detail = false) {
 
 Loop::Clock::time_point lab_now(void *) {
     // Called once per loop iteration, after the previous frame's Takt and Draw.
+    if (g_run->slow.is_open()) {
+        const auto wall = std::chrono::steady_clock::now();
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(wall - g_run->last_wall).count();
+        if (g_run->frames > 1 && ms >= g_run->options.slow_frames_ms)
+            g_run->slow << std::format("t={} frame={} ms={}\n", game_time(), g_run->frames, ms) << std::flush;
+        g_run->last_wall = wall;
+    }
     if (g_run->frames > 0) {
         const int t = game_time();
         if (t >= g_run->next_hash_ms) {
@@ -283,7 +305,17 @@ Options load(const wchar_t *path) {
         o.camera = value == L"orbit" ? CameraPolicy::Orbit : CameraPolicy::Fixed;
     }
     o.camera_cell = std::clamp(int_par(bp, L"CameraCell", -1), -1, 8);
+    o.camera_tilt = std::clamp(int_par(bp, L"CameraTilt", -1), -1, 100);
+    o.camera_zoom = std::clamp(int_par(bp, L"CameraZoom", -1), -1, 1000);  // past 100: higher than the wheel goes
+    if (bp.ParCount(L"CameraAt")) {
+        std::array<int, 3> at{0, 0, 0};
+        if (std::swscanf(utils::trim(bp.ParGet(L"CameraAt")).c_str(), L"%d,%d,%d", &at[0], &at[1], &at[2]) >= 2) {
+            o.camera_at = at;
+            o.camera_cell = std::max(o.camera_cell, 0);  // (held, as a cell is)
+        }
+    }
     if (bp.ParCount(L"Trace")) o.trace = utils::trim(bp.ParGet(L"Trace"));
+    o.slow_frames_ms = std::max(0, int_par(bp, L"SlowFramesMs", 0));
     o.trace_draws_until_ms = int_par(bp, L"TraceDrawsUntilMs", -1);
     o.trace_draws_from_ms = int_par(bp, L"TraceDrawsFromMs", 0);
     o.detail_from_ms = int_par(bp, L"DetailFromMs", -1);
@@ -306,6 +338,7 @@ Options load(const wchar_t *path) {
     o.steps_per_frame = std::clamp(int_par(bp, L"StepsPerFrame", 1), 1, 50);
     if (bp.ParCount(L"Record")) o.record = utils::trim(bp.ParGet(L"Record"));
     if (bp.ParCount(L"Replay")) o.replay = utils::trim(bp.ParGet(L"Replay"));
+    if (bp.ParCount(L"ShotsAt")) o.shots_at = parse_shots(utils::trim(bp.ParGet(L"ShotsAt")));
     if (const auto &source = !o.command_replay.empty() ? o.command_replay : o.replay; !source.empty())
         o.rules = read_rules(source);
     if (bp.ParCount(L"Bonus")) {
@@ -354,6 +387,7 @@ void begin(const Options &options) {
     g_run = new Run;
     g_run->options = options;
     g_run->trace.open(std::filesystem::path(options.trace), std::ios::trunc);
+    if (options.slow_frames_ms > 0) g_run->slow.open(std::filesystem::path(L"simlab-slow.txt"), std::ios::trunc);
     g_run->trace << std::format(
             "header map={} seed={} step_ms={} duration_ms={} camera={} rng={} screen={}x{} human={} view={} input={}\n",
             utils::from_wstring(g_MatrixMap->MapName()), options.seed, options.step_ms, options.duration_ms,
@@ -444,6 +478,35 @@ bool active() { return g_run != nullptr; }
 void note(const std::string &event) {
     if (!g_run) return;
     g_run->trace << std::format("event t={} draws={} {}\n", game_time(), random::draw_count(), event);
+}
+
+std::vector<int> parse_shots(const std::wstring &text) {
+    std::vector<int> out;
+    std::size_t at = 0;
+    while (at <= text.size()) {
+        const std::size_t comma = std::min(text.find(L',', at), text.size());
+        const std::wstring part = text.substr(at, comma - at);
+        at = comma + 1;
+        // ms, or from-to/every
+        int from = 0, to = 0, every = 0;
+        if (std::swscanf(part.c_str(), L"%d-%d/%d", &from, &to, &every) == 3 && every > 0 && to >= from)
+            for (int t = from; t <= to; t += every) out.push_back(t);
+        else if (std::swscanf(part.c_str(), L"%d", &from) == 1 && from >= 0)
+            out.push_back(from);
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+std::optional<std::wstring> shot_due(int game_ms) {
+    if (!g_run) return std::nullopt;
+    const auto &shots = g_run->options.shots_at;
+    if (g_run->next_shot >= shots.size() || game_ms < shots[g_run->next_shot]) return std::nullopt;
+    while (g_run->next_shot < shots.size() && shots[g_run->next_shot] <= game_ms) ++g_run->next_shot;
+    std::error_code error;
+    std::filesystem::create_directory(L"lab-shots", error);
+    return std::format(L"lab-shots\\t{:06}.png", game_ms);
 }
 
 // Logic-list position and the sim id commands address the object by.

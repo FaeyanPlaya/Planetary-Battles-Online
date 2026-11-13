@@ -3,9 +3,11 @@
 
 #include "BattleRules.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 // Standalone determinism laboratory. Active only when CFG/simlab.txt exists.
 // It runs one battle with every side under AI control, a fixed seed and a fixed
@@ -24,7 +26,14 @@ struct Options {
     bool dump = false;          // per-entity lines at every hash point
     CameraPolicy camera = CameraPolicy::Fixed;
     int camera_cell = -1;       // 0..8: the camera stays over that point of the orbit tour (rendering checks)
+    int camera_tilt = -1;       // 0..100: the camera's tilt (0 towards the horizon, 100 straight down), turned 90
+                                // degrees at each point of the tour (the sky and the far view for the shaders' checks)
+    int camera_zoom = -1;       // 0..100: how far out the camera is (100: as far as the wheel goes)
+    // CameraAt=x,y,deg: the camera held over that point (percent of the map's size, past its edges too: the view
+    // from the sea) turned by deg; in place of the tour's cell.
+    std::optional<std::array<int, 3>> camera_at;
     std::wstring trace = L"simlab-trace.txt";
+    int slow_frames_ms = 0;  // SlowFramesMs=: frames that took longer (wall clock) into simlab-slow.txt; 0: none
     int trace_draws_until_ms = -1;  // log every simulation draw with its stack up to this game time
     int trace_draws_from_ms = 0;
     // Hash and dump after every step between these game times (divergence hunts); -1: off.
@@ -50,6 +59,9 @@ struct Options {
     std::optional<std::array<BattleChoice::Bonus, BattleRules::side_count>> bonus;
     std::optional<BattleRules::Resources> resources;
     std::optional<int> ai_resources;  // AiResources=map|x1..x4
+    // ShotsAt=ms,ms,from-to/every,...: pictures of the finished frame at these game times, into lab-shots\ beside
+    // the executable (named by the game time), to look at a replayed battle at its moments.
+    std::vector<int> shots_at;
 };
 
 // Reads CFG/simlab.txt beside the executable. Absent file -> inactive options.
@@ -68,5 +80,11 @@ std::uint64_t world_hash(std::string *dump);
 // Appends a gameplay event line to the trace while a lab run is active.
 bool active();
 void note(const std::string &event);
+
+// The picture due at this game time (ShotsAt), once each: its file; none else.
+std::optional<std::wstring> shot_due(int game_ms);
+
+// ShotsAt's text: ms, from-to/every, separated by commas; sorted.
+std::vector<int> parse_shots(const std::wstring &text);
 
 } // namespace SimLab

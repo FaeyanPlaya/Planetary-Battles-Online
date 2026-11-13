@@ -145,6 +145,10 @@ set(MATRIX_RESOURCES
     MatrixGame.rc
     Resource.h)
 
+# The resource compiler's own dependencies leave out the icons: a new icon would not reach the EXE.
+set_source_files_properties(MatrixGame.rc PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/MatrixGame.ico;${CMAKE_CURRENT_SOURCE_DIR}/small.ico")
+
 source_group("Resources" FILES ${MATRIX_RESOURCES})
 
 if(MATRIXGAME_BUILD_DLL)
@@ -236,6 +240,22 @@ if (NOT MATRIXGAME_BUILD_DLL)
         DEPENDS ModHash ${MATRIXGAME_MOD_FILES})
     target_sources(MatrixGame PRIVATE ${MATRIXGAME_VERIFIED_MODS})
 endif ()
+
+# Our shader packs (shaders/<pack> here; docs/SHADERS.md): into the shaders folder beside the EXE.
+# tools/make-build.ps1 ships them.
+file(GLOB_RECURSE MATRIXGAME_SHADER_SOURCES CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*)
+set(MATRIXGAME_SHADER_FILES)
+foreach(shader_file ${MATRIXGAME_SHADER_SOURCES})
+    set(shader_out ${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader_file})
+    get_filename_component(shader_dir ${shader_out} DIRECTORY)
+    add_custom_command(OUTPUT ${shader_out}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${shader_dir}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader_file} ${shader_out}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader_file})
+    list(APPEND MATRIXGAME_SHADER_FILES ${shader_out})
+endforeach()
+add_custom_target(pbo_shaders ALL DEPENDS ${MATRIXGAME_SHADER_FILES})
 
 # Copy the DATA/robots.pkg file from the game
 if (NOT MATRIXGAME_BUILD_DLL)

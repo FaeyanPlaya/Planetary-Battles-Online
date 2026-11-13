@@ -6,6 +6,7 @@
 // MatrixGame.cpp : Defines the entry point for the application.
 
 #include "CStorage.hpp"
+#include "GameLanguage.hpp"
 #include "UiTheme.hpp"
 #include "CFile.hpp"
 
@@ -77,9 +78,9 @@ CMatrixMapLogic *g_MatrixMap;
 CRenderPipeline *g_Render;
 CLoadProgress *g_LoadProgress;
 
-// The game configuration's own menu text is Cyrillic.
-static bool standalone_russian(Base::CBlockPar *repl) {
-    return SettingsModel::detect_language(repl->ParGetNE(L"setup")) == SettingsModel::Language::Russian;
+// The language chosen (GameLanguage).
+static bool standalone_russian() {
+    return GameLanguage::russian();
 }
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
@@ -101,6 +102,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
         const auto app_path = Startup::ExecutablePath();
         lgr.info(utils::from_wstring(app_path.native()));
         std::filesystem::current_path(app_path.parent_path());
+        // The texts' language for this run: the settings' (Language=), Windows' on a first start.
+        GameLanguage::start(StandaloneSettings::load().values.language);
         // Minimaps (and the map previews made from them) stay beside the EXE: Space Rangers HD clears
         // its own Documents\SpaceRangersHD\Cache when it starts.
         SetOutputFolder(FOLDER_NAME_CACHE, (app_path.parent_path() / L"Cache").wstring());
@@ -144,6 +147,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
                         L"Game resources required", MB_OK | MB_ICONINFORMATION);
             return exit_code;
         }
+        // Each language's own files the person's Space Rangers HD has, for the settings' Language (once copied, kept).
+        GameData::import_languages(app_path.parent_path());
         // Map mods of the person's Space Rangers HD (its Mods folder); a battle a lobby started does not ask again.
         MapPacks::set_game_mods(GameData::game_mods(app_path.parent_path(), !setup_yes && !BattleLoading::has_parent()));
         if (net.check_maps) MapPacks::request_check();
@@ -361,7 +366,8 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
     constexpr bool music = false;  // Without a decoder the package is not used.
 #endif
     // Audio follows the packages that opened; a damaged optional package counts as missing.
-    const auto audio_packages = Startup::OpenPackages(L"DATA", music);
+    // The speech in the language chosen when that was copied (GameLanguage::voices_file).
+    const auto audio_packages = Startup::OpenPackages(L"DATA", music, GameLanguage::voices_file(L"", GameLanguage::current()));
 #else
     CFile::AddPackFile(L"DATA\\robots.pkg");
     CFile::OpenPackFiles();
@@ -376,6 +382,8 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
     std::wstring stor_cfg_name;
     std::wstring conf_file{FILE_CONFIGURATION_LOCATION}; // generate the .dat file path
 
+    if (lang != nullptr && !GameLanguage::started())  // the original host's language
+        GameLanguage::start(_wcsicmp(lang, L"Rus") == 0 ? GameLanguage::Language::Russian : GameLanguage::Language::English);
     if (lang != nullptr)
     {
         conf_file += lang;
@@ -408,6 +416,28 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
         g_MatrixData->LoadFromTextFile(L"cfg\\robots\\data.txt");
     }
 
+    // The game's own texts in the language chosen when that language's configuration was copied (CFG\Eng\robots.dat)
+    // and this one's are another's: its labels, its hints and its interface over these. The battle's data stays this
+    // configuration's, everyone's (GameData::data_fingerprint).
+    CStorage stor_texts(g_MatrixHeap);
+    bool stor_texts_present = false;
+    {
+        const auto texts = GameLanguage::texts_file(L"", GameLanguage::current());
+        CBlockPar *labels = g_MatrixData->BlockGetNE(IF_LABELS_BLOCKPAR);
+        CBlockPar *own = labels ? labels->BlockGetNE(L"Replaces") : nullptr;
+        const bool other = !own || SettingsModel::detect_language(own->ParGetNE(L"setup")) != GameLanguage::current();
+        if (!texts.empty() && other) {
+            if (stor_texts.Load(texts.wstring().c_str())) {
+                CBlockPar language_data;
+                stor_texts.RestoreBlockPar(L"da", language_data);
+                GameLanguage::overlay_texts(*g_MatrixData, language_data);
+                stor_texts_present = true;
+                lgr.notice("Texts: {}")(texts.string());
+            }
+            else lgr.warning("Cannot read {}; the texts stay the configuration's")(texts.string());
+        }
+    }
+
     // init menu replaces
     // TODO: extract texts automatically from cfg.
     {
@@ -432,20 +462,20 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
         }
         else {
             repl->ParSetAdd(PAR_REPLACE_BEGIN_ICON_RACE, L"1");
-            repl->ParSetAdd(PAR_REPLACE_BEGIN_TEXT, standalone_russian(repl) ? L"\u0412\u043f\u0435\u0440\u0451\u0434!" : L"Go! Go! Go!");
+            repl->ParSetAdd(PAR_REPLACE_BEGIN_TEXT, standalone_russian() ? L"\u0412\u043f\u0435\u0440\u0451\u0434!" : L"Go! Go! Go!");
         }
 
         if (txt_win) {
             repl->ParSetAdd(PAR_REPLACE_END_TEXT_WIN, txt_win);
         }
         else {
-            repl->ParSetAdd(PAR_REPLACE_END_TEXT_WIN, standalone_russian(repl) ? L"\u041f\u043e\u0431\u0435\u0434\u0430!" : L"Victory!");
+            repl->ParSetAdd(PAR_REPLACE_END_TEXT_WIN, standalone_russian() ? L"\u041f\u043e\u0431\u0435\u0434\u0430!" : L"Victory!");
         }
         if (txt_loss) {
             repl->ParSetAdd(PAR_REPLACE_END_TEXT_LOOSE, txt_loss);
         }
         else {
-            repl->ParSetAdd(PAR_REPLACE_END_TEXT_LOOSE, standalone_russian(repl) ? L"\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u0435" : L"Defeat");
+            repl->ParSetAdd(PAR_REPLACE_END_TEXT_LOOSE, standalone_russian() ? L"\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u0435" : L"Defeat");
         }
         if (planet) {
             repl->ParSetAdd(PAR_REPLACE_END_TEXT_PLANET, planet);
@@ -570,8 +600,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
         else {
             remembered_map = MapSelection::startup_map(standalone.values);
         }
-        if (!BattleLoading::show(g_Wnd, SettingsModel::detect_language(
-            g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) == SettingsModel::Language::Russian))
+        if (!BattleLoading::show(g_Wnd, GameLanguage::russian()))
             lgr.warning("Cannot create the loading screen; continuing battle initialization");
     }
     StandaloneSettings::initialize_runtime(standalone.values);
@@ -663,9 +692,9 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
         std::string error;
         // A map mod's map is named in the mod's own Lang.dat.
         const MapPacks::Pack *pack = MapPacks::for_map(mapname);
-        const bool russian = SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup")) ==
-                             SettingsModel::Language::Russian;
-        const auto metadata = pack ? MapMetadata::load(error, MapPacks::names_file(*pack, russian)) : MapMetadata::load(error);
+        const bool russian = GameLanguage::russian();
+        const auto metadata = pack ? MapMetadata::load(error, MapPacks::names_file(*pack, russian))
+                                   : MapMetadata::load(error, GameLanguage::names_file(L"", GameLanguage::current()));
         auto key = std::filesystem::path(mapname).filename().wstring();
         for (auto &ch : key) ch = wchar(std::towlower(ch));
         const auto found = metadata.find(key);
@@ -692,6 +721,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
     DCP();
 
     g_MatrixMap->CalcCannonPlace();
+    g_MatrixMap->SideSkinsPreload();  // (the sides are known now)
     SSpecialBot::LoadAIRobotType(*g_MatrixData->BlockGet(L"AIRobotType"));
 
     g_LoadProgress->SetCurLP(LP_PREPARININTERFACE);
@@ -699,7 +729,11 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
 
     DCP();
     CBlockPar bpi;
-    if (stor_cfg_present)
+    if (stor_texts_present)  // the interface in the language chosen (above)
+    {
+        stor_texts.RestoreBlockPar(L"if", bpi);
+    }
+    else if (stor_cfg_present)
     {
         stor_cfg.RestoreBlockPar(L"if", bpi);
     }

@@ -83,12 +83,43 @@ void write_exception(FILE *out, const char *what) {
     std::fflush(out);
 }
 
+namespace {
+// The fault's memory too (logs\crash.dmp, the last only: a few MB): crash.txt's addresses tell where, the dump what
+// the objects there held. dbghelp is Windows' own, loaded only now.
+bool write_dump(const EXCEPTION_POINTERS &ep) {
+    using Write = BOOL(WINAPI *)(HANDLE, DWORD, HANDLE, int, void *, void *, void *);
+    HMODULE dbghelp = LoadLibraryW(L"dbghelp.dll");
+    const auto write =
+            dbghelp ? reinterpret_cast<Write>(reinterpret_cast<void *>(GetProcAddress(dbghelp, "MiniDumpWriteDump")))
+                    : nullptr;
+    if (!write)
+        return false;
+    HANDLE file = CreateFileW(L"logs\\crash.dmp", GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return false;
+    struct {
+        DWORD thread;
+        EXCEPTION_POINTERS *pointers;
+        BOOL client;
+    } info{GetCurrentThreadId(), const_cast<EXCEPTION_POINTERS *>(&ep), FALSE};
+    // MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithThreadInfo
+    const BOOL done = write(GetCurrentProcess(), GetCurrentProcessId(), file, 0x1 | 0x40 | 0x1000, &info, nullptr, nullptr);
+    CloseHandle(file);
+    return done != FALSE;
+}
+}  // namespace
+
 bool fault(const EXCEPTION_POINTERS &ep) {
     FILE *out = std::fopen(file_name, "a");
     if (!out)
         return false;
     write_fault(out, ep);
     std::fclose(out);
+    const bool dumped = write_dump(ep);
+    if ((out = std::fopen(file_name, "a"))) {
+        std::fprintf(out, "  dump: %s\n", dumped ? "logs\\crash.dmp" : "not written");
+        std::fclose(out);
+    }
     return true;
 }
 

@@ -13,10 +13,10 @@ bool ResourceFileExists(const std::filesystem::path &path) {
     return std::filesystem::is_regular_file(path);
 }
 
-AudioPackages OpenPackages(const std::filesystem::path &data, bool music) {
+AudioPackages OpenPackages(const std::filesystem::path &data, bool music, const std::filesystem::path &voices_file) {
     const auto robots = (data / L"robots.pkg").wstring();
     const auto sound = (data / L"sound.pkg").wstring();
-    const auto voices = (data / L"voices.pkg").wstring();
+    const auto voices = (voices_file.empty() ? data / L"voices.pkg" : voices_file).wstring();
     const auto tracks = (data / L"music.pkg").wstring();
 
     AudioPackages packages{ResourceFileExists(sound), ResourceFileExists(voices), music && ResourceFileExists(tracks)};

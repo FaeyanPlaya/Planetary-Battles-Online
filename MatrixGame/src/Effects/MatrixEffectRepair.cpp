@@ -7,6 +7,7 @@
 
 #include "MatrixEffect.hpp"
 #include "../MatrixMap.hpp"
+#include "../ShaderLights.hpp"
 #include <math.h>
 
 #define REPAIR_CHANGE_TIME 500
@@ -50,6 +51,11 @@ CMatrixEffectRepair::~CMatrixEffectRepair() {
 }
 
 void CMatrixEffectRepair::BeforeDraw(void) {}
+
+void CMatrixEffectRepair::AddShaderLights(void) const {
+    if (m_BBCnt > 0)
+        ShaderLights::add(m_Pos, 25.0f, 0.25f, 0.8f, 0.5f, ShaderLights::Kind::Glow, this);
+}
 
 void CMatrixEffectRepair::Draw(void) const
 {

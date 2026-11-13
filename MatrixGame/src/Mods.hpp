@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <map>
+#include <optional>
+#include <cwchar>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -67,6 +69,7 @@ struct Switches {
     bool zoom_far = false;           // ZoomFar: the wheel takes the camera twice as far out
     bool camera_shift = false;       // CameraShift: the camera moves over the map twice as fast while Shift is held
     bool chassis_motion = false;     // ChassisMotion: wheels and tracks drawn as each side moves (back, turning)
+    bool hide_interface = false;     // HideInterface: its key (F1) hides the battle's interface (InterfaceHide)
     // Personal: Дальняя прорисовка
     bool far_view = false;  // FarView: the view, effects and shadows reach farther (far_view_scale)
     // Personal: Вид от первого лица
@@ -105,8 +108,29 @@ struct SettingLine {
     std::string id;
     std::vector<std::wstring> values;
     std::wstring default_value, russian, english;
+    // How "<" and ">" go through the values (the line's 5th part): round and round (cycle: a few choices) or from the
+    // first to the last and no further (range: numbers); Auto: range when every value is a number, else cycle.
+    enum class Step { Auto, Cycle, Range };
+    Step step = Step::Auto;
     bool operator==(const SettingLine &) const = default;
 };
+// Whether its values go round.
+inline bool cycles(const SettingLine &setting) {
+    if (setting.step != SettingLine::Step::Auto) return setting.step == SettingLine::Step::Cycle;
+    for (const auto &value : setting.values) {
+        wchar_t *end = nullptr;
+        std::wcstod(value.c_str(), &end);
+        if (value.empty() || end != value.c_str() + value.size()) return true;
+    }
+    return false;
+}
+// The index after `index` going `direction` (-1 or 1): round, or kept at the ends (then `index` itself).
+inline int step_index(const SettingLine &setting, int index, int direction) {
+    const int count = int(setting.values.size());
+    if (count == 0) return index;
+    if (cycles(setting)) return ((index + direction) % count + count) % count;
+    return index + direction < 0 || index + direction >= count ? index : index + direction;
+}
 
 struct Mod {
     std::string id;  // the folder's name in lower case: letters a-z, digits, _ and -
@@ -133,6 +157,8 @@ Mod parse(std::wstring_view text);
 std::string folder_hash(const std::filesystem::path &folder);
 // mod.txt's bytes: UTF-16 LE with its BOM, else UTF-8 (a BOM is skipped).
 std::wstring decode(std::string_view bytes);
+// A Setting.<Id>= line (key as written, value): also the shader packs' (ShaderPacks).
+std::optional<SettingLine> parse_setting(const std::wstring &key, const std::wstring &value);
 // The mods in this folder, by id; folders without mod.txt or with a bad name are left out.
 std::vector<Mod> scan(const std::filesystem::path &folder);
 
@@ -191,7 +217,8 @@ inline constexpr const wchar_t *settings_file = L"CFG\\mods.txt";  // this perso
 // <mod>.<Id>=value lines (UTF-8); none: an empty list.
 SettingValues load_settings(const std::filesystem::path &path);
 // Replaces the file. False with `error` when it cannot.
-bool save_settings(const std::filesystem::path &path, const SettingValues &values, std::string &error);
+bool save_settings(const std::filesystem::path &path, const SettingValues &values, std::string &error,
+                   std::string_view header = "; Planetary Battles Online: this person's settings of mods (the settings' Mods page)");
 // The person's now (read from settings_file the first time; the settings window sets them).
 const SettingValues &setting_values();
 void set_setting_values(SettingValues values);

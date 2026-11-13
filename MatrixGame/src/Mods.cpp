@@ -3,6 +3,7 @@
 #include "ModHooks.hpp"
 
 #include "GameData.hpp"
+#include "GameLanguage.hpp"
 #include "KeyBindings.hpp"
 
 #include "utils.hpp"
@@ -55,6 +56,7 @@ constexpr SwitchName personal_switches[] = {
     {"zoomfar", &Switches::zoom_far},
     {"camerashift", &Switches::camera_shift},
     {"chassismotion", &Switches::chassis_motion},
+    {"hideinterface", &Switches::hide_interface},
     {"farview", &Switches::far_view},
     {"firstperson", &Switches::first_person},
     {"newsky", &Switches::new_sky},
@@ -202,16 +204,24 @@ std::optional<SettingLine> setting_line(const std::wstring &key, const std::wstr
     line.id = line_id(key, 8);
     auto parts = split_on(value, L'|', true);
     if (line.id.empty() || parts.size() < 3) return std::nullopt;
-    parts.resize(4);
+    parts.resize(5);
     line.values = split_on(parts[0], L',');
     if (line.values.empty()) return std::nullopt;
     line.default_value = std::find(line.values.begin(), line.values.end(), parts[1]) != line.values.end() ? parts[1]
                                                                                                          : line.values[0];
     line.russian = parts[2];
     line.english = parts[3];
+    const std::wstring step = lower(utils::trim(parts[4]));
+    if (step == L"cycle") line.step = SettingLine::Step::Cycle;
+    else if (step == L"range") line.step = SettingLine::Step::Range;
+    else if (!step.empty()) return std::nullopt;
     return line;
 }
 }  // namespace
+
+std::optional<SettingLine> parse_setting(const std::wstring &key, const std::wstring &value) {
+    return setting_line(key, value);
+}
 
 Mod parse(std::wstring_view text) {
     Mod mod;
@@ -258,8 +268,10 @@ std::vector<Mod> scan(const std::filesystem::path &folder) {
         if (id.empty() || !bytes || find(mods, id)) continue;
         Mod mod = parse(decode(*bytes));
         mod.id = id;
-        if (mod.name.empty()) mod.name = utils::to_wstring(id);
+        // A text in one language only is shown in both (GameLanguage::pick).
+        if (mod.name.empty()) mod.name = mod.name_en.empty() ? utils::to_wstring(id) : mod.name_en;
         if (mod.name_en.empty()) mod.name_en = mod.name;
+        if (mod.description.empty()) mod.description = mod.description_en;
         if (mod.description_en.empty()) mod.description_en = mod.description;
         // Shown through the interface's text templates, where '|' ends a text: another's mod.txt must not break the
         // lists it is shown in.
@@ -282,8 +294,8 @@ std::vector<KeyBindings::ModAction> key_actions(const std::vector<Mod> &mods) {
         for (const KeyLine &key : mod.keys) {
             KeyBindings::ModAction action;
             action.id = mod.id + "." + key.id;
-            action.russian = key.russian;
-            action.english = key.english.empty() ? key.russian : key.english;
+            action.russian = GameLanguage::pick(true, key.russian, key.english);
+            action.english = GameLanguage::pick(false, key.russian, key.english);
             action.group = KeyBindings::group_of(key.group);
             action.key = KeyBindings::code(key.key);
             actions.push_back(std::move(action));
@@ -428,8 +440,9 @@ SettingValues load_settings(const std::filesystem::path &path) {
     return values;
 }
 
-bool save_settings(const std::filesystem::path &path, const SettingValues &values, std::string &error) {
-    std::string text = "; Planetary Battles Online: this person's settings of mods (the settings' Mods page)\n";
+bool save_settings(const std::filesystem::path &path, const SettingValues &values, std::string &error,
+                   std::string_view header) {
+    std::string text = std::string(header) + "\n";
     for (const auto &[id, value] : values) text += id + "=" + utils::from_wstring(value) + "\n";
     auto temporary = path;
     temporary += L".tmp";

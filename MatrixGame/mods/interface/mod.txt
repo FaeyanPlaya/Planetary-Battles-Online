@@ -11,6 +11,7 @@
 # CameraShift: while Shift is held the camera moves over the map (the arrows, the screen's edge) twice as fast.
 # ChassisMotion: wheels and tracks are drawn turning as each side of the chassis goes: back when backing, one
 #   side forward and the other back when turning in place; only the drawing, the battle's frame stays.
+# HideInterface: Key.HideUI (F1) hides the battle's interface and shows it again (InterfaceHide.cpp).
 Name=Исправления интерфейса
 NameEn=Interface fixes
 Description=Исправления и удобства интерфейса.
@@ -24,6 +25,7 @@ Description=- Колесом камеру можно отдалить вдвое
 Description=- С зажатым Shift камера движется по карте вдвое быстрее.
 Description=- Колёса и гусеницы крутятся по ходу: назад на заднем ходу, в разные стороны при развороте на месте.
 Description=- F2 выделяет всех своих роботов (клавиша меняется на странице «Клавиши»).
+Description=- F1 скрывает весь интерфейс боя, кольца выделения и курсор и показывает снова (Esc тоже показывает): посмотреть на бой, на шейдеры, сделать снимок (F9). Пока он скрыт, щелчки идут в бой, по окнам — никуда.
 DescriptionEn=Interface fixes and conveniences.
 DescriptionEn=- A driven robot aims at the sky and at water past the map's edge (the original's aim stuck at the last point found).
 DescriptionEn=- The laser turret's muzzle glows as it fires (the original's glow was hidden inside the barrel).
@@ -35,9 +37,11 @@ DescriptionEn=- The wheel takes the camera out twice as far.
 DescriptionEn=- While Shift is held the camera moves over the map twice as fast.
 DescriptionEn=- Wheels and tracks turn as they go: back when backing, each side its own way when turning in place.
 DescriptionEn=- F2 selects all your robots (the key can be changed on the Keys page).
+DescriptionEn=- F1 hides the whole battle interface, the selection rings and the cursor, and shows them again (Esc shows it too): to look at the battle, the shaders, a screenshot (F9). While hidden, clicks go to the battle, over windows nowhere.
 Author=Planetary Battles Online
 Kind=personal
 Default=on
 Dll=interface.dll
-Switches=DriveAimFar,TurretLaserGlow,DialogEsc,MinimapCursor,BuildingGroups,ConstructorKeys,ZoomFar,CameraShift,ChassisMotion
+Switches=DriveAimFar,TurretLaserGlow,DialogEsc,MinimapCursor,BuildingGroups,ConstructorKeys,ZoomFar,CameraShift,ChassisMotion,HideInterface
 Key.SelectAll=KEY_F2|Все роботы (мод)|All robots (mod)|Orders
+Key.HideUI=KEY_F1|Скрыть интерфейс (мод)|Hide the interface (mod)|Camera

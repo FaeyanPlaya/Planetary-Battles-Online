@@ -3,6 +3,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the LICENSE file included
 
+#include <algorithm>
 #include <new>
 #include <format>
 #include <stdexcept>
@@ -807,6 +808,7 @@ void CLaser::SetPos(const D3DXVECTOR3 &pos0, const D3DXVECTOR3 &pos1) {
     const D3DXVECTOR3 way = pos1 - pos0;
     const float length = D3DXVec3Length(&way);
     m_Dir = length > 0.001f ? way / length : D3DXVECTOR3(0, 0, 0);
+    m_Length = length;
 }
 
 void CLaser::BeforeDraw()
@@ -822,6 +824,23 @@ void CLaser::BeforeDraw()
     BYTE a = g_MatrixMap->IsPaused() ? 240 : (BYTE(FRND(128) + 128));
     m_bl.SetAlpha(a);
     m_end.SetAlpha(a);
+}
+
+void CLaser::AddShaderLights(void) const {
+    ShaderLights::add(m_From + m_Dir * 4.0f, 30.0f, 1.0f, 0.3f, 0.25f, ShaderLights::Kind::Shot, this);
+    // Along the beam, as the lightning: up to 4 lights, each lighting its stretch (each its own giver).
+    if (m_Length < 20.0f) return;
+    const int count = std::clamp(int(m_Length / 80.0f) + 1, 1, 4);
+    const float radius = 25.0f + m_Length / float(count) * 0.6f;
+    for (int i = 0; i < count; ++i) {
+        const float at = (float(i) + 0.5f) / float(count) * m_Length;
+        ShaderLights::add(m_From + m_Dir * at, radius, 0.9f, 0.22f, 0.18f, ShaderLights::Kind::Shot,
+                          reinterpret_cast<const char *>(this) + 1 + i);
+    }
+}
+
+void CVolcano::AddShaderLights(void) const {
+    ShaderLights::add(m_From, 40.0f, 1.0f, 0.75f, 0.35f, ShaderLights::Kind::Flash, this);
 }
 
 void CLaser::Draw(void) const
@@ -842,7 +861,8 @@ CVolcano::CVolcano(const D3DXVECTOR3 &start, const D3DXVECTOR3 &dir, float angle
     m_bl2(TRACE_PARAM_CALL start, start + dir * VOLCANO_FIRE_LENGHT, VOLCANO_FIRE_WIDTH, 0xFFFFFFFF,
           m_BBTextures[BBT_GUNFIRE2].tex),
     m_bl3(TRACE_PARAM_CALL start, start + dir * VOLCANO_FIRE_LENGHT, VOLCANO_FIRE_WIDTH, 0xFFFFFFFF,
-          m_BBTextures[BBT_GUNFIRE3].tex) {
+          m_BBTextures[BBT_GUNFIRE3].tex),
+    m_From(start) {
     m_EffectType = EFFECT_VOLCANO;
 }
 

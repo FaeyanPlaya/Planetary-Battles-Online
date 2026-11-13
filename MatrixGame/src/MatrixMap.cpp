@@ -5,9 +5,14 @@
 
 #include <new>
 #include <algorithm>
+#include <cmath>
+#include <set>
 
 #include <windows.h>
 #include "MatrixMap.hpp"
+#include "ShaderRender.hpp"
+#include "ShaderPacks.hpp"
+#include "ShaderLights.hpp"
 #include "SettingsWindow.hpp"
 #include "NetBattle.hpp"
 #include "Mods.hpp"
@@ -39,6 +44,7 @@
 #include "MatrixGameDll.hpp"
 #include "MatrixSampleStateManager.hpp"
 #include "MatrixMultiSelection.hpp"
+#include "InterfaceHide.hpp"
 
 #include "Effects/MatrixEffectLandscapeSpot.hpp"
 
@@ -177,6 +183,9 @@ CMatrixMap::~CMatrixMap() {
 void CMatrixMap::Clear(void) {
     DTRACE();
 
+    ShaderRender::shutdown();
+    InterfaceHide::reset();
+
     m_RN.Clear();
 
     m_Minimap.Clear();
@@ -237,6 +246,36 @@ void CMatrixMap::IdsClear() {
         m_Ids = NULL;
     }
     m_IdsCnt = 0;
+}
+
+// A robot's part (CMatrixRobot::RNeed) wears a skin made the first time it is asked for: its texture, and for sides
+// 2..4 "<texture>?Side<N>" in their colour. A battle's first robots asked for them mid-battle: 40-160 ms a frame while
+// the AI built them (lockstep's auto delay went up). Made here, while the battle loads and its sides are known, by
+// the same LoadObject with the same name (every part's model is loaded already: RobotPreload). Drawing only: the
+// battle reads none of it. (Flyers are left to their first flight: the data has models of flyers no battle
+// makes, whose textures are missing.)
+void CMatrixMap::SideSkinsPreload(void) {
+    std::wstring found;
+    const auto preload = [&](const std::wstring &model, std::wstring texture, int side) {
+        if (side >= 2 && CFile::FileExist(found, texture.c_str(), L"png~dds"))
+            texture += utils::format(L"?Side%d", side);
+        UnloadObject(LoadObject(model.c_str(), g_MatrixHeap, true, texture.c_str()), g_MatrixHeap);
+    };
+    const struct {
+        const wchar *path;
+        int count;
+    } parts[] = {{OBJECT_PATH_ROBOT_HEAD, ROBOT_HEAD_CNT},
+                 {OBJECT_PATH_ROBOT_CHASSIS, ROBOT_CHASSIS_CNT},
+                 {OBJECT_PATH_ROBOT_WEAPON, ROBOT_WEAPON_CNT},
+                 {OBJECT_PATH_ROBOT_ARMOR, ROBOT_ARMOR_CNT}};
+    for (int s = 0; s < m_SideCnt; ++s) {
+        const int side = m_Side[s].m_Id;
+        for (const auto &part : parts)
+            for (int kind = 1; kind <= part.count; ++kind) {
+                const std::wstring path = part.path + utils::format(L"%d", kind);
+                preload(path + L".vo", path, side);
+            }
+    }
 }
 
 void CMatrixMap::RobotPreload(void) {
@@ -855,6 +894,7 @@ bool CMatrixMap::DebugContainsObject(const CMatrixMapStatic *object) const {
 
 void CMatrixMap::StaticDelete(CMatrixMapStatic *ms) {
     DTRACE();
+    ShaderRender::voxels_forget(ms);
 
     if (ms->IsDIP())
         return;  // already deleted
@@ -1318,6 +1358,8 @@ void CMatrixMap::WaterClear() {
         m_Water = NULL;
     }
     m_VisWater.clear();
+    m_VisWaterTiles.clear();
+    m_VisWaterBlocks.clear();
 
     SInshorewave::MarkAllBuffersNoNeed();
 }
@@ -1334,6 +1376,8 @@ void CMatrixMap::WaterInit() {
     }
 
     m_VisWater.clear();
+    m_VisWaterTiles.clear();
+    m_VisWaterBlocks.clear();
     m_Water->Init();
 }
 
@@ -1668,8 +1712,12 @@ void CMatrixMap::BeforeDraw(void) {
     m_Minimap.BeforeDraw();
 
     CBillboard::BeforeDraw();
+    const bool shader_lights = ShaderLights::collecting();
+    ShaderLights::clear();  // (a frame that was not drawn to its end left its lights)
     for (PCMatrixEffect e = m_EffectsFirst; e != NULL; e = e->m_Next) {
         e->BeforeDraw();
+        if (shader_lights)
+            e->AddShaderLights();
     }
     CMatrixProgressBar::BeforeDrawAll();
     m_Water->BeforeDraw();
@@ -1894,7 +1942,7 @@ void CMatrixMap::DrawLandscape(bool all) {
     */
 }
 
-void CMatrixMap::DrawObjects(void) {
+void CMatrixMap::DrawObjects(bool (*each)(const CMatrixMapStatic &)) {
     DTRACE();
 
     // ASSERT_DX(g_D3DD->SetTextureStageState(1,D3DTSS_TEXCOORDINDEX,0));
@@ -1920,7 +1968,7 @@ void CMatrixMap::DrawObjects(void) {
     }
 
     // draw all objects
-    CMatrixMapStatic::SortEndDraw();
+    CMatrixMapStatic::SortEndDraw(each);
 
     // draw cannon for build
 
@@ -1933,6 +1981,44 @@ void CMatrixMap::DrawObjects(void) {
     }
 
     CVectorObject::DrawEnd();
+}
+
+void CMatrixMap::SplitVisWater() {
+    m_VisWaterTiles.clear();
+    m_VisWaterBlocks.clear();
+    constexpr int block = CMatrixWater::BLOCK;
+    const float tile = float(MAP_GROUP_SIZE * GLOBAL_SCALE);
+    const auto down = [](int a) { return a >= 0 ? a / block : -((block - 1 - a) / block); };
+    std::set<std::pair<int, int>> blocks;
+    for (const auto &p : m_VisWater) {
+        const int i = int(std::lround(p.x / tile)), j = int(std::lround(p.y / tile));
+        const int bi = down(i), bj = down(j);
+        // (a block with a group of the map in it: its tiles one by one, the map's water beside them as it is)
+        const bool outside = bi * block >= m_GroupSize.x || (bi + 1) * block <= 0 || bj * block >= m_GroupSize.y ||
+                             (bj + 1) * block <= 0;
+        if (!outside) m_VisWaterTiles.push_back(p);
+        else if (blocks.emplace(bi, bj).second)
+            m_VisWaterBlocks.emplace_back(float(bi * block) * tile, float(bj * block) * tile);
+    }
+}
+
+template<class Before>
+void CMatrixMap::DrawOpenWater(D3DXMATRIX m, Before before) {
+    for (const auto &item : m_VisWaterTiles) {
+        m._41 = item.x;
+        m._42 = item.y;
+        before(m);
+        m_Water->Draw(m);
+    }
+    if (m_VisWaterBlocks.empty()) return;
+    m_Water->BlockStreams();
+    for (const auto &item : m_VisWaterBlocks) {
+        m._41 = item.x;
+        m._42 = item.y;
+        before(m);
+        m_Water->DrawBlock(m);
+    }
+    m_Water->TileStreams();
 }
 
 void CMatrixMap::DrawWater(void) {
@@ -1965,45 +2051,62 @@ void CMatrixMap::DrawWater(void) {
     m._33 *= GLOBAL_SCALE * (float)(MAP_GROUP_SIZE) / (float)(WATER_SIZE);
     m._43 = WATER_LEVEL;
 
-    int curpass;
-
-    for (curpass = 0; curpass < g_Render->m_WaterPassAlpha; ++curpass) {
-        g_Render->m_WaterAlpha(m_Water->m_WaterTex1, m_Water->m_WaterTex2, curpass);
-
+    // A shader pack's water in place of the game's passes: the same parts, the map's mask of each group, all of it
+    // outside the map.
+    if (ShaderRender::water_begin(m_Water->m_WaterTex1->Tex(), m_Water->m_WaterTex2->Tex())) {
+        ASSERT_DX(g_D3DD->SetFVF(MATRIX_WATER_VERTEX_FORMAT));
+        ASSERT_DX(g_D3DD->SetStreamSource(0, GET_VB(m_Water->m_VB), 0, sizeof(SMatrixMapWaterVertex)));
+        ASSERT_DX(g_D3DD->SetIndices(GET_IB(m_Water->m_IB)));
         int cnt = m_VisibleGroupsCount;
         CMatrixMapGroup **md = m_VisibleGroups;
-
-        while ((cnt--) > 0) {
-            if (!(*(md))->HasWater()) {
-                ++md;
+        for (; cnt > 0; --cnt, ++md) {
+            if (!(*md)->HasWater())
                 continue;
-            }
-
-            if (curpass == 0)
-                ASSERT_DX(g_D3DD->SetTexture(0, (*md)->GetWaterAlpha()->Tex()));
-
-            const D3DXVECTOR2 &p = (*(md))->GetPos0();
+            const D3DXVECTOR2 &p = (*md)->GetPos0();
             m._41 = p.x;
             m._42 = p.y;
-            m_Water->Draw(m);
-            ++md;
-        }
-    }
-
-    g_Render->m_WaterClearAlpha();
-
-    for (curpass = 0; curpass < g_Render->m_WaterPassSolid; ++curpass) {
-        g_Render->m_WaterSolid(m_Water->m_WaterTex1, m_Water->m_WaterTex2, curpass);
-
-        for (const auto& item : m_VisWater)
-        {
-            m._41 = item.x;
-            m._42 = item.y;
+            ShaderRender::water_part((*md)->GetWaterAlpha()->Tex(), m);
             m_Water->Draw(m);
         }
+        DrawOpenWater(m, [](const D3DXMATRIX &part) { ShaderRender::water_part(nullptr, part); });
+        ShaderRender::water_end();
     }
+    else {
+        int curpass;
 
-    g_Render->m_WaterClearSolid();
+        for (curpass = 0; curpass < g_Render->m_WaterPassAlpha; ++curpass) {
+            g_Render->m_WaterAlpha(m_Water->m_WaterTex1, m_Water->m_WaterTex2, curpass);
+
+            int cnt = m_VisibleGroupsCount;
+            CMatrixMapGroup **md = m_VisibleGroups;
+
+            while ((cnt--) > 0) {
+                if (!(*(md))->HasWater()) {
+                    ++md;
+                    continue;
+                }
+
+                if (curpass == 0)
+                    ASSERT_DX(g_D3DD->SetTexture(0, (*md)->GetWaterAlpha()->Tex()));
+
+                const D3DXVECTOR2 &p = (*(md))->GetPos0();
+                m._41 = p.x;
+                m._42 = p.y;
+                m_Water->Draw(m);
+                ++md;
+            }
+        }
+
+        g_Render->m_WaterClearAlpha();
+
+        for (curpass = 0; curpass < g_Render->m_WaterPassSolid; ++curpass) {
+            g_Render->m_WaterSolid(m_Water->m_WaterTex1, m_Water->m_WaterTex2, curpass);
+
+            DrawOpenWater(m, [](const D3DXMATRIX &) {});
+        }
+
+        g_Render->m_WaterClearSolid();
+    }
 
     // g_D3DD->SetRenderState( D3DRS_NORMALIZENORMALS,  FALSE );
 
@@ -2075,13 +2178,14 @@ void CMatrixMap::DrawShadowsProjFast(void) {
 // open at its far end (it reaches the water plane, see BeforeDraw) then shadowed the floor beyond that end, and the
 // floor's shadow showed through the water as dark outlines of buildings and robots, far out on a far zoom. With the
 // surface's depth the volumes end on it. Only where the water is (its alpha mask on the map, all of it outside).
-void CMatrixMap::DrawWaterDepth(void) {
+void CMatrixMap::DrawWaterDepth(bool world) {
     DTRACE();
 
     if (!m_Water->IsReadyForDraw())
         return;
 
-    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0));
+    if (!world)
+        ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0));
     ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZENABLE, TRUE));
     ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZWRITEENABLE, TRUE));
     ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE));
@@ -2120,15 +2224,12 @@ void CMatrixMap::DrawWaterDepth(void) {
         ++md;
     }
     ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE));
-    for (const auto &item : m_VisWater) {
-        m._41 = item.x;
-        m._42 = item.y;
-        m_Water->Draw(m);
-    }
+    DrawOpenWater(m, [](const D3DXMATRIX &) {});
 
     g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
     g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
-    ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF));
+    if (!world)
+        ASSERT_DX(g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF));
 }
 
 void CMatrixMap::DrawShadows(const ShadowPasses &passes) {
@@ -2267,13 +2368,41 @@ void CMatrixMap::DrawEffects(void) {
 
     // CSortable::SortBegin();
 
+    // HideInterface: the interface's marks on the ground go with it (selection rings, the selection frame on the
+    // ground, the order's target, the path, the resources' figures); the battle's own effects stay.
+    const bool marks = !InterfaceHide::hidden();
+    const auto mark = [](EEffectType type) {
+        return type == EFFECT_SELECTION || type == EFFECT_SELECTION_LAND || type == EFFECT_MOVETO ||
+               type == EFFECT_PATH || type == EFFECT_SCORE;
+    };
+    // A shader pack's: the marks after the effects, into its SolidTex too (they are not glow).
+    const bool marks_later = ShaderRender::solid_taken();
+    ShaderRender::effects_begin();  // a shader pack's effects: its shader draws them
     for (PCMatrixEffect e = m_EffectsFirst; e != NULL; e = e->m_Next) {
+        if (mark(e->GetType()) && (!marks || marks_later))
+            continue;
         e->Draw();
     }
 
     ASSERT_DX(g_D3DD->SetTransform(D3DTS_WORLD, &GetIdentityMatrix()));
     CBillboard::SortEndDraw(m_Camera.GetViewInversedMatrix(), m_Camera.GetFrustumCenter());
+    ShaderRender::effects_end();
     CMatrixEffect::DrawEnd();
+
+    if (marks && marks_later) {
+        for (int pass = 0; pass < 2; ++pass) {
+            if (pass == 1 && !ShaderRender::solid_target())
+                break;
+            CMatrixEffect::DrawBegin();
+            for (PCMatrixEffect e = m_EffectsFirst; e != NULL; e = e->m_Next)
+                if (mark(e->GetType()))
+                    e->Draw();
+            ASSERT_DX(g_D3DD->SetTransform(D3DTS_WORLD, &GetIdentityMatrix()));
+            CBillboard::SortEndDraw(m_Camera.GetViewInversedMatrix(), m_Camera.GetFrustumCenter());
+            CMatrixEffect::DrawEnd();
+        }
+        ShaderRender::scene_target();
+    }
 }
 
 void CMatrixMap::DrawSky(void) {
@@ -2522,7 +2651,7 @@ void CMatrixMap::Draw(void) {
 
     // enable fogging
 
-    if (FLAG(g_MatrixMap->m_Flags, MMFLAG_FOG_ON)) {
+    if (FLAG(g_MatrixMap->m_Flags, MMFLAG_FOG_ON) && ShaderRender::game_fog()) {
         float Start = float(MAX_VIEW_DISTANCE * FOG_NEAR_K);  // For linear mode
         float End = float(MAX_VIEW_DISTANCE * FOG_FAR_K);
         if (g_D3DDCaps.RasterCaps & D3DPRASTERCAPS_WFOG) {}
@@ -2543,6 +2672,69 @@ void CMatrixMap::Draw(void) {
     }
     else {
         g_D3DD->SetRenderState(D3DRS_FOGENABLE, FALSE);
+    }
+
+    // A shader pack's shadow map: what casts shadows as the map light sees it, by the same drawing (no effects of
+    // the weapons, no sprites of the objects' lights: those are the camera's).
+    ShaderRender::time_begin(ShaderRender::Part::Shadow);
+    if (ShaderRender::shadow_begin()) {
+        const DWORD kept = m_Flags & (MMFLAG_OBJECTS_DRAWN | MMFLAG_DISABLE_DRAW_OBJECT_LIGHTS);
+        SETFLAG(m_Flags, MMFLAG_OBJECTS_DRAWN | MMFLAG_DISABLE_DRAW_OBJECT_LIGHTS);
+        // (a thing outside what the map covers: drawn there for nothing, and the map's own things are thousands)
+        DrawObjects([](const CMatrixMapStatic &object) {
+            const D3DXVECTOR3 &at = object.GetGeoCenter();
+            return ShaderRender::shadow_keeps(at.x, at.y, at.z, object.GetRadius());
+        });
+        DrawLandscape();
+        if (CTerSurface::IsSurfacesPresent())
+            DrawLandscapeSurfaces();
+        RESETFLAG(m_Flags, MMFLAG_OBJECTS_DRAWN | MMFLAG_DISABLE_DRAW_OBJECT_LIGHTS);
+        SETFLAG(m_Flags, kept);
+        ShaderRender::shadow_end();
+        ShaderRender::time_end(ShaderRender::Part::Shadow);
+        // The land's buffers remember that their streams are set; the objects' drawing takes the streams next, and
+        // the land drawn again would go by the wrong ones (it did: no land in the picture).
+        CMatrixMapGroup::BeforeDrawAll();
+        if (CTerSurface::IsSurfacesPresent())
+            CTerSurface::ForgetStreams();
+    }
+    // A shader pack's world pass: the same things by the pack's own shader into its targets (the camera's view;
+    // each thing's kind told first).
+    ShaderRender::time_begin(ShaderRender::Part::World);
+    if (ShaderRender::world_begin()) {
+        const DWORD kept = m_Flags & (MMFLAG_OBJECTS_DRAWN | MMFLAG_DISABLE_DRAW_OBJECT_LIGHTS);
+        SETFLAG(m_Flags, MMFLAG_OBJECTS_DRAWN | MMFLAG_DISABLE_DRAW_OBJECT_LIGHTS);
+        DrawObjects([](const CMatrixMapStatic &object) {
+            using ShaderPacks::Material;
+            Material material = Material::Object;
+            if (object.IsRobot()) material = Material::Robot;
+            else if (object.IsBuilding()) material = Material::Building;
+            else if (object.IsCannon()) material = Material::Cannon;
+            else if (object.IsFlyer()) material = Material::Flyer;
+            // The map's own things, thousands of them: one a few pixels across gives the pack nothing its depth does
+            // not, and they stand where they stood (none of them kept as moving: a draw's place a frame ago was
+            // looked up and kept for each).
+            const bool still = material == Material::Object;
+            const D3DXVECTOR3 &at = object.GetGeoCenter();
+            if (still && !ShaderRender::world_keeps(at.x, at.y, at.z, object.GetRadius()))
+                return false;
+            ShaderRender::world_material(int(material), still ? nullptr : &object);
+            return true;
+        });
+        ShaderRender::world_material(int(ShaderPacks::Material::Land), nullptr);
+        DrawLandscape();
+        if (CTerSurface::IsSurfacesPresent())
+            DrawLandscapeSurfaces();
+        // The water's surface over the land under it (its waves' normals; where the map has it: its mask's alpha).
+        ShaderRender::world_material(int(ShaderPacks::Material::Water), nullptr);
+        DrawWaterDepth(true);
+        RESETFLAG(m_Flags, MMFLAG_OBJECTS_DRAWN | MMFLAG_DISABLE_DRAW_OBJECT_LIGHTS);
+        SETFLAG(m_Flags, kept);
+        ShaderRender::world_end();
+        ShaderRender::time_end(ShaderRender::Part::World);
+        CMatrixMapGroup::BeforeDrawAll();
+        if (CTerSurface::IsSurfacesPresent())
+            CTerSurface::ForgetStreams();
     }
 
     // one per frame
@@ -2583,9 +2775,11 @@ void CMatrixMap::Draw(void) {
 
     CMatrixEffectLandscapeSpot::DrawAll();  // we should draw landscape spots immediately after draw landscape
 
+    ShaderRender::time_begin(ShaderRender::Part::Water);  // (the pack's or the game's)
     DrawWater();
     if (Mods::switches().far_view)
         DrawWaterDepth();
+    ShaderRender::time_end(ShaderRender::Part::Water);
 
     fBias = 0.0f;
     for (int i = 0; i < 4; i++) {
@@ -2602,13 +2796,19 @@ void CMatrixMap::Draw(void) {
         DrawShadows(shadows);
     }
 
+    ShaderRender::before_effects();  // a shader pack's SolidTex: the picture without the effects
+    ShaderRender::time_begin(ShaderRender::Part::Effects);  // (the pack's or the game's)
     DrawEffects();
+    ShaderRender::time_end(ShaderRender::Part::Effects);
 
     for (int od = 0; od < m_AD_Obj_cnt; ++od) {
         if (m_AD_Obj[od]->GetObjectType() == OBJECT_TYPE_FLYER) {
             ((CMatrixFlyer *)m_AD_Obj[od])->DrawPropeller();
         }
     }
+
+    // The 3D is drawn: a shader pack's passes put it on the screen, under the bars, the interface and the cursor.
+    ShaderRender::finish_scene();
 
     // CDText::T("COL", (int)GetColor(m_TraceStopPos.x, m_TraceStopPos.y));
 
@@ -2629,8 +2829,12 @@ void CMatrixMap::Draw(void) {
 
     // m_Minimap.Draw();
 
-    CMatrixProgressBar::DrawAll();
-    CMultiSelection::DrawAll();
+    // The interface (HideInterface hides it): the health bars, the frame being drawn, the pause's shade, the windows.
+    const bool interface_shown = !InterfaceHide::hidden();
+    if (interface_shown) {
+        CMatrixProgressBar::DrawAll();
+        CMultiSelection::DrawAll();
+    }
 
     //#ifdef _DEBUG
     //
@@ -2739,7 +2943,7 @@ void CMatrixMap::Draw(void) {
 
     //}
 
-    if (IsPaused()) {
+    if (IsPaused() && interface_shown) {
         ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE));
         ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE));
         ASSERT_DX(g_D3DD->SetRenderState(D3DRS_ZWRITEENABLE, FALSE));
@@ -2767,15 +2971,18 @@ void CMatrixMap::Draw(void) {
 
     m_DI.Draw();  // debug info
 
-    if (m_DialogModeName) {
-        if (wcscmp(m_DialogModeName, TEMPLATE_DIALOG_MENU) == 0) {
-            m_DialogModeHints[0]->DrawNow();
+    if (interface_shown) {
+        if (m_DialogModeName) {
+            if (wcscmp(m_DialogModeName, TEMPLATE_DIALOG_MENU) == 0) {
+                m_DialogModeHints[0]->DrawNow();
+            }
         }
-    }
 
-    g_IFaceList->Render();
-    CMatrixProgressBar::DrawAllClones();
-    CMatrixHint::DrawAll();
+        g_IFaceList->Render();
+        g_IFaceList->DrawFps();
+        CMatrixProgressBar::DrawAllClones();
+        CMatrixHint::DrawAll();
+    }
 
     //_________________________________________________________________________________________________
 
@@ -2785,6 +2992,17 @@ void CMatrixMap::Draw(void) {
 
     //_________________________________________________________________________________________________
 
+    // HideInterface hides the cursor too; shown again when the interface is (the game's own hiding kept apart: only a
+    // cursor hidden here is shown again).
+    static bool cursor_hidden = false;
+    if (!interface_shown && m_Cursor.IsVisible()) {
+        m_Cursor.SetVisible(false);
+        cursor_hidden = true;
+    }
+    else if (interface_shown && cursor_hidden) {
+        cursor_hidden = false;
+        if (!IsMouseCam()) m_Cursor.SetVisible(true);
+    }
     m_Cursor.Draw();
 }
 

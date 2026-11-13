@@ -19,6 +19,6 @@ struct AudioPackages {
 // Registers robots.pkg and the optional audio packages present in data, then opens the collection.
 // An optional package that cannot be opened is dropped and reported as missing; music.pkg is used only
 // when music is set.
-AudioPackages OpenPackages(const std::filesystem::path &data, bool music);
+AudioPackages OpenPackages(const std::filesystem::path &data, bool music, const std::filesystem::path &voices = {});  // voices: data\voices.pkg when empty
 
 } // namespace Startup

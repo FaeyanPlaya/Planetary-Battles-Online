@@ -1,8 +1,11 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "SettingsWindow.hpp"
+#include "GameLanguage.hpp"
 #include "SettingsModel.hpp"
 #include "StandaloneRuntime.hpp"
 #include "Mods.hpp"
+#include "ShaderPacks.hpp"
+#include "ShaderRender.hpp"
 #include "UiTheme.hpp"
 #include "ModInfoWindow.hpp"
 #include "GameArt.hpp"
@@ -18,8 +21,12 @@
 #include "MenuKeyLatch.hpp"
 #include "KeyBindings.hpp"
 #include "MatrixConfig.hpp"
+#include "ModInfo.hpp"
+#include "Text/Font.hpp"
+#include "3g.hpp"
 
 #include <stupid_logger.hpp>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cstring>
@@ -37,9 +44,6 @@ constexpr const wchar_t *dialog_name = L"Settings";
 // enables it and adds a click area over the label and the baked-in button.
 constexpr const wchar_t *menu_label_disabled = L"_COLOR:FF6794A3|_POS:6:105|_TEXT:[setup]";
 constexpr const wchar_t *menu_label_enabled = L"_COLOR:FFADA793|_POS:6:105|_TEXT:[setup]";
-constexpr const wchar_t *menu_label_highlight = L"-1|_FONT:Font.2Ranger|_WIDTH:200|_COLOR:FF6FE4FF|_TEXT:[setup]";
-constexpr int menu_label_x = 6;
-constexpr int menu_label_y = 105;
 
 struct Area {
     int left, top, right, bottom;
@@ -48,7 +52,7 @@ struct Area {
 constexpr Area menu_areas[] = {{5, 100, 160, 122}, {70, 121, 122, 168}};
 
 std::optional<SettingsModel::Window> model;
-CMatrixHint *menu_highlight = nullptr;
+bool menu_hovered = false;  // the pointer on the entry: its icon lit (its label stays, as the other entries')
 CMatrixHint *menu_icon_highlight = nullptr;
 // The settings icon as the menu's other buttons look under the pointer (light disc, cyan symbol),
 // made from the composed menu picture; shown over the icon while the pointer is on the entry.
@@ -59,8 +63,53 @@ constexpr int icon_left = int(icon_cx - icon_ring), icon_top = int(icon_cy - ico
 constexpr int icon_size = int(2 * icon_ring) + 2;
 CMatrixHint *startup_hint = nullptr;                    // the window over the startup menu
 std::unique_ptr<CBitmap> mod_buttons[3];                 // the mods page's switch off, on and "i"
+// The shaders screens' frames (SettingsModel::frames), kept while the game runs: a few sizes and colours.
+std::vector<std::pair<std::wstring, std::unique_ptr<CBitmap>>> frame_bitmaps;
+bool shaders_shown = false;    // the shaders screens were shown at the last build (opened: the packs read anew)
+bool folder_opened = false;    // the packs' folder was opened: read anew when the game is in front again
+DWORD last_click = 0;          // a pack clicked twice: its settings
+int last_click_pack = -1;
+
+void prepare_frames() {
+    for (const auto &frame : SettingsModel::frames(*model)) {
+        if (std::ranges::any_of(frame_bitmaps, [&](const auto &made) { return made.first == frame.name; })) continue;
+        auto bitmap = std::make_unique<CBitmap>();
+        bitmap->CreateRGBA(frame.width, frame.height);
+        for (int y = 0; y < frame.height; ++y)
+            for (int x = 0; x < frame.width; ++x) {
+                const bool edge = x == 0 || y == 0 || x == frame.width - 1 || y == frame.height - 1;
+                const uint32_t color = edge ? frame.border : frame.fill;
+                uint8_t *p = bitmap->Data() + y * bitmap->Pitch() + x * 4;  // B, G, R, A
+                p[0] = uint8_t(color);
+                p[1] = uint8_t(color >> 8);
+                p[2] = uint8_t(color >> 16);
+                p[3] = uint8_t(color >> 24);
+            }
+        CMatrixHint::SetRuntimeBitmap(frame.name, bitmap.get());
+        frame_bitmaps.emplace_back(frame.name, std::move(bitmap));
+    }
+}
+
+void release_frames() {
+    for (const auto &made : frame_bitmaps) CMatrixHint::SetRuntimeBitmap(made.first, nullptr);
+    frame_bitmaps.clear();
+}
+
+// The packs read anew: as the shaders screens open, and when the game is in front after their folder was opened.
+void refresh_packs() {
+    ShaderPacks::rescan();
+    model->shader_menu().set_packs(ShaderPacks::installed());
+}
+
+bool game_in_front() { return GetForegroundWindow() == g_Wnd; }
 
 void prepare_buttons() {
+    if (model) {
+        if (model->shaders_page() && !shaders_shown) refresh_packs();
+        shaders_shown = model->shaders_page();
+        model->set_shaders_problem(ShaderRender::problem());
+        prepare_frames();
+    }
     if (mod_buttons[0]) return;
     const GameArt::Button which[] = {GameArt::Button::SwitchOff, GameArt::Button::SwitchOn, GameArt::Button::Info};
     for (int i = 0; i < 3; ++i) mod_buttons[i] = GameArt::bitmap(GameArt::picture(which[i], SettingsModel::Layout::button_size));
@@ -125,6 +174,10 @@ void rebuild() {
         g_IFaceList->CreateHintButton(x + hint->GetCopyPos(0).x, y + hint->GetCopyPos(0).y, HINT_OK, apply_handler);
         g_IFaceList->CreateHintButton(x + hint->GetCopyPos(1).x, y + hint->GetCopyPos(1).y, HINT_CANCEL,
                                       cancel_handler);
+    }
+    else {  // the shaders screens: their own buttons
+        g_IFaceList->HideHintButton(HINT_OK);
+        g_IFaceList->HideHintButton(HINT_CANCEL);
     }
     ModInfoWindow::raise();
     ask(rebuild);
@@ -192,6 +245,153 @@ bool save_mod_settings(const SettingsModel::Window &window) {
     return true;
 }
 
+// What the shaders screens applied (their Done, Apply, a pack's settings opened), saved and drawn from the battle's
+// next frame when it is not what the game has.
+void save_shaders() {
+    const auto &applied = model->shaders();
+    if (applied == ShaderPacks::choice()) return;
+    std::string error;
+    if (ShaderPacks::save_choice(ShaderPacks::choice_file, applied, error)) lgr.notice("Shaders saved to CFG/shaders.txt");
+    else {
+        lgr.error("Cannot save CFG/shaders.txt: {}")(error);
+        model->set_error(true);
+    }
+    ShaderPacks::set_choice(applied);
+}
+
+void open_folder() {
+    std::error_code error;
+    const auto path = std::filesystem::absolute(ShaderPacks::folder, error);
+    std::filesystem::create_directories(path, error);
+    ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    folder_opened = true;
+}
+
+// After a shaders screen's key or click: saved what it applied; Done and Cancel of the list back to the main page.
+void shaders_after(ShaderMenu::After after) {
+    save_shaders();
+    if (after == ShaderMenu::After::MainPage) model->close_shaders();
+}
+
+void rebuild();
+void startup_rebuild();
+
+// Reset (D): asked first; yes sets the pack's settings as its author did (applied by Apply or Done).
+void ask_reset() {
+    if (!model->shader_menu().enabled(ShaderMenu::Button::Reset) || ModInfoWindow::open()) return;
+    const bool russian = model->language() == SettingsModel::Language::Russian;
+    ModInfo::Question question;
+    question.mod = russian ? L"Сбросить настройки?" : L"Reset the settings?";
+    question.subtitle = model->shader_menu().pack_name(model->shader_menu().chosen());
+    question.lines = {russian ? L"Все настройки набора станут такими, как задал автор."
+                              : L"All the pack's settings become as its author set them.",
+                      russian ? L"Применятся кнопкой «Применить» или «Готово»." : L"Apply or Done applies them."};
+    void (*rebuilt)() = startup_active() ? startup_rebuild : rebuild;
+    ModInfoWindow::ask(question, model->language(), 1.0, [rebuilt](bool yes) {
+        if (!model) return;
+        if (yes) model->shader_menu().reset();
+        rebuilt();
+    });
+}
+
+// The shaders screens' keys (true: drawn anew).
+bool shaders_key(uint8_t vk) {
+    auto &menu = model->shader_menu();
+    if (folder_opened && game_in_front()) {
+        folder_opened = false;
+        refresh_packs();
+    }
+    auto after = ShaderMenu::After::Stay;
+    switch (vk) {
+        case VK_UP: menu.move(-1); break;
+        case VK_DOWN: menu.move(1); break;
+        case VK_PRIOR:
+        case VK_NEXT:
+            for (int i = 0; i < menu.shown() - 1; ++i) menu.move(vk == VK_PRIOR ? -1 : 1);
+            break;
+        case VK_LEFT:
+        case VK_RIGHT:
+        case VK_SPACE:
+            if (menu.settings()) {
+                if (!menu.step(menu.row_focus(), vk == VK_LEFT ? -1 : 1) && !(vk != VK_LEFT && menu.open_row(menu.row_focus())))
+                    return false;
+            }
+            else if (menu.focus() < 0) menu.toggle();
+            else if (vk == VK_RIGHT) after = menu.press(ShaderMenu::Button::PackSettings);
+            else return false;
+            break;
+        case VK_RETURN: after = menu.enter(); break;
+        case VK_ESCAPE: after = menu.escape(); break;
+        default: {
+            const auto button = ShaderMenu::Menu::button_of_key(vk);  // F, S, L, A as the buttons say
+            if (!menu.enabled(button)) return false;
+            if (button == ShaderMenu::Button::Folder) open_folder();
+            else if (button == ShaderMenu::Button::Reset) ask_reset();
+            else after = menu.press(button);
+        }
+    }
+    shaders_after(after);
+    return true;
+}
+
+// A click on the shaders screens (window coordinates; true: taken).
+bool shaders_click(int x, int y) {
+    auto &menu = model->shader_menu();
+    const auto target = menu.hit(x, y);
+    auto after = ShaderMenu::After::Stay;
+    switch (target.kind) {
+        case ShaderMenu::Hit::Kind::None: return false;
+        case ShaderMenu::Hit::Kind::On: menu.toggle(); break;
+        case ShaderMenu::Hit::Kind::Pack: {
+            const DWORD now = GetTickCount();
+            const bool twice = target.index == last_click_pack && now - last_click <= GetDoubleClickTime();
+            menu.choose(target.index);
+            last_click = now;
+            last_click_pack = twice ? -1 : target.index;
+            if (twice) after = menu.press(ShaderMenu::Button::PackSettings);
+            break;
+        }
+        case ShaderMenu::Hit::Kind::Row:
+            menu.focus_row(target.index);
+            if (!menu.open_row(target.index)) menu.step(target.index, target.direction);
+            break;
+        case ShaderMenu::Hit::Kind::Info: {
+            ModInfo::Info info;
+            info.name = menu.label(target.index);
+            info.description = menu.comment(target.index);
+            ModInfoWindow::show(info, model->language(), 1.0);
+            return true;
+        }
+        case ShaderMenu::Hit::Kind::Button:
+            if (target.button == ShaderMenu::Button::Folder) open_folder();
+            else if (target.button == ShaderMenu::Button::Reset) ask_reset();
+            else after = menu.press(target.button);
+            break;
+    }
+    shaders_after(after);
+    const auto now = menu.hit(x, y);  // another screen: the button under the pointer now
+    menu.set_hover(now.kind == ShaderMenu::Hit::Kind::Button ? now.button : ShaderMenu::Button::None);
+    return true;
+}
+
+// The pointer over the shaders screens: a button lit, a settings row focused (the list's packs only by a click);
+// true: drawn anew.
+bool shaders_move(int x, int y) {
+    auto &menu = model->shader_menu();
+    bool update = false;
+    if (folder_opened && game_in_front()) {
+        folder_opened = false;
+        refresh_packs();
+        update = true;
+    }
+    const auto target = menu.hit(x, y);
+    update |= menu.set_hover(target.kind == ShaderMenu::Hit::Kind::Button ? target.button : ShaderMenu::Button::None);
+    if (target.kind == ShaderMenu::Hit::Kind::Row || target.kind == ShaderMenu::Hit::Kind::Info)
+        update |= menu.focus_row(target.index);
+    update |= ShaderRender::problem() != model->shaders_problem();  // the drawing built what was applied
+    return update;
+}
+
 // The keys page's keys (true: consumed). Waiting for a key, any key is the action's (Esc cancels).
 bool keys_page_key(uint8_t vk) {
     if (model->capturing()) {
@@ -201,8 +401,8 @@ bool keys_page_key(uint8_t vk) {
     switch (vk) {
         case VK_UP: model->key_move(-1); return true;
         case VK_DOWN: model->key_move(1); return true;
-        case VK_PRIOR: model->key_move(-SettingsModel::Window::key_rows_shown); return true;
-        case VK_NEXT: model->key_move(SettingsModel::Window::key_rows_shown); return true;
+        case VK_PRIOR: model->key_move(-model->rows_shown()); return true;
+        case VK_NEXT: model->key_move(model->rows_shown()); return true;
         case VK_RETURN: model->key_activate(); return true;
         case VK_DELETE: model->key_default(); return true;
         case VK_ESCAPE: model->close_keys(); return true;
@@ -211,19 +411,27 @@ bool keys_page_key(uint8_t vk) {
 }
 
 SettingsModel::Language language() {
-    return SettingsModel::detect_language(g_MatrixData->BlockGet(PAR_REPLACE)->ParGetNE(L"setup"));
+    return GameLanguage::current();
 }
 
 // The window's model; the installed mods first, as they give KeyBindings their keys.
 void make_model(const StandaloneSettings::Values &values) {
     const auto &mods = Mods::installed();
     model.emplace(values, adapter_modes(), language(), Mods::default_personal(mods), unavailable(), current_keys(),
-                  KeyBindings::base(), mods, Mods::setting_values());
+                  KeyBindings::base(), mods, Mods::setting_values(), ShaderPacks::installed(), ShaderPacks::choice());
+    model->set_shaders_problem(ShaderRender::problem());
+    model->set_text_width([](const std::wstring &text, const wchar_t *font) {
+        return int(Text::GetFont(g_D3DD, font).CalcTextWidth(text));
+    });
+    // The shaders screens as tall as the screen allows (480 at least: none more), at most 12 rows more.
+    model->set_extra_rows(std::clamp((g_ScreenY - 600) / SettingsModel::Layout::row_height, 0, 12));
+    // The other pages: the main page's every row where the screen has the room.
+    model->set_rows(SettingsModel::rows_for_screen(g_ScreenY));
+    shaders_shown = false;
 }
 
 void release_menu_highlight() {
-    if (menu_highlight) menu_highlight->Release();
-    menu_highlight = nullptr;
+    menu_hovered = false;
     if (menu_icon_highlight) menu_icon_highlight->Release();
     menu_icon_highlight = nullptr;
 }
@@ -303,6 +511,13 @@ bool keyboard(uint8_t vk, bool down) {
         }
         return true;
     }
+    if (model->shaders_page()) {
+        if (shaders_key(vk)) {
+            CSound::Play(S_BCLICK);
+            rebuild();
+        }
+        return true;
+    }
     bool update = false;
     switch (vk) {
         case VK_UP:
@@ -349,12 +564,28 @@ void mouse_move(int x, int y) {
         if (row >= 0 && !model->capturing() && model->key_select(row)) rebuild();
         return;
     }
+    if (model->shaders_page()) {
+        const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
+        if (shaders_move(x - hint->m_PosX, y - hint->m_PosY)) rebuild();
+        return;
+    }
     const auto target = hit(x, y);
     if (target.row >= 0 && model->select(target.row)) rebuild();
 }
 
 bool mouse_down(int x, int y) {
     if (!active()) return false;
+    if (model->shaders_page()) {
+        if (ModInfoWindow::open()) {
+            ModInfoWindow::click(x, y);
+            return true;
+        }
+        const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
+        if (!shaders_click(x - hint->m_PosX, y - hint->m_PosY)) return false;
+        CSound::Play(S_BCLICK);
+        if (active()) rebuild();
+        return true;
+    }
     if (model->keys_page()) {
         const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
         const int row = model->key_hit(x - hint->m_PosX, y - hint->m_PosY);
@@ -389,8 +620,12 @@ bool mouse_wheel(int notches) {
         model->key_scroll(-notches);  // away from the person: up
         rebuild();
     }
-    else if (model->mods_page()) {
-        model->mods_scroll(-notches);
+    else if (model->shaders_page()) {
+        model->shader_menu().scroll(-notches);
+        rebuild();
+    }
+    else {  // the main page or the mods page
+        model->scroll(-notches);
         rebuild();
     }
     return true;
@@ -418,17 +653,27 @@ void paint_menu_icon(CBitmap &menu) {
             const float w = d <= inner ? 1.0f : (ring - d) / (ring - inner);
             uint8_t *p = menu.Data() + y * menu.Pitch() + x * menu.BytePP();  // B, G, R[, A]
             const float lum = (0.11f * p[0] + 0.59f * p[1] + 0.3f * p[2]) / 255.0f;
-            // Light grey disc and dark symbol, as on the other buttons (dark teal 0.21..0.42 in).
-            const float grey = std::clamp(0.72f + 2.4f * (lum - 0.30f), 0.0f, 1.0f) * 255.0f;  // the ring stays dark
-            for (int c = 0; c < 3; ++c) p[c] = uint8_t(p[c] * (1.0f - w) + grey * w + 0.5f);
-            // Focused: the dark symbol turns cyan, the light disc stays (B, G, R, A).
+            // The original's dark teal (0.21..0.42) as grey: its disc 167..205, lit from the top (own), its symbol
+            // darker (the folder) and lighter (the outlines) than that.
+            const float grey = std::clamp(0.72f + 2.4f * (lum - 0.30f), 0.0f, 1.0f) * 255.0f;
+            const float X = x - cx, Y = y - cy;
+            const float own = 200.5f - 0.06f * X - 0.76f * Y - 0.071f * (X * X + Y * Y);
+            const float symbol = grey - own;
+            // As the other buttons (measured on New battle's): the disc lit from the top left, darker to the bottom
+            // right; the symbol dark grey with light edges. The symbol's place is off the ring (its edge stays the disc).
+            const float disc = 179.0f - 0.9f * X - 1.9f * Y;
+            const float inside = std::clamp((19.5f - d) / 2.0f, 0.0f, 1.0f);
+            const float shown = std::clamp(disc + inside * symbol * (symbol < 0.0f ? 1.35f : 0.7f), 0.0f, 255.0f);
+            const float tint[3] = {1.0f, 0.0f, -1.0f};  // B, G, R: their grey is a touch blue
+            for (int c = 0; c < 3; ++c) p[c] = uint8_t(std::clamp(p[c] * (1.0f - w) + (shown + tint[c]) * w, 0.0f, 255.0f) + 0.5f);
+            // Focused: as theirs, the dark of the symbol turns cyan (its own darkness kept), its edges, the disc and
+            // the ring stay (B, G, R, A).
             const int fx = x - icon_left, fy = y - icon_top;
             if (fx < 0 || fy < 0 || fx >= icon_size || fy >= icon_size) continue;
             uint8_t *f = focused_icon->Data() + fy * focused_icon->Pitch() + fx * 4;
-            // The repainted disc is 0.55..0.9 bright, its symbol 0.4..0.5.
-            const float symbol = std::clamp((0.56f - grey / 255.0f) / 0.12f, 0.0f, 1.0f) * w;
-            const float cyan[3] = {245.0f, 214.0f, 64.0f};
-            for (int c = 0; c < 3; ++c) f[c] = uint8_t(p[c] * (1.0f - symbol) + cyan[c] * symbol + 0.5f);
+            const float lit = std::clamp(-symbol / 40.0f, 0.0f, 1.0f) * inside * w;
+            const float cyan[3] = {std::min(255.0f, shown * 2.2f), std::min(255.0f, shown * 2.1f), shown * 0.3f};
+            for (int c = 0; c < 3; ++c) f[c] = uint8_t(p[c] * (1.0f - lit) + cyan[c] * lit + 0.5f);
             f[3] = uint8_t(255.0f * std::min(1.0f, (ring - d) * 2.0f) + 0.5f);
         }
     CMatrixHint::SetRuntimeBitmap(focused_icon_bitmap, focused_icon.get());
@@ -447,10 +692,9 @@ void menu_mouse_move(int x, int y) {
         release_menu_highlight();
         return;
     }
-    if (menu_highlight) return;
+    if (menu_hovered) return;
+    menu_hovered = true;
     const CMatrixHint *menu = g_MatrixMap->m_DialogModeHints[0];
-    menu_highlight = CMatrixHint::Build(menu_label_highlight, g_MatrixData->BlockGet(PAR_REPLACE));
-    menu_highlight->Show(menu->m_PosX + menu_label_x, menu->m_PosY + menu_label_y);
     if (focused_icon) {
         menu_icon_highlight = CMatrixHint::Build(std::wstring(L"-1|_BITMAP:") + focused_icon_bitmap + L":B",
                                                  static_cast<CBlockPar *>(nullptr));
@@ -470,6 +714,7 @@ void shutdown() {
     ModInfoWindow::close();
     release_menu_highlight();
     release_focused_icon();
+    release_frames();
     if (startup_hint) startup_hint->Release();
     startup_hint = nullptr;
     startup_values = nullptr;
@@ -544,6 +789,10 @@ bool startup_keyboard(uint8_t vk, bool down) {
         if (down && keys_page_key(vk)) startup_rebuild();
         return true;
     }
+    if (model->shaders_page()) {
+        if (down && shaders_key(vk)) startup_rebuild();
+        return true;
+    }
     bool update = false;
     switch (vk) {
         case VK_UP: model->move(-1); update = true; break;
@@ -578,6 +827,10 @@ void startup_mouse_move(int x, int y) {
         if (row >= 0 && !model->capturing() && model->key_select(row)) startup_rebuild();
         return;
     }
+    if (model->shaders_page()) {
+        if (shaders_move(x - startup_hint->m_PosX, y - startup_hint->m_PosY)) startup_rebuild();
+        return;
+    }
     const auto target = model->hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY);
     if (target.row >= 0 && model->select(target.row)) startup_rebuild();
 }
@@ -590,7 +843,11 @@ bool startup_mouse_down(int x, int y) {
     }
     x -= startup_hint->m_PosX;
     y -= startup_hint->m_PosY;
-    if (const int button = SettingsModel::startup_button(x, y)) {
+    if (model->shaders_page()) {
+        if (shaders_click(x, y)) startup_rebuild();
+        return true;
+    }
+    if (const int button = SettingsModel::startup_button(*model, x, y)) {
         startup_close(button > 0);
         return true;
     }
@@ -622,8 +879,12 @@ bool startup_mouse_wheel(int notches) {
         model->key_scroll(-notches);
         startup_rebuild();
     }
-    else if (model->mods_page()) {
-        model->mods_scroll(-notches);
+    else if (model->shaders_page()) {
+        model->shader_menu().scroll(-notches);
+        startup_rebuild();
+    }
+    else {
+        model->scroll(-notches);
         startup_rebuild();
     }
     return true;

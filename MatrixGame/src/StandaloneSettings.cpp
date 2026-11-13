@@ -26,7 +26,8 @@ constexpr std::array keys{L"RandomGenerator", L"ResolutionWidth", L"ResolutionHe
                           L"Skybox",          L"RobotShadows",    L"CameraSpeed",      L"DelayedDamage",
                           L"Map",             L"GroupCounts",      L"BattleBonus",      L"PlaceContainment",
                           L"ZeroXTrace",      L"MusicVolume",      L"Mods",             L"PersonalMods",
-                          L"FarViewScale",    L"SavedDesigns",     L"Theme"};
+                          L"FarViewScale",    L"SavedDesigns",     L"Theme",            L"Language",
+                          L"ShowFps"};
 
 std::optional<std::wstring> single(const Base::CBlockPar &options, const wchar_t *key) {
     if (options.ParCount(key) != 1) return std::nullopt;
@@ -56,6 +57,13 @@ std::optional<Theme> theme(const std::wstring &value) {
     if (value == L"system") return Theme::System;
     if (value == L"light") return Theme::Light;
     if (value == L"dark") return Theme::Dark;
+    return std::nullopt;
+}
+
+std::optional<LanguageChoice> language(const std::wstring &value) {
+    if (value == L"system") return LanguageChoice::System;
+    if (value == L"russian") return LanguageChoice::Russian;
+    if (value == L"english") return LanguageChoice::English;
     return std::nullopt;
 }
 
@@ -144,7 +152,9 @@ std::wstring value_text(const Values &values, std::wstring_view key) {
     if (key == L"ProjectedShadows") return on_off(values.projected_shadows);
     if (key == L"Skybox") return utils::to_wstring(name(values.skybox));
     if (key == L"Theme") return utils::to_wstring(name(values.theme));
+    if (key == L"Language") return utils::to_wstring(name(values.language));
     if (key == L"RobotShadows") return on_off(values.robot_shadows);
+    if (key == L"ShowFps") return on_off(values.show_fps);
     if (key == L"CameraSpeed") return std::to_wstring(values.camera_speed);
     if (key == L"DelayedDamage") return utils::to_wstring(name(values.delayed_damage));
     if (key == L"BattleBonus") {
@@ -291,6 +301,15 @@ const char *name(Skybox skybox) {
     return "High";
 }
 
+const char *name(LanguageChoice language) {
+    switch (language) {
+        case LanguageChoice::System: return "System";
+        case LanguageChoice::Russian: return "Russian";
+        case LanguageChoice::English: return "English";
+    }
+    return "System";
+}
+
 const char *name(Theme theme) {
     switch (theme) {
         case Theme::System: return "System";
@@ -330,7 +349,9 @@ Selection resolve(const Base::CBlockPar &options) {
     read(options, L"ProjectedShadows", values.projected_shadows, boolean, selection);
     read(options, L"Skybox", values.skybox, skybox, selection);
     read(options, L"Theme", values.theme, theme, selection);
+    read(options, L"Language", values.language, language, selection);
     read(options, L"RobotShadows", values.robot_shadows, boolean, selection);
+    read(options, L"ShowFps", values.show_fps, boolean, selection);
     read(options, L"DelayedDamage", values.delayed_damage, delayed_damage, selection);
     if (options.ParCount(L"Map")) {
         if (const auto map = map_path(options)) values.map = *map;

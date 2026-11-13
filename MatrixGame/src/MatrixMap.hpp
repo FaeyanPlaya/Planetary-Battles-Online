@@ -484,6 +484,14 @@ protected:
     float m_maxz;
 
     std::vector<D3DXVECTOR2> m_VisWater;
+    // The open sea as drawn (SplitVisWater): the corners of the blocks wholly past the map's edge (CMatrixWater::
+    // BLOCK tiles a side, one draw each), and the tiles of the others one by one.
+    std::vector<D3DXVECTOR2> m_VisWaterTiles, m_VisWaterBlocks;
+    void SplitVisWater();
+    // The open sea drawn with the water's tile or block streams, each part's world matrix from m (its scale kept);
+    // before: a part's own setting (the pack's water). The tile's streams set again after.
+    template<class Before>
+    void DrawOpenWater(D3DXMATRIX m, Before before);
 
     CMatrixMapGroup **m_VisibleGroups;
     int m_VisibleGroupsCount;
@@ -587,6 +595,7 @@ public:
      *  @brief Loads/processes all robot models(Vector Objects)/textures in memory.
      */
     void RobotPreload(void);
+    void SideSkinsPreload(void);  // after the map: the skins of every side's robot parts
 
     const D3DXMATRIX &GetIdentityMatrix(void) const { return m_Identity; }
 
@@ -816,9 +825,11 @@ public:
     /**
      * @brief Draws all static objects on the map.
      */
-    void DrawObjects(void);
+    void DrawObjects(bool (*each)(const CMatrixMapStatic &) = nullptr);  // each: before an object's drawing (false: not drawn)
     void DrawWater(void);
-    void DrawWaterDepth(void);  // the far view: the water's surface into the depth buffer (see MatrixMap.cpp)
+    // The far view: the water's surface into the depth buffer (see MatrixMap.cpp); `world`: a shader pack's world
+    // pass draws it (into its targets: the colour written too).
+    void DrawWaterDepth(bool world = false);
     void DrawShadowsProjFast(void);
     void DrawShadows(const ShadowPasses &passes);
     void DrawEffects(void);

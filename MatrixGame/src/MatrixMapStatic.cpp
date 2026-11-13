@@ -788,10 +788,12 @@ void CMatrixMapStatic::SortEndGraphicTakt(int step) {
     }
 }
 
-void CMatrixMapStatic::SortEndDraw(void) {
+void CMatrixMapStatic::SortEndDraw(bool (*each)(const CMatrixMapStatic &)) {
     DTRACE();
 
     for (int i = objects_left; i < objects_rite; ++i) {
+        if (each && !each(*objects[i]))
+            continue;
         objects[i]->Draw();
     }
 }
