@@ -228,10 +228,12 @@ public:
         }
         m_RemindCore.Use(5000);
 #else
+        // Loaded only: no IDirect3DResource9::PreLoad, a hint Direct3D does not need (a managed texture goes to the
+        // card when drawn), asked of each interface element's every frame. (It was where a freed texture crashed
+        // first, in Direct3D's resource manager: a dead robot's group icon, CIFaceList::ForgetTextures.)
         if (!m_Tex) {
             Load();
         }
-        m_Tex->PreLoad();
 #endif
     }
 

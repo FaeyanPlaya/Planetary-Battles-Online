@@ -36,6 +36,11 @@
 extern HINSTANCE g_HInst;
 extern IDirect3D9 *g_D3D;
 extern IDirect3DDevice9 *g_D3DD;
+// A shader pack's world pass (MatrixGame's ShaderRender): while it draws, called before each draw of the world's
+// solid things, once their states and textures are set; `visible` false: a draw that only fills the depth. While it
+// draws the effects, before each effect's draw; `visible` false there: an effect laid in the world (a light's spot on
+// the land, the capture spots, the rings), not one turned to the camera. Else null.
+extern void (*g_WorldDrawHook)(bool visible);
 extern D3DCAPS9 g_D3DDCaps;
 extern HWND g_Wnd;
 extern int g_ScreenX, g_ScreenY;

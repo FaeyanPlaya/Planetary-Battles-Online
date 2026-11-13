@@ -171,6 +171,7 @@ void CBillboard::SortEndDraw(const D3DXMATRIX &iview, const D3DXVECTOR3 &campos)
 
         ASSERT_DX(g_D3DD->SetTexture(0, m_SortableTex->Tex()));
 
+        if (g_WorldDrawHook) g_WorldDrawHook(true);  // (a shader pack's effects)
         ASSERT_DX(g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, ns * 4, 0, ns * 2));
     }
 
@@ -196,6 +197,7 @@ void CBillboard::SortEndDraw(const D3DXMATRIX &iview, const D3DXVECTOR3 &campos)
         for (int i = 0; i < groupscnt; ++i) {
             groups[i].tex->Preload();
             ASSERT_DX(g_D3DD->SetTexture(0, groups[i].tex->Tex()));
+            if (g_WorldDrawHook) g_WorldDrawHook(true);  // (a shader pack's effects)
             ASSERT_DX(g_D3DD->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, groups[i].min_idx, groups[i].cntv,
                                                    groups[i].ibase, groups[i].cntt));
         }
@@ -461,6 +463,7 @@ void CBillboard::DrawNow(const D3DXMATRIX &iview) {
     D3DXMatrixIdentity(&wrld);
     g_D3DD->SetTransform(D3DTS_WORLD, &wrld);
 
+    if (g_WorldDrawHook) g_WorldDrawHook(true);  // (a shader pack's effects)
     g_D3DD->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, &vb, sizeof(SBillboardVertex));
 
     g_D3DD->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
@@ -600,6 +603,7 @@ void CBillboardLine::DrawNow(const D3DXVECTOR3 &campos) const
     D3DXMatrixIdentity(&wrld);
     g_D3DD->SetTransform(D3DTS_WORLD, &wrld);
 
+    if (g_WorldDrawHook) g_WorldDrawHook(true);  // (a shader pack's effects)
     g_D3DD->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, &vb, sizeof(SBillboardVertex));
 
     g_D3DD->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);

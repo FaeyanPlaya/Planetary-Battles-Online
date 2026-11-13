@@ -38,6 +38,7 @@
 HINSTANCE g_HInst = 0;
 IDirect3D9 *g_D3D = NULL;
 IDirect3DDevice9 *g_D3DD = NULL;
+void (*g_WorldDrawHook)(bool visible) = nullptr;
 namespace {
 Graphics::Reference<IDirect3D9> owned_direct3d;
 Graphics::Reference<IDirect3DDevice9> owned_device;

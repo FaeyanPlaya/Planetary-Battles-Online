@@ -1539,6 +1539,8 @@ void CVectorObject::Draw(int noframe, DWORD user_param, const SSkin *ds) {
 
             again |= (nextpass[surf] = ss->m_SetupStages(ss, user_param, pass));
             ss->m_SetupTex(ss, user_param, pass);
+            if (g_WorldDrawHook)
+                g_WorldDrawHook(true);
 
             SVOKadr *k = m_Geometry.m_Frames + noframe;
             for (int i = 0; i < k->m_UnionCnt; ++i) {
