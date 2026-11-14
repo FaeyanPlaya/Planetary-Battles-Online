@@ -949,7 +949,11 @@ void update_horizon(CMatrixMap &map) {
 
 // This frame's constants as constants() set them: the passes after Interface= are given the same (constants() moves
 // the frame on: the previous camera, the time's step, the lights collected).
-std::array<D3DXVECTOR4, lights_register + 1 + 3 * ShaderLights::max_lights> g_constants{};
+// (to the last register a pass reads, VoxelExtent's c141: the shadow's colour, the horizon, the shadow map's matrix
+// and the rest past the lights are given again too)
+constexpr int constants_count = 142;
+static_assert(constants_count >= lights_register + 1 + 3 * ShaderLights::max_lights);
+std::array<D3DXVECTOR4, constants_count> g_constants{};
 
 void put_constants(int reg, const float *values, int count) {
     g_D3DD->SetPixelShaderConstantF(UINT(reg), values, UINT(count));

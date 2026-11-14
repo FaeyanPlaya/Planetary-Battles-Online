@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <deque>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace Audio {
@@ -34,13 +35,32 @@ struct ComScope {
     ~ComScope() { if (owned) CoUninitialize(); }
 };
 
+std::wstring system_folder() {
+    wchar_t path[MAX_PATH]{};
+    const UINT length = GetSystemDirectoryW(path, MAX_PATH);
+    return length > 0 && length < MAX_PATH ? std::wstring(path, length) : std::wstring();
+}
+
+std::wstring exe_folder() {
+    std::wstring path(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(nullptr, path.data(), DWORD(path.size()));
+    if (length == 0 || length >= path.size()) return {};
+    path.resize(length);
+    const auto slash = path.find_last_of(L"\\/");
+    return slash == std::wstring::npos ? std::wstring() : path.substr(0, slash);
+}
+
+HMODULE beside(const std::wstring &folder, const wchar_t *name) {
+    return folder.empty() ? nullptr : LoadLibraryW((folder + L"\\" + name).c_str());
+}
+
 struct Library {
     // Windows 10's own; before it (7 SP1, 8.1) Microsoft's redistributable copy beside the exe
     // (xaudio2_9redist.dll, the Microsoft.XAudio2.Redist package), the same interface.
-    HMODULE module{LoadLibraryExW(L"xaudio2_9.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32)};
+    // (by full paths: the LOAD_LIBRARY_SEARCH_ flags need KB2533623 on Windows 7, without it they fail outright)
+    HMODULE module{beside(system_folder(), L"xaudio2_9.dll")};
     Library() {
-        if (!module) module = LoadLibraryExW(L"xaudio2_9redist.dll", nullptr, LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
-                                                                           LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!module) module = beside(exe_folder(), L"xaudio2_9redist.dll");
         if (!module)
             throw std::runtime_error("XAudio2.9 is unavailable: Windows 10 has it; on Windows 7 or 8.1 "
                                      "xaudio2_9redist.dll beside the exe gives it");
