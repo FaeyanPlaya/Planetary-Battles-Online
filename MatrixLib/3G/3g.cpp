@@ -224,11 +224,13 @@ void L3GInitAsEXE(HINSTANCE hinst, [[maybe_unused]] CBlockPar& bpcfg, const wcha
     };
     auto cd_res = create();
     int lost_tries = 0;
-    for (; cd_res == D3DERR_DEVICELOST && lost_tries < 300; ++lost_tries) {
+    bool quit = false;  // (closed meanwhile: no more tries; WM_QUIT posted again for the game's own loop)
+    for (; cd_res == D3DERR_DEVICELOST && lost_tries < 300 && !quit; ++lost_tries) {
         MSG msg;
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
-                PostQuitMessage(int(msg.wParam));  // (for the game's own loop)
+                PostQuitMessage(int(msg.wParam));
+                quit = true;
                 break;
             }
             TranslateMessage(&msg);
