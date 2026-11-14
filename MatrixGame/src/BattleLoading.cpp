@@ -84,6 +84,7 @@ class Screen {
             InvalidateRect(window, nullptr, FALSE);
             return 0;
         }
+        if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
         if (message == WM_ERASEBKGND) return 1;
         if (message == WM_PAINT) {
             PAINTSTRUCT paint{};
@@ -119,7 +120,10 @@ class Screen {
         type.hCursor = LoadCursor(nullptr, IDC_ARROW);
         type.lpszClassName = class_name;
         const ATOM registered = RegisterClassW(&type);
-        HWND window = registered ? CreateWindowExW(WS_EX_APPWINDOW, class_name, L"MatrixGame - Loading",
+        // Never the active window: it lives on a thread of its own, so its activation took the game's thread out
+        // of activity (WM_ACTIVATEAPP), the game's loop then waited without drawing, and with no frame presented this
+        // window stayed until closed by hand (the startup menu's closing could hand the activation to it).
+        HWND window = registered ? CreateWindowExW(WS_EX_APPWINDOW | WS_EX_NOACTIVATE, class_name, L"MatrixGame - Loading",
             WS_POPUP | WS_CAPTION | WS_SYSMENU, bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top,
             nullptr, nullptr, type.hInstance, this) : nullptr;
         created = window != nullptr;
@@ -198,7 +202,9 @@ void connect(std::wstring_view name) {
 }
 bool has_parent() { return parent.value != nullptr; }
 void presented(HRESULT result) {
-    if (result != S_OK) return;
+    // Any success: S_PRESENT_OCCLUDED too, which Windows 7 without desktop composition gives the game's window while
+    // this loading window covers it (S_OK alone kept it up until closed by hand).
+    if (FAILED(result)) return;
     if (parent.value) SetEvent(parent.value);
     parent.reset();
     handoff_screen_owned_elsewhere = false;

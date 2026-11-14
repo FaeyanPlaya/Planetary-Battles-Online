@@ -1,6 +1,7 @@
 // MatrixGame - licensed under GPLv2 or any later version.
 #include "ShaderMenu.hpp"
 #include "SettingsModel.hpp"
+#include "utils.hpp"
 
 #include <algorithm>
 
@@ -315,7 +316,7 @@ bool Menu::set_hover(Button button) {
 }
 
 int Menu::row_y(int place) const {
-    return rows_y() + place * Layout::row_height;
+    return rows_y() + place * (settings() ? Layout::row_height : Layout::pack_row_height);
 }
 
 Hit Menu::hit(int x, int y) const {
@@ -327,7 +328,7 @@ Hit Menu::hit(int x, int y) const {
         if (x < Layout::left || x >= Layout::right) return {};
         if (y >= Layout::on_y && y < Layout::on_y + Layout::row_height) return {Hit::Kind::On};
         if (y < rows_y()) return {};
-        const int place = (y - rows_y()) / Layout::row_height;
+        const int place = (y - rows_y()) / Layout::pack_row_height;
         if (place >= list_rows() || m_ListTop + place >= int(m_Packs.size())) return {};
         return {Hit::Kind::Pack, m_ListTop + place};
     }
@@ -381,6 +382,13 @@ std::wstring Menu::value(int row) const {
     // A switch's words in the person's language (its code still sees On and Off).
     if (value == L"On") return text(L"On", L"Вкл");
     if (value == L"Off") return text(L"Off", L"Выкл");
+    // The pack's own name of a word (Value.<Id>.<Word>=; one language given: that one).
+    if (const auto named = pack()->value_names.find(pack()->settings[at.index].id + "." + utils::from_wstring(value));
+        named != pack()->value_names.end()) {
+        const auto &[russian, english] = named->second;
+        if (russian.empty() || english.empty()) return russian.empty() ? english : russian;
+        return GameLanguage::pick(m_Russian, russian, english);
+    }
     return value;
 }
 

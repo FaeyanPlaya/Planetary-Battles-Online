@@ -73,7 +73,9 @@ struct Run {
     int next_camera_ms = 0;
     int camera_index = 0;
     std::size_t next_shot = 0;  // in options.shots_at
-    std::ofstream slow;         // the slow frames (options.slow_frames_ms)
+    int next_shuffle_ms = 0;    // options.shader_shuffle_ms
+    std::uint32_t shuffle_random = 0;
+    std::ofstream slow;        // the slow frames (options.slow_frames_ms)
     std::chrono::steady_clock::time_point last_wall{};
 } *g_run = nullptr;
 
@@ -339,6 +341,7 @@ Options load(const wchar_t *path) {
     if (bp.ParCount(L"Record")) o.record = utils::trim(bp.ParGet(L"Record"));
     if (bp.ParCount(L"Replay")) o.replay = utils::trim(bp.ParGet(L"Replay"));
     if (bp.ParCount(L"ShotsAt")) o.shots_at = parse_shots(utils::trim(bp.ParGet(L"ShotsAt")));
+    o.shader_shuffle_ms = std::max(0, int_par(bp, L"ShaderShuffleMs", 0));
     if (const auto &source = !o.command_replay.empty() ? o.command_replay : o.replay; !source.empty())
         o.rules = read_rules(source);
     if (bp.ParCount(L"Bonus")) {
@@ -507,6 +510,18 @@ std::optional<std::wstring> shot_due(int game_ms) {
     std::error_code error;
     std::filesystem::create_directory(L"lab-shots", error);
     return std::format(L"lab-shots\\t{:06}.png", game_ms);
+}
+
+std::optional<std::uint32_t> shader_shuffle_due(int game_ms) {
+    if (!g_run || g_run->options.shader_shuffle_ms <= 0 || game_ms < g_run->next_shuffle_ms) return std::nullopt;
+    if (g_run->next_shuffle_ms == 0) g_run->shuffle_random = g_run->options.seed * 2654435761u + 1;
+    g_run->next_shuffle_ms = game_ms + g_run->options.shader_shuffle_ms;
+    // (xorshift: the lab's own, the battle's random numbers stay as they were)
+    auto &x = g_run->shuffle_random;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    return x;
 }
 
 // Logic-list position and the sim id commands address the object by.

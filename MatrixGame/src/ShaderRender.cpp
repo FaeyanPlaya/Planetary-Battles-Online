@@ -144,12 +144,23 @@ struct State {
     ShaderPacks::Pack pack;
     IDirect3DVertexShader9 *vertex = nullptr;
     std::vector<PassCode> passes;
+    // Interface=: the passes from `split` on are drawn after the interface while `over_interface`, their SceneTex a copy
+    // of the screen then (`overlay`, the screen's format); without the line `split` is all of them.
+    std::size_t split = 0;
+    bool over_interface = false;
+    IDirect3DTexture9 *overlay = nullptr;
+    IDirect3DSurface9 *overlay_surface = nullptr;
     std::vector<IDirect3DTexture9 *> textures;  // managed: they outlive a lost device
     IDirect3DTexture9 *white = nullptr;         // the depth where the card cannot give one: all far
     // The default pool's, for the screen's size.
     UINT width = 0, height = 0;
     IDirect3DTexture9 *scene = nullptr, *depth = nullptr, *solid = nullptr;
     IDirect3DSurface9 *scene_surface = nullptr, *depth_surface = nullptr, *solid_surface = nullptr;
+    // ReliefTex (a pass reads the relief): SolidTex before the interface's marks are drawn into it.
+    bool relief_wanted = false;
+    IDirect3DTexture9 *relief = nullptr;
+    IDirect3DSurface9 *relief_surface = nullptr;
+    bool relief_taken = false;
     bool solid_taken = false;  // this frame's: before_effects came
     std::vector<IDirect3DTexture9 *> targets;
     std::vector<IDirect3DSurface9 *> target_surfaces;
@@ -207,6 +218,7 @@ struct State {
     IDirect3DStateBlock9 *saved = nullptr;
     // This frame's: the screen and its depth, given back after the passes.
     bool taken = false;
+    bool waiting = false;  // the passes before Interface= drawn: the later ones wait for the interface
     IDirect3DSurface9 *screen = nullptr, *screen_depth = nullptr;
     D3DXMATRIX previous_view_proj;
     D3DXVECTOR3 previous_eye{0, 0, 0};
@@ -331,6 +343,7 @@ void release_frame_surfaces() {
     drop(g_state.screen);
     drop(g_state.screen_depth);
     g_state.taken = false;
+    g_state.waiting = false;
 }
 
 void release_default() {
@@ -339,6 +352,8 @@ void release_default() {
     drop(g_state.scene_surface);
     drop(g_state.depth_surface);
     drop(g_state.solid_surface);
+    drop(g_state.relief_surface);
+    drop(g_state.relief);
     drop(g_state.scene);
     drop(g_state.depth);
     drop(g_state.solid);
@@ -355,6 +370,8 @@ void release_default() {
     drop(g_state.under);
     drop(g_state.depth_copy_surface);
     drop(g_state.depth_copy);
+    drop(g_state.overlay_surface);
+    drop(g_state.overlay);
     drop(g_state.saved);
     g_state.width = g_state.height = 0;
     g_state.has_previous = false;
@@ -405,8 +422,28 @@ std::wstring wide(const std::string &text) {
     }
 }
 
+// A shader's code by what it was compiled from (its entry, its profile, its source).
+using CodeByKey = std::map<std::string, std::string>;
+std::string code_key(const std::string &source, const char *entry, const char *profile) {
+    return std::string(entry) + '\n' + profile + '\n' + source;
+}
+
+// A pack chosen in a battle, compiled beside the drawing (the compiler takes seconds for a whole pack: in the drawing
+// they were a stop of the battle, of every player's in a network one). The pack drawn so far stays until it is done;
+// build() then takes its code from here.
+struct Pending {
+    std::uint32_t version = 0;  // the choice it was begun for (0: none)
+    std::chrono::steady_clock::time_point started;
+    std::future<CodeByKey> code;
+} g_pending;
+const CodeByKey *g_ready_code = nullptr;  // while build() takes such code
+bool g_drawn_once = false;                // a frame began in this run: later packs are compiled beside the drawing
+
 std::optional<std::string> compile(const std::string &source, const char *name, const char *entry, const char *profile,
                                    ID3DXInclude *include, std::wstring &error) {
+    if (g_ready_code)
+        if (const auto found = g_ready_code->find(code_key(source, entry, profile)); found != g_ready_code->end())
+            return found->second;
     ID3DXBuffer *code = nullptr, *messages = nullptr;
     const HRESULT result = D3DXCompileShader(source.data(), UINT(source.size()), nullptr, include, entry, profile, 0,
                                              &code, &messages, nullptr);
@@ -510,6 +547,9 @@ bool build() {
                                pack->targets.begin());
         g_state.passes.push_back(built);
     }
+    g_state.relief_wanted = std::ranges::any_of(g_state.passes, [](const PassCode &p) { return p.inputs.relief; });
+    g_state.split = pack->interface_from >= 0 ? std::size_t(pack->interface_from) : g_state.passes.size();
+    g_state.over_interface = ShaderPacks::interface_on(*pack, choice.settings);
     // The world pass: the pack's code between the engine's prelude and the entry that calls its main.
     if (ShaderPacks::world_on(*pack, choice.settings)) {
         const std::string name = utils::from_wstring(pack->world.file);
@@ -621,6 +661,56 @@ bool build() {
     return true;
 }
 
+// On another thread: the code build() will ask for this pack and its settings, each made from the very sources
+// build() makes (by their keys); what does not compile is left out, build() then says why. No call of the device.
+CodeByKey precompile(ShaderPacks::Pack pack, Mods::SettingValues settings, DWORD simultaneous) {
+    CodeByKey out;
+    std::string error;
+    const auto files = ShaderPacks::load_files(std::filesystem::path(ShaderPacks::folder) / pack.id, error);
+    if (!files) return out;
+    Include include(*files);
+    const auto add = [&](const std::string &source, const char *entry, const char *profile, ID3DXInclude *with) {
+        ID3DXBuffer *code = nullptr;
+        if (SUCCEEDED(D3DXCompileShader(source.data(), UINT(source.size()), nullptr, with, entry, profile, 0, &code,
+                                        nullptr, nullptr)) &&
+            code)
+            out.emplace(code_key(source, entry, profile),
+                        std::string(static_cast<const char *>(code->GetBufferPointer()), code->GetBufferSize()));
+        drop(code);
+    };
+    const auto headed = [](const std::wstring &file, const std::string &text) {
+        return "#line 1 \"" + utils::from_wstring(file) + "\"\n" + text;
+    };
+    add(quad_vs, "main", "vs_3_0", nullptr);
+    for (const auto &pass : pack.passes)
+        if (const auto text = ShaderPacks::file(*files, pass.file))
+            add(ShaderPacks::prelude(pack, settings, ShaderPacks::pass_inputs(pack, *files, pass)) + headed(pass.file, *text),
+                pass.entry.c_str(), "ps_3_0", &include);
+    if (ShaderPacks::world_on(pack, settings) && simultaneous >= pack.world.outputs.size())
+        if (const auto text = ShaderPacks::file(*files, pack.world.file))
+            add(ShaderPacks::world_prelude(pack, settings) + headed(pack.world.file, *text) +
+                        ShaderPacks::world_wrapper(pack),
+                ShaderPacks::world_entry, "ps_3_0", &include);
+    const bool water = ShaderPacks::water_on(pack, settings), effects = ShaderPacks::effects_on(pack, settings);
+    if (water) {
+        add(water_vs, "main", "vs_3_0", nullptr);
+        if (const auto text = ShaderPacks::file(*files, pack.water.file))
+            add(ShaderPacks::water_prelude(pack, settings) + headed(pack.water.file, *text) + ShaderPacks::water_wrapper(),
+                ShaderPacks::water_entry, "ps_3_0", &include);
+    }
+    if (effects)
+        if (const auto text = ShaderPacks::file(*files, pack.effects.file)) {
+            ShaderPacks::Stages plain{};
+            plain[0] = {D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE, D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE, false};
+            if (const auto combine = ShaderPacks::combiner(plain))
+                add(ShaderPacks::effects_prelude(pack, settings) + headed(pack.effects.file, *text) +
+                            ShaderPacks::effects_wrapper(plain, *combine),
+                    ShaderPacks::effects_entry, "ps_2_a", &include);
+        }
+    if (water || effects) add(copy_ps, "main", "ps_3_0", nullptr);
+    return out;
+}
+
 // The shadow map's depth texture and the colour target beside it (one that keeps nothing where the card has such;
 // else the smallest it gives). Without them the pack draws as with no map (ShadowInfo.w 0).
 void make_shadow() {
@@ -676,6 +766,14 @@ bool make_surfaces(UINT width, UINT height) {
         fail(L"no texture for the picture without the effects (video memory?)");
         return false;
     }
+    // (without it the relief reads SolidTex, marks and all)
+    if (g_state.relief_wanted &&
+        (FAILED(g_D3DD->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, picture, D3DPOOL_DEFAULT,
+                                      &g_state.relief, nullptr)) ||
+         FAILED(g_state.relief->GetSurfaceLevel(0, &g_state.relief_surface)))) {
+        drop(g_state.relief);
+        lgr.warning("Shaders: no texture for the relief's picture: it reads the interface's marks too");
+    }
     // The depth the passes read (INTZ: every card of the last 15 years); without it a depth surface of our own.
     if (supported(intz, D3DUSAGE_DEPTHSTENCIL) &&
         SUCCEEDED(g_D3DD->CreateTexture(width, height, 1, D3DUSAGE_DEPTHSTENCIL, intz, D3DPOOL_DEFAULT, &g_state.depth,
@@ -730,6 +828,21 @@ bool make_surfaces(UINT width, UINT height) {
         drop(g_state.depth_copy);
         lgr.warning("Shaders: no texture for a copy of the depth: the water and the effects see everything far");
     }
+    // The screen under the passes after Interface=, in its own format (a copy of it: no conversion).
+    D3DFORMAT screen_format = display_format();
+    if (IDirect3DSurface9 *back = nullptr; SUCCEEDED(g_D3DD->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &back))) {
+        D3DSURFACE_DESC desc{};
+        if (SUCCEEDED(back->GetDesc(&desc))) screen_format = desc.Format;
+        drop(back);
+    }
+    if (g_state.split < g_state.passes.size() &&
+        (FAILED(g_D3DD->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, screen_format, D3DPOOL_DEFAULT,
+                                      &g_state.overlay, nullptr)) ||
+         FAILED(g_state.overlay->GetSurfaceLevel(0, &g_state.overlay_surface)))) {
+        drop(g_state.overlay);
+        fail(L"no texture for the screen under the interface's passes (video memory?)");
+        return false;
+    }
     if (g_state.world) {
         for (const D3DFORMAT format : {D3DFMT_D24S8, D3DFMT_D24X8, D3DFMT_D16})
             if (SUCCEEDED(g_D3DD->CreateDepthStencilSurface(width, height, format, D3DMULTISAMPLE_NONE, 0, TRUE,
@@ -752,6 +865,7 @@ bool make_surfaces(UINT width, UINT height) {
         if (g_state.world_depth) bytes += pixels * 4;
         if (g_state.under) bytes += pixels * format_bytes(picture);
         if (g_state.depth_copy) bytes += pixels * 4;
+        if (g_state.overlay) bytes += pixels * 4;
         lgr.notice("Shaders: {}x{}: the pack's textures {:.1f} MB of video memory")(width, height,
                                                                                    double(bytes) / (1024.0 * 1024.0));
     }
@@ -833,9 +947,22 @@ void update_horizon(CMatrixMap &map) {
             g_horizon.color.x, g_horizon.color.y, g_horizon.color.z, weight > 0 ? "its skybox" : "its sky colour");
 }
 
+// This frame's constants as constants() set them: the passes after Interface= are given the same (constants() moves
+// the frame on: the previous camera, the time's step, the lights collected).
+std::array<D3DXVECTOR4, lights_register + 1 + 3 * ShaderLights::max_lights> g_constants{};
+
+void put_constants(int reg, const float *values, int count) {
+    g_D3DD->SetPixelShaderConstantF(UINT(reg), values, UINT(count));
+    if (reg >= 0 && reg + count <= int(g_constants.size())) std::memcpy(&g_constants[reg].x, values, sizeof(float) * 4 * count);
+}
+
+void again_constants() {
+    g_D3DD->SetPixelShaderConstantF(1, &g_constants[1].x, UINT(g_constants.size() - 1));  // (0: each pass's own)
+}
+
 void constants(const CMatrixMap &map) {
-    const auto set = [](int reg, const D3DXVECTOR4 &value) { g_D3DD->SetPixelShaderConstantF(reg, &value.x, 1); };
-    const auto matrix = [](int reg, const D3DXMATRIX &value) { g_D3DD->SetPixelShaderConstantF(reg, &value._11, 4); };
+    const auto set = [](int reg, const D3DXVECTOR4 &value) { put_constants(reg, &value.x, 1); };
+    const auto matrix = [](int reg, const D3DXMATRIX &value) { put_constants(reg, &value._11, 4); };
     const auto &camera = map.m_Camera;
     const D3DXMATRIX &view = camera.GetViewMatrix();
     const D3DXMATRIX &proj = camera.GetProjMatrix();
@@ -926,9 +1053,9 @@ void constants(const CMatrixMap &map) {
         const auto &light = lights[i];
         block[1 + i] = {light.x, light.y, light.z, light.radius};
         block[1 + n + i] = {light.r, light.g, light.b, 1};
-        block[1 + 2 * n + i] = {float(int(light.kind)), light.seed, 0, 0};
+        block[1 + 2 * n + i] = {float(int(light.kind)), light.seed, light.blast, 0};
     }
-    g_D3DD->SetPixelShaderConstantF(lights_register, &block[0].x, UINT(block.size()));
+    put_constants(lights_register, &block[0].x, int(block.size()));
 }
 
 void sampler(int index, IDirect3DBaseTexture9 *texture, bool clamp, bool point) {
@@ -1127,6 +1254,7 @@ void voxels_forget(const CMatrixMapStatic *object) {
 void begin_frame() {
     const auto &choice = ShaderPacks::choice();
     if (!choice.on || choice.pack.empty()) {
+        g_drawn_once = true;  // (shaders turned on later: a change in the battle, compiled beside the drawing)
         if (g_state.version) {
             release_code();
             release_default();
@@ -1139,14 +1267,50 @@ void begin_frame() {
         if (g_voxels.map) voxels_drop();
         return;
     }
-    if (g_state.version != ShaderPacks::choice_version()) {
-        g_state.version = ShaderPacks::choice_version();
-        g_state.started = timeGetTime();
-        build();
+    if (const std::uint32_t wanted = ShaderPacks::choice_version(); g_state.version != wanted) {
+        if (!g_drawn_once) {
+            // The first in this run (the battle's start): built at once.
+            g_drawn_once = true;
+            g_state.version = wanted;
+            g_state.started = timeGetTime();
+            build();
+        }
+        else if (!g_pending.code.valid()) {
+            // A change in the battle: compiled beside the drawing; what is drawn now stays meanwhile.
+            if (const ShaderPacks::Pack *pack = ShaderPacks::find(ShaderPacks::installed(), choice.pack)) {
+                g_pending.version = wanted;
+                g_pending.started = std::chrono::steady_clock::now();
+                g_pending.code = std::async(std::launch::async, precompile, *pack, choice.settings,
+                                            DWORD(g_D3DDCaps.NumSimultaneousRTs));
+            }
+            else {
+                g_state.version = wanted;
+                build();  // (it says there is no such pack)
+            }
+        }
+        else if (g_pending.code.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            const CodeByKey code = g_pending.code.get();
+            // (the code of a choice changed again meanwhile is dropped: the next frame begins the newest)
+            if (g_pending.version == wanted) {
+                const double ms =
+                        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - g_pending.started)
+                                .count();
+                g_state.version = wanted;
+                g_state.started = timeGetTime();
+                g_ready_code = &code;
+                const auto building = std::chrono::steady_clock::now();
+                build();
+                g_ready_code = nullptr;
+                lgr.notice("Shaders: compiled beside the drawing in {:.0f} ms, built in {:.1f} ms")(
+                        ms, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - building).count());
+            }
+            g_pending.version = 0;
+        }
     }
     decide_game_settings(g_state.ready);
     ShaderLights::set_collecting(g_state.ready);
     if (!g_state.ready) return;
+    if (g_state.taken) release_frame_surfaces();  // (a frame that never reached its end)
     if (g_MatrixMap) update_horizon(*g_MatrixMap);  // (before the frame: its pictures are read, not drawn)
     if (g_MatrixMap) voxels_update(*g_MatrixMap);
     IDirect3DSurface9 *screen = nullptr;
@@ -1163,6 +1327,7 @@ void begin_frame() {
     g_D3DD->SetDepthStencilSurface(g_state.depth_surface);
     g_state.taken = true;
     g_state.solid_taken = false;
+    g_state.relief_taken = false;
     g_state.shadow_drawn = false;
     if (g_timing && !g_timing_state.broken) {
         auto &t = g_timing_state;
@@ -1866,6 +2031,9 @@ void before_effects() {
     g_state.solid_taken = SUCCEEDED(
             g_D3DD->StretchRect(g_state.scene_surface, nullptr, g_state.solid_surface, nullptr, D3DTEXF_NONE));
     if (g_state.solid_taken) mark_shadows();
+    g_state.relief_taken = g_state.solid_taken && g_state.relief_surface &&
+                           SUCCEEDED(g_D3DD->StretchRect(g_state.solid_surface, nullptr, g_state.relief_surface,
+                                                         nullptr, D3DTEXF_NONE));
 }
 
 bool solid_taken() { return g_state.taken && g_state.solid_taken; }
@@ -1884,8 +2052,10 @@ void scene_target() {
     g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE, 0xf);
 }
 
-void finish_scene() {
-    if (!g_state.taken) return;
+namespace {
+// The pack's passes [first, last): `scene` their SceneTex and the first one's PrevTex. The game's states kept and
+// given back; the screen the target after them.
+void draw_passes(std::size_t first, std::size_t last, IDirect3DTexture9 *scene, bool fresh) {
     g_state.saved->Capture();
     // The engine's 3D states off: the quad is drawn as it is, every pixel once.
     g_D3DD->SetDepthStencilSurface(nullptr);
@@ -1896,17 +2066,18 @@ void finish_scene() {
              {D3DRS_COLORWRITEENABLE, 0xf}, {D3DRS_FILLMODE, D3DFILL_SOLID}, {D3DRS_CLIPPING, TRUE},
              {D3DRS_MULTISAMPLEANTIALIAS, FALSE}})
         g_D3DD->SetRenderState(state, value);
-    time_begin(Part::Passes);
     g_D3DD->SetVertexShader(g_state.vertex);
     g_D3DD->SetFVF(D3DFVF_XYZ | D3DFVF_TEX1);
-    constants(*g_MatrixMap);
-    sampler(0, g_state.scene, true, false);
+    if (fresh) constants(*g_MatrixMap);
+    else again_constants();
+    sampler(0, scene, true, false);
     sampler(1, g_state.depth ? static_cast<IDirect3DBaseTexture9 *>(g_state.depth) : g_state.white, true, true);
     // Without before_effects (a frame of no effects' drawing): the picture as it is.
     sampler(solid_sampler, g_state.solid_taken ? g_state.solid : g_state.scene, true, false);
-    IDirect3DTexture9 *previous = g_state.scene;
+    IDirect3DTexture9 *previous = scene;
     int bound = 0;  // the pack's pictures the pass before left in the samplers
-    for (const auto &pass : g_state.passes) {
+    for (std::size_t i = first; i < last; ++i) {
+        const auto &pass = g_state.passes[i];
         IDirect3DSurface9 *output = pass.output < 0 ? g_state.screen : g_state.target_surfaces[pass.output];
         g_D3DD->SetRenderTarget(0, output);
         D3DSURFACE_DESC desc{};
@@ -1930,6 +2101,12 @@ void finish_scene() {
             sampler(slot++, g_state.shadow_drawn ? static_cast<IDirect3DBaseTexture9 *>(g_state.shadow) : g_state.white,
                     true, true);
         if (pass.inputs.voxels) sampler(slot++, g_voxels.texture, true, true);  // (none: VoxelScale.w says so)
+        if (pass.inputs.relief) {
+            IDirect3DBaseTexture9 *bare = g_state.relief_taken ? g_state.relief
+                                          : g_state.solid_taken ? g_state.solid
+                                                                : g_state.scene;
+            sampler(slot++, bare, true, false);
+        }
         const int now = slot - picture_sampler;
         for (; slot < picture_sampler + bound; ++slot) g_D3DD->SetTexture(slot, nullptr);
         bound = now;
@@ -1937,18 +2114,50 @@ void finish_scene() {
         g_D3DD->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad.data(), sizeof(Vertex));
         if (pass.output >= 0) previous = g_state.targets[pass.output];
     }
-    time_end(Part::Passes);
     g_D3DD->SetRenderTarget(0, g_state.screen);
     g_D3DD->SetDepthStencilSurface(g_state.screen_depth);
-    g_D3DD->Clear(0, nullptr, D3DCLEAR_ZBUFFER | (FLAG(g_Flags, GFLAG_STENCILAVAILABLE) ? D3DCLEAR_STENCIL : 0), 0,
-                  1.0f, 0);
     g_state.saved->Apply();
     g_D3DD->SetVertexShader(nullptr);
     g_D3DD->SetPixelShader(nullptr);
+}
+
+// The passes after Interface=: the screen as it is now their SceneTex (a copy: the screen is drawn into).
+void draw_late() {
+    if (!g_state.overlay_surface ||
+        FAILED(g_D3DD->StretchRect(g_state.screen, nullptr, g_state.overlay_surface, nullptr, D3DTEXF_NONE)))
+        return;
+    draw_passes(g_state.split, g_state.passes.size(), g_state.overlay, false);
+}
+
+void end_frame() {
     g_state.frame += 1;
     g_state.history += 1;
     timing_frame_end();
     release_frame_surfaces();
+}
+}  // namespace
+
+void finish_scene() {
+    if (!g_state.taken || g_state.waiting) return;
+    time_begin(Part::Passes);
+    draw_passes(0, g_state.split, g_state.scene, true);
+    g_D3DD->Clear(0, nullptr, D3DCLEAR_ZBUFFER | (FLAG(g_Flags, GFLAG_STENCILAVAILABLE) ? D3DCLEAR_STENCIL : 0), 0,
+                  1.0f, 0);
+    if (g_state.split < g_state.passes.size() && g_state.over_interface) {
+        time_end(Part::Passes);
+        g_state.waiting = true;  // (finish_interface: after the interface)
+        return;
+    }
+    if (g_state.split < g_state.passes.size()) draw_late();
+    time_end(Part::Passes);
+    end_frame();
+}
+
+void finish_interface() {
+    if (!g_state.taken || !g_state.waiting) return;
+    g_state.waiting = false;
+    draw_late();
+    end_frame();
 }
 
 void release() {

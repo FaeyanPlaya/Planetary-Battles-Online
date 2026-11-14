@@ -7,53 +7,121 @@ Author=PBO
 
 # Numbers: "<" and ">" stop at the first and the last value (range); a word list would go round (cycle).
 Setting.NIGHT=0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8|0.5|Темнота ночи|Night darkness
+Value.NIGHT.0=День|Day
 Setting.FOG=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2,2.25,2.5,2.75,3|2|Туман у земли|Ground fog
+Value.FOG.0=Выкл|Off
 Setting.FOGHEIGHT=10,20,30,40,50,60,70,80,90,100,120,140,160,180,200|40|Высота тумана|Fog height
 Setting.FIRELIGHT=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2|1|Свет огня|Firelight
+Value.FIRELIGHT.0=Выкл|Off
 Setting.GLOW=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Свечение|Glow
+Value.GLOW.0=Выкл|Off
 Setting.FLICKER=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Мерцание огня|Fire flicker
+Value.FLICKER.0=Ровный свет|Steady
 Setting.AO=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Затенение углов|Corner shading
+Value.AO.0=Выкл|Off
 Setting.SHADOWS=0,0.25,0.5,0.75,1|1|Контактные тени|Contact shadows
+Value.SHADOWS.0=Выкл|Off
 Setting.NORMALS=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Рельеф текстур|Texture relief
+Value.NORMALS.0=Выкл|Off
 Setting.GEOMETRY=On,Off|On|Нормали моделей|Model normals|cycle
 Setting.SHAFTS=On,Off|On|Объёмные лучи|Light shafts|cycle
 Setting.RAYS=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Сила лучей|Shaft strength
+Value.RAYS.0=Выкл|Off
 Setting.VIGNETTE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|1|Виньетка|Vignette
+Value.VIGNETTE.0=Выкл|Off
 Setting.GRAIN=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Зерно|Film grain
+Value.GRAIN.0=Выкл|Off
 Setting.SOFTFX=0,5,10,15,20,30,40|15|Мягкие эффекты|Soft effects
+Value.SOFTFX.0=Как в игре|As in the game
+Setting.REFLECT=0,0.25,0.5,0.75,1|1|Отражения в воде|Water reflections
+Value.REFLECT.0=Выкл|Off
+Setting.WAVING=0,0.25,0.5,0.75,1,1.5,2|1|Колыхание листвы|Waving foliage
+Value.WAVING.0=Выкл|Off
+Setting.TAA=On,Off|On|Временной фильтр|Temporal filter|cycle
+Setting.FXAA=On,Off|On|Сглаживание FXAA|FXAA antialiasing|cycle
+Setting.SHARPEN=0,0.25,0.5,0.75,1,1.5,2|0.25|Резкость|Sharpening
+Value.SHARPEN.0=Выкл|Off
+Setting.ABERRATION=0,0.25,0.5,0.75,1,1.5,2|0|Хроматическая аберрация|Chromatic aberration
+Value.ABERRATION.0=Выкл|Off
+Setting.FLARES=All,Blasts,Mighty|Blasts|Блики|Lens flares
+Setting.FLARE=0,0.25,0.5,0.75,1,1.5,2|0.5|Сила бликов|Flare strength
+Value.FLARE.0=Выкл|Off
+Value.FLARES.All=От всего|From everything
+Value.FLARES.Blasts=Взрывы|Explosions
+Value.FLARES.Mighty=Мощные взрывы|Mighty explosions
+Setting.DOF=On,Off|Off|Глубина резкости|Depth of field|cycle
+Setting.DOFSTRENGTH=0.25,0.5,0.75,1,1.5,2,3|1|Сила размытия|Blur strength
+Setting.MBLUR=On,Off|Off|Размытие движения|Motion blur|cycle
+Setting.MBLURSTRENGTH=0.25,0.5,0.75,1,1.5,2|1|Сила размытия движения|Motion blur strength
+Setting.BRIGHTNESS=0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.75,2|1|Яркость|Brightness
+Setting.CONTRAST=0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Контраст|Contrast
+Setting.SATURATION=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.75,2|1|Насыщенность|Saturation
+Value.SATURATION.0=Чёрно-белое|Black and white
+Setting.GRADING=On,Off|Off|Цветокоррекция|Colour grading|cycle
+Setting.MIX_RR=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Красный из красного|Red from red
+Setting.MIX_RG=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|0|Красный из зелёного|Red from green
+Setting.MIX_RB=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|0|Красный из синего|Red from blue
+Setting.MIX_GR=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|0|Зелёный из красного|Green from red
+Setting.MIX_GG=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Зелёный из зелёного|Green from green
+Setting.MIX_GB=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|0|Зелёный из синего|Green from blue
+Setting.MIX_BR=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|0|Синий из красного|Blue from red
+Setting.MIX_BG=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|0|Синий из зелёного|Blue from green
+Setting.MIX_BB=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Синий из синего|Blue from blue
 
 # Several settings at once, by how much they cost the video card.
-Profile.LOW=Низкий|Low|AO=0 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0
-Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.5 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15
-Profile.HIGH=Высокий|High|AO=1 SHADOWS=1 NORMALS=1 GEOMETRY=On SHAFTS=On SOFTFX=15
+Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0 REFLECT=0 TAA=Off FXAA=Off
+Profile.VERYLOW=Очень низкий|Very low|AO=0.5 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0 REFLECT=0 TAA=Off FXAA=On
+Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15 REFLECT=0 TAA=Off FXAA=On
+Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.5 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15 REFLECT=0.5 TAA=On FXAA=On
+Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=1 NORMALS=1 GEOMETRY=On SHAFTS=On SOFTFX=15 REFLECT=1 TAA=On FXAA=On
 
 Note.ABOUT=О наборе|About the pack
 
-Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: затенение углов, контактные тени, рельеф текстур, объёмные лучи и мягкие эффекты. «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: corner shading, contact shadows, texture relief, light shafts and soft effects. Custom: when they are set otherwise.
-Info.NIGHT=Насколько день становится ночью: темнее, серее, холоднее. 0 — день как есть.|How much the day becomes night: darker, greyer, colder. 0: the day as it is.
+Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: всё, что на экране «Производительность». «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: everything on the Performance screen. Custom: when they are set otherwise.
+Info.NIGHT=Насколько день становится ночью: темнее, серее, холоднее. «День» — день как есть.|How much the day becomes night: darker, greyer, colder. Day: the day as it is.
 Info.FOG=Туман лежит в низинах и над водой и медленно плывёт; вдали всё уходит в дымку. Огонь подсвечивает его.|The fog lies in the lowlands and over the water and drifts slowly; far away everything fades into the haze. Fire lights it up.
 Info.FIRELIGHT=Как сильно пожары, взрывы, выстрелы, лазеры и всё светящееся освещают землю, стены и роботов рядом.|How much fires, explosions, shots, lasers and everything glowing light the ground, walls and robots near them.
 Info.GLOW=Ореол вокруг огня, вспышек и выстрелов.|The halo around fire, flashes and shots.
-Info.FLICKER=Огонь дрожит, каждый по-своему. 0 — ровный свет.|Fire trembles, each in its own way. 0: a steady light.
+Info.FLICKER=Огонь дрожит, каждый по-своему. «Ровный свет» — ровный свет.|Fire trembles, each in its own way. Steady: a steady light.
 Info.AO=Тень в углах, у стен и под роботами. 2 — сильнее.|Shade in corners, by walls and under robots. 2: stronger.
-Info.SHADOWS=Короткие тени от солнца карты у самых предметов, рядом с тенями игры. 0 — без них.|Short shadows from the map's sun right by things, next to the game's own shadows. 0: none.
+Info.SHADOWS=Короткие тени от солнца карты у самых предметов, рядом с тенями игры. «Выкл» — без них.|Short shadows from the map's sun right by things, next to the game's own shadows. Off: none.
 Info.FOGHEIGHT=Как высоко поднимается туман от земли и воды. Выше — гуще и дальше вверх по склонам.|How high the fog rises from the ground and the water. Higher: thicker, further up the slopes.
-Info.NORMALS=Генерируемые нормали: светлое и тёмное на поверхностях становится выпуклым и впалым под луной и у огня. 0 — без них.|Generated normals: the light and dark of surfaces become raised and sunken under the moon and by fire. 0: none.
+Info.NORMALS=Генерируемые нормали: светлое и тёмное на поверхностях становится выпуклым и впалым под луной и у огня. «Выкл» — без них.|Generated normals: the light and dark of surfaces become raised and sunken under the moon and by fire. Off: none.
 Info.GEOMETRY=Свет огня и вспышек ложится по настоящей форме роботов, зданий и земли: движок рисует мир ещё раз шейдером набора. Выкл — форма берётся из глубины кадра, и видеокарте легче.|The light of fire and flashes follows the true shape of robots, buildings and the land: the engine draws the world once more with the pack's shader. Off: the shape is taken from the frame's depth, easier on the video card.
 Info.SHAFTS=Лунный свет в тумане: тени роботов, деревьев и зданий встают от земли столбами к луне. Выкл — без них, и видеокарте легче.|The moonlight in the fog: the shadows of robots, trees and buildings rise from the ground in columns towards the moon. Off: none, and easier on the video card.
 Info.RAYS=Насколько заметны объёмные лучи.|How strong the light shafts are.
 Info.VIGNETTE=Края экрана темнее.|The screen's edges darker.
+Info.REFLECT=Вода отражает берега, роботов и здания, видные на экране (то, чего нет на экране, отражает сама игра: небо). «Выкл» — только отражения игры.|The water reflects the shores, robots and buildings seen on the screen (what is off it the game's own reflection gives: the sky). Off: the game's reflections only.
+Info.WAVING=Листья пальм и трава покачиваются на ветру. «Выкл» — неподвижны.|Palm leaves and grass sway in the wind. Off: still.
+Info.TAA=Кадр смешивается с предыдущим: края ровнее, мерцание мелких деталей меньше.|The frame is mixed with the one before: smoother edges, less flicker of fine detail.
+Info.FXAA=Быстрое сглаживание лесенок на краях.|Fast smoothing of jagged edges.
+Info.SHARPEN=Мелкие детали чётче.|Fine details crisper.
+Info.ABERRATION=Цветная кайма к краям экрана, как у простого объектива.|Colour fringes towards the screen's edges, as from a simple lens.
+Info.FLARES=От чего блики объектива (не от солнца). «От всего» — от огня, взрывов, выстрелов, молний, лазеров; «Взрывы» — только от взрывов; «Мощные взрывы» — только от взрывов зданий, заводов, мин и бомб роботов.|What the lens flares come from (never the sun). From everything: fire, explosions, shots, lightning, lasers; Explosions: explosions only; Mighty explosions: only those of buildings, factories, mines and robots' bombs.
+Info.FLARE=Насколько сильны блики. «Выкл» — без бликов.|How strong the flares are. Off: none.
+Info.DOF=Резко там, куда смотрит середина экрана; ближе и дальше размыто.|Sharp where the screen's middle looks; nearer and further blurred.
+Info.MBLUR=Картинка размывается, пока камера движется.|The picture blurs while the camera moves.
+Info.BRIGHTNESS=Общая яркость.|Overall brightness.
+Info.CONTRAST=Разница светлого и тёмного.|The difference between light and dark.
+Info.SATURATION=Насыщенность цвета. «Чёрно-белое» — чёрно-белая картинка.|Colour saturation. Black and white: black and white.
+Info.GRADING=Каждый канал цвета собирается из трёх по настройкам ниже.|Each colour channel is mixed from all three by the settings below.
 Info.GRAIN=Едва заметный шум, как на плёнке.|A faint noise, as on film.
-Info.SOFTFX=Огонь, дым и вспышки тают там, где касаются земли и стен, а не обрезаются резкой линией. Число — на каком расстоянии. 0 — как в игре.|Fire, smoke and flashes fade where they touch the ground and walls instead of being cut by a hard line. The number: over how far. 0: as in the game.
+Info.SOFTFX=Огонь, дым и вспышки тают там, где касаются земли и стен, а не обрезаются резкой линией. Число — на каком расстоянии. «Как в игре» — резкая линия, как в игре.|Fire, smoke and flashes fade where they touch the ground and walls instead of being cut by a hard line. The number: over how far. As in the game: a sharp line, as the game draws it.
 Info.ABOUT=Ночь, туман и огонь на поле боя. Настроение навеяно наборами Spooklementary (SpacEagle17) и Complementary (EminGT) для Minecraft; код свой, их код не использован.|Night, fog and fire on the battlefield. The mood is inspired by the Spooklementary (SpacEagle17) and Complementary (EminGT) packs for Minecraft; the code is its own, none of theirs is used.
 
 # The game's own fog off: this pack makes its own haze, in the map's colours.
 Game.Fog=Off
 
-Screen=PROFILE - NIGHT FOG FOGHEIGHT FIRELIGHT GLOW SOFTFX - [Light] [Materials] [Camera] - ABOUT
-Screen.Light=Свет и тени|Light and shadow|FLICKER AO SHADOWS SHAFTS RAYS
-Screen.Materials=Материалы|Materials|NORMALS GEOMETRY
-Screen.Camera=Камера|Camera|VIGNETTE GRAIN
+Screen=[Spooky] ABOUT - PROFILE - [Performance] [Camera] [Lighting] [Atmosphere] [Materials]
+Screen.Spooky=Настройки Жути|Spooky settings|NIGHT FIRELIGHT FLICKER FOG GRAIN
+Screen.Performance=Производительность|Performance|AO SHADOWS NORMALS GEOMETRY SHAFTS SOFTFX REFLECT TAA FXAA
+Screen.Camera=Камера|Camera|[Balance] [Grading] [Blur] - GLOW VIGNETTE SHARPEN ABERRATION FLARES FLARE TAA FXAA GRAIN
+Screen.Balance=Баланс цвета|Colour balance|BRIGHTNESS CONTRAST SATURATION
+Screen.Grading=Цветокоррекция|Colour grading|GRADING - MIX_RR MIX_RG MIX_RB - MIX_GR MIX_GG MIX_GB - MIX_BR MIX_BG MIX_BB
+Screen.Blur=Размытие мира|World blur|DOF DOFSTRENGTH - MBLUR MBLURSTRENGTH
+Screen.Lighting=Освещение|Lighting|FIRELIGHT FLICKER GLOW FLARES FLARE AO SHADOWS
+Screen.Atmosphere=Атмосфера|Atmosphere|NIGHT FOG FOGHEIGHT SHAFTS RAYS
+Screen.Materials=Материалы|Materials|NORMALS GEOMETRY REFLECT WAVING SOFTFX
 
 # The world's depth as the moon sees it, for the rays (drawn only while they are on: the world is drawn twice).
 Shadow=2048|2000|SHAFTS
@@ -75,6 +143,11 @@ Target.Wide=0.0625|rgba16f
 Target.Lit=1|rgba16f
 Target.Rays=0.5|rgba8
 Target.RaysB=0.5|rgba8
+Target.Refl=0.5|rgba16f
+Target.Color=1|rgba8
+Target.Taa=1|rgba8
+Target.TaaHist=1|rgba8
+Target.Flare=0.25|rgba16f
 
 Pass=half.hlsl|Half
 Pass=halfdir.hlsl|HalfDir
@@ -85,4 +158,9 @@ Pass=wide.hlsl|Wide
 Pass=lit.hlsl|Lit
 Pass=rays.hlsl|Rays
 Pass=raysblur.hlsl|RaysB
-Pass=final.hlsl|screen
+Pass=refl.hlsl|Refl
+Pass=final.hlsl|Color
+Pass=taa.hlsl|Taa
+Pass=history.hlsl|TaaHist
+Pass=flare.hlsl|Flare
+Pass=post.hlsl|screen

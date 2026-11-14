@@ -53,6 +53,9 @@ void scene_target();
 // After the battle's 3D (CMatrixMap::Draw, before the interface): the passes onto the screen, which becomes the
 // target again. Nothing when begin_frame did not take the frame.
 void finish_scene();
+// After the interface, before the cursor: a pack's passes after its Interface= line while its setting has them over
+// the interface (finish_scene left them). Nothing otherwise.
+void finish_interface();
 // A thing of the map is being deleted: a pack's voxel copy (its Voxels= line) lets go of it.
 void voxels_forget(const CMatrixMapStatic *object);
 // Measuring (PBO_SHADER_TIMING=1 in the environment: the lab's runs): the video card's time for each part of a

@@ -171,6 +171,8 @@ struct Pack {
     std::vector<Note> notes;
     std::vector<Profile> profiles;
     std::map<std::string, Comment> comments;  // by a setting's or a note's id (the profiles' row: profile_row)
+    // A word value's name in the menu (Value.<Id>.<Word>=<Russian>|<English>): by "<Id>.<Word>".
+    std::map<std::string, Comment> value_names;
     std::vector<Target> targets;
     std::vector<Pass> passes;
     std::vector<Texture> textures;
@@ -178,6 +180,11 @@ struct Pack {
     WorldPass world;
     Voxels voxels;
     Shaded water, effects;
+    // Interface=[<setting>] between two Pass= lines: the passes after it are drawn over the interface (not the
+    // cursor) while that setting is on, right after the passes before it otherwise. Their SceneTex: the screen as the
+    // passes before left it (the interface on it then). -1: no such line.
+    int interface_from = -1;
+    std::string interface_when;
     // The game's own settings it decides while it draws (Game.<Name>=On|Off): game_settings names them. Their rows
     // in the settings are grey with its value.
     std::map<std::string, bool> game;
@@ -193,7 +200,8 @@ struct Pack {
 // - an empty one, PROFILE the profiles'), Note.<Id>=<Russian>|<English>, Info.<Id>=<Russian>|<English>,
 // Profile.<Id>=<Russian>|<English>|<Setting>=<value> ...; Game.<Name>=On|Off (game_settings);
 // Shadow=<size>|<distance>[|<setting>] (the shadow map); World=<file>|<targets by spaces>[|<setting>] (the world
-// pass); Voxels=<size>[|<setting>] (the voxel copy); Water=<file>[|<setting>], Effects=<file>[|<setting>].
+// pass); Voxels=<size>[|<setting>] (the voxel copy); Water=<file>[|<setting>], Effects=<file>[|<setting>];
+// Interface=[<setting>] (the passes after it over the interface).
 // problem says what is wrong with it.
 Pack parse(std::wstring_view text, std::wstring id);
 
@@ -229,7 +237,12 @@ struct Inputs {
     std::vector<int> textures;  // in pack.textures
     bool shadow = false;        // the shadow map (ShadowTex, ShadowDepth or ShadowLit named), after them
     bool voxels = false;        // the voxel copy (VoxelTex or VoxelAt named), after that
-    std::size_t size() const { return targets.size() + textures.size() + (shadow ? 1 : 0) + (voxels ? 1 : 0); }
+    // The picture without the interface's marks (selection rings, the resources' figures): what the relief reads
+    // (SceneHeight, ReliefSlope or GeneratedNormal named), after that.
+    bool relief = false;
+    std::size_t size() const {
+        return targets.size() + textures.size() + (shadow ? 1 : 0) + (voxels ? 1 : 0) + (relief ? 1 : 0);
+    }
     bool operator==(const Inputs &) const = default;
 };
 Inputs pass_inputs(const Pack &pack, const Files &files, const Pass &pass);
@@ -296,6 +309,10 @@ inline bool effects_on(const Pack &pack, const Mods::SettingValues &values) {
 inline bool world_on(const Pack &pack, const Mods::SettingValues &values) {
     return !pack.world.file.empty() && setting_on(pack, pack.world.when, values);
 }
+// Whether the pack's passes after Interface= are drawn over the interface.
+inline bool interface_on(const Pack &pack, const Mods::SettingValues &values) {
+    return pack.interface_from >= 0 && setting_on(pack, pack.interface_when, values);
+}
 // The profile the settings are at now (each setting it names has its value): its index, -1 none (the person's own).
 inline int profile_now(const Pack &pack, const Mods::SettingValues &values) {
     for (int i = 0; i < int(pack.profiles.size()); ++i) {
@@ -342,5 +359,9 @@ const Choice &choice();
 void set_choice(Choice choice);
 // Grows by one with each set_choice: the drawing compares it with the one it built.
 std::uint32_t choice_version();
+// The drawing's test (the lab's ShaderShuffleMs, a net window's --net-test-shuffle): the shaders on or off, another
+// installed pack, one of its profiles or a few of its settings, by `random` (the caller's own numbers), set as the
+// menu would set them (not saved). What it chose, for the log; empty when no pack can be used.
+std::string shuffle_choice(std::uint32_t random);
 
 }  // namespace ShaderPacks

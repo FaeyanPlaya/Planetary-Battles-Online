@@ -7,6 +7,7 @@
 #include "InterfaceHide.hpp"
 #include "SimLab.hpp"
 #include "ShaderRender.hpp"
+#include "ShaderPacks.hpp"
 #include "Interface/CHistory.h"
 #include "BattleNotice.hpp"
 #include "BattleHistory.hpp"
@@ -63,6 +64,12 @@ using Input::isVKeyPressed;
 constexpr auto DOUBLEPRESS_TIME_DELTA = 200;
 
 } // namespace
+
+// The lab's shader test (SimLab ShaderShuffleMs): the shaders changed at random; the log says how.
+void shuffle_shaders(std::uint32_t random)
+{
+    if (const std::string what = ShaderPacks::shuffle_choice(random); !what.empty()) lgr.info("SimLab: shaders {}")(what);
+}
 
 // Into the person's screenshots, said on the screen; or quietly into a file of its own (the lab's).
 void make_screenshot(const std::wstring &to = {})
@@ -353,6 +360,7 @@ void CFormMatrixGame::Draw(void) {
 
     g_MatrixMap->Draw();
     ShaderRender::finish_scene();  // (Draw has done it, after the 3D; a frame never ends on the pack's texture)
+    ShaderRender::finish_interface();  // (as that: Draw has done it before the cursor)
 
     ASSERT_DX(g_D3DD->EndScene());
     if (m_ScreenshotPending) {
@@ -361,6 +369,7 @@ void CFormMatrixGame::Draw(void) {
         make_screenshot();
     }
     if (const auto shot = SimLab::shot_due(g_MatrixMap->GetTime())) make_screenshot(*shot);
+    if (const auto random = SimLab::shader_shuffle_due(g_MatrixMap->GetTime())) shuffle_shaders(*random);
     const HRESULT presented = g_D3DD->Present(NULL, NULL, NULL, NULL);
     Rendering::CheckPresentResult(presented);
 #ifdef BUILD_EXE

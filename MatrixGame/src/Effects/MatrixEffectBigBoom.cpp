@@ -40,6 +40,7 @@ CMatrixEffectBigBoom::CMatrixEffectBigBoom(const D3DXVECTOR3 &pos, float radius,
 
     if (light != 0) {
         CMatrixEffect::CreatePointLight(&m_Light, pos, 1, light, false);
+        if (m_Light.effect) ((CMatrixEffectPointLight *)m_Light.effect)->SetShaderBlast(2.0f);  // (a bomb's)
     }
 
     m_Mat = g_MatrixMap->GetIdentityMatrix();

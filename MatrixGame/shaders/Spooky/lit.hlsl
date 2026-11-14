@@ -23,6 +23,7 @@ float3 WideAt(float2 uv) {
 }
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {
+    uv = Wave(uv);
     float3 scene = tex2D(SceneTex, uv).rgb;
     float3 solid = tex2D(SolidTex, uv).rgb;
     float3 fx = scene - solid;  // what the effects added (smoke: below 0 too)

@@ -3003,6 +3003,7 @@ void CMatrixMap::Draw(void) {
         cursor_hidden = false;
         if (!IsMouseCam()) m_Cursor.SetVisible(true);
     }
+    ShaderRender::finish_interface();  // a shader pack's passes over the interface (not the cursor: clicks go by it)
     m_Cursor.Draw();
 }
 

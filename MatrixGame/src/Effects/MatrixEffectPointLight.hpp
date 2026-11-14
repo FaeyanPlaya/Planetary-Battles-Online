@@ -133,6 +133,7 @@ class CMatrixEffectPointLight : public CMatrixEffect {
 
     std::vector<SMapPointLight> m_PointLum;
     ShaderLights::Kind m_ShaderKind = ShaderLights::Kind::Flash;
+    float m_ShaderBlast = 0;
 
     CMatrixEffectPointLight(const D3DXVECTOR3 &pos, float r, DWORD color, bool drawbill = false);
     virtual ~CMatrixEffectPointLight();
@@ -185,8 +186,10 @@ public:
 
     DWORD GetColor(void) { return m_Color; }
     void SetShaderKind(ShaderLights::Kind kind) { m_ShaderKind = kind; }
+    // An explosion's light (1), a mighty one's (2): the shader packs' LightInfo.z.
+    void SetShaderBlast(float blast) { m_ShaderBlast = blast; }
     virtual void AddShaderLights(void) const override {
-        ShaderLights::add_argb(m_Pos, m_Radius, m_Color, m_ShaderKind, this);
+        ShaderLights::add_argb(m_Pos, m_Radius, m_Color, m_ShaderKind, this, 1, m_ShaderBlast);
     }
 
     virtual void BeforeDraw(void) {

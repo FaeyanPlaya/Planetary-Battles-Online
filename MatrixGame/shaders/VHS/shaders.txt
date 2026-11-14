@@ -1,0 +1,84 @@
+# VHS: the battle as played from a video tape. Its own code; the mood after MCVHS (see About).
+Name=VHS
+NameEn=VHS
+Description=Бой как запись на видеокассете: размытый и сползающий цвет, шум, ореолы резкости, чересстрочность, сбои трекинга. И мягкое освещение.
+DescriptionEn=The battle as a recording on a video tape: blurred colour running aside, noise, sharpening halos, interlacing, tracking faults. And soft lighting.
+Author=PBO
+
+Setting.SOFTLIGHT=0,0.25,0.5,0.75,1,1.25,1.5|1|Мягкое освещение|Soft lighting
+Value.SOFTLIGHT.0=Выкл|Off
+Setting.BLEED=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Растекание цвета|Colour bleed
+Value.BLEED.0=Выкл|Off
+Setting.SHARPEN=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Ореолы резкости|Sharpening halos
+Value.SHARPEN.0=Выкл|Off
+Setting.LUMANOISE=0,0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.05|Шум яркости|Luminance noise
+Value.LUMANOISE.0=Выкл|Off
+Setting.CHROMANOISE=0,0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.2|Шум цвета|Chrominance noise
+Value.CHROMANOISE.0=Выкл|Off
+Setting.FADE=0,0.25,0.5,0.75,1|0.25|Выцветание|Fading
+Value.FADE.0=Выкл|Off
+Setting.COLOURDEPTH=8,16,32,64,128,256,512,1024|256|Глубина цвета|Colour depth
+Setting.INTERLACE=0,0.25,0.5,0.75,1|1|Чересстрочность|Interlacing
+Value.INTERLACE.0=Выкл|Off
+Setting.INTERLACERATE=24,30,60|24|Частота чересстрочности|Interlace frame rate
+Value.INTERLACERATE.24=24 Гц|24 Hz
+Value.INTERLACERATE.30=30 Гц|30 Hz
+Value.INTERLACERATE.60=60 Гц|60 Hz
+Setting.JITTER=0,0.25,0.5,0.75,1,1.5,2|0.25|Дрожание строк|Line jitter
+Value.JITTER.0=Выкл|Off
+Setting.TRACKING=0,0.25,0.5,0.75,1|0.25|Сбои трекинга|Tracking faults
+Value.TRACKING.0=Без сбоев|No faults
+Setting.VIGNETTE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.3|Виньетка|Vignette
+Value.VIGNETTE.0=Выкл|Off
+Setting.LENS=0,0.25,0.5,0.75,1|0|Изгиб линзы|Lens bend
+Value.LENS.0=Выкл|Off
+Setting.UI=On,Off|Off|Эффекты на интерфейс|Effects on the interface|cycle
+
+# How worn the tape is. Neither touches the lens or the interface: those are turned on by hand only.
+Profile.DEFAULT=По умолчанию|Default|BLEED=1 SHARPEN=1 LUMANOISE=0.05 CHROMANOISE=0.2 FADE=0.25 COLOURDEPTH=256 INTERLACE=1 INTERLACERATE=24 JITTER=0.25 TRACKING=0.25 LENS=0
+Profile.WORN=Затёртая кассета|Worn tape|BLEED=1.5 SHARPEN=1.5 LUMANOISE=0.1 CHROMANOISE=0.5 FADE=0.75 COLOURDEPTH=64 INTERLACE=1 INTERLACERATE=24 JITTER=1 TRACKING=1 LENS=0
+Profile.NOVHS=Без VHS|No VHS|BLEED=0 SHARPEN=0 LUMANOISE=0 CHROMANOISE=0 FADE=0 COLOURDEPTH=1024 INTERLACE=0 JITTER=0 TRACKING=0 LENS=0
+
+Note.ABOUT=О наборе|About the pack
+
+Info.PROFILE=Как в исходном наборе: «По умолчанию», «Без VHS» (одно мягкое освещение) и «Затёртая кассета». Изгиб линзы и эффекты на интерфейс профили не трогают. «Свой» — когда настройки выставлены иначе.|As in the original pack: Default, No VHS (the soft lighting alone) and Worn tape. The profiles leave the lens bend and the effects on the interface alone. Custom: when the settings are set otherwise.
+Info.SOFTLIGHT=Мягкое освещение, как в Minecraft: углы, подножия стен и земля под роботами плавно темнее. «Выкл» — свет игры как есть.|Soft lighting, as in Minecraft: corners, the foot of walls and the ground under robots smoothly darker. Off: the game's light as it is.
+Info.BLEED=Цвет на кассете размыт сильнее, чем яркость, и сползает вправо от предметов.|On a tape the colour is blurred more than the brightness and runs to the right of things.
+Info.SHARPEN=Светлые и тёмные каёмки у краёв, как от подкрутки резкости в видеомагнитофоне.|Light and dark fringes at edges, as from a video recorder's sharpening.
+Info.LUMANOISE=Мягкий шум яркости: заметен в тенях, на светлом почти прозрачен.|Soft noise in the brightness: seen in the shadows, almost clear over the bright.
+Info.CHROMANOISE=Цветные пятна, сильнее в тёмном.|Coloured blots, stronger in the dark.
+Info.FADE=Цвета бледнеют, чёрное становится серее, белое тусклее, всё чуть теплее: старая, много раз переписанная кассета. «Выкл» — цвета как есть.|The colours pale, black turns greyer, white dimmer, all a little warmer: an old tape copied many times. Off: the colours as they are.
+Info.COLOURDEPTH=Сколько ступеней у каждого канала цвета (в линейном свете, как в исходном наборе): меньше — грубее переходы, особенно в тенях.|How many steps each colour channel has (in linear light, as in the original pack): fewer, coarser steps, the shadows most.
+Info.INTERLACERATE=Сколько раз в секунду меняются полукадры: 24 — как в исходном наборе, 60 — как у телевизора.|How many times a second the half-frames change: 24, as in the original pack; 60, as a television.
+Info.INTERLACE=Строки через одну — из предыдущего полукадра: в движении видна «гребёнка».|Every other line is from the previous half-frame: a comb shows in motion.
+Info.JITTER=Строки слегка гуляют вбок, как при неровной скорости ленты.|The lines wander a little sideways, as with an uneven tape speed.
+Info.TRACKING=Время от времени по картинке проходит полоса сбоя со снегом; внизу кадра — рваные строки. «Без сбоев» — без сбоев.|Now and then a band of fault with snow runs over the picture; torn lines at the bottom of the frame. No faults: no faults.
+Info.VIGNETTE=Края экрана темнее.|The screen's edges darker.
+Info.LENS=Картинка выгнута, как на выпуклом стекле кинескопа. Внимание: щелчки мыши попадают туда, где предмет стоит на самом деле, а не туда, где его видно на изогнутой картинке. «Выкл» — плоско.|The picture bulges, as on a picture tube's curved glass. Mind: mouse clicks land where a thing really is, not where the bent picture shows it. Off: flat.
+Info.UI=Вкл — кассета ложится и на интерфейс: панели, полоски здоровья, подсказки (курсор остаётся чётким). Выкл — только бой, интерфейс чёткий.|On: the tape covers the interface too: the panels, health bars, hints (the cursor stays sharp). Off: the battle only, the interface sharp.
+Info.ABOUT=Бой как запись на старой видеокассете. Настроение навеяно набором MCVHS для Minecraft; код свой, его код не использован.|The battle as a recording on an old video tape. The mood is inspired by the MCVHS pack for Minecraft; the code is its own, none of its code is used.
+
+Screen=PROFILE - - - [Scene] [VHS] [Other] - ABOUT
+Screen.Scene=Мир|World|SOFTLIGHT
+Screen.VHS=Настройки VHS|VHS settings|LENS COLOURDEPTH - BLEED LUMANOISE CHROMANOISE INTERLACE INTERLACERATE SHARPEN
+Screen.Other=Прочее|Other|FADE JITTER TRACKING VIGNETTE UI
+
+Target.Shade=0.5|rgba8
+Target.TapeY=1|rg16f
+Target.TapeC=0.5|rg16f
+Target.Signal=1|rgba8
+Target.Tape=1|rgba8
+Target.TapeOld=1|rgba8
+
+# The soft lighting under the interface.
+Pass=soft.hlsl|Shade
+Pass=lit.hlsl|screen
+
+# The tape: over the interface while UI is on, right after the lighting otherwise.
+Interface=UI
+Pass=luma.hlsl|TapeY
+Pass=chroma.hlsl|TapeC
+Pass=tape.hlsl|Signal
+Pass=keep.hlsl|TapeOld
+Pass=hold.hlsl|Tape
+Pass=out.hlsl|screen

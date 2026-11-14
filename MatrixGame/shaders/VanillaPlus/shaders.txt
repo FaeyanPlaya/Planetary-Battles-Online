@@ -1,0 +1,191 @@
+# Vanilla+: the game as it is, a little richer. Its own code; the spirit after I Like Vanilla (see About).
+Name=Ванилла +
+NameEn=Vanilla +
+Description=Игра как она есть, только аккуратнее: мягкое затенение, тёплый свет огня, лёгкое свечение, сочнее цвета.
+DescriptionEn=The game as it is, only neater: soft shading, the warm light of fire, a light glow, richer colours.
+Author=PBO
+
+# Materials
+Setting.RELIEF=0,0.25,0.5,0.75,1|0.5|Рельеф текстур|Texture relief
+Value.RELIEF.0=Выкл|Off
+Setting.SOFTFX=0,5,10,15,20,30,40|15|Мягкие эффекты|Soft effects
+Value.SOFTFX.0=Как в игре|As in the game
+# Shadows
+Setting.SHADOWMAP=On,Off|On|Тени от солнца|Sun shadows|cycle
+Setting.SHADOWS=0,0.25,0.5,0.75,1|0.75|Контактные тени|Contact shadows
+Value.SHADOWS.0=Выкл|Off
+# Shading
+Setting.AO=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Затенение углов|Corner shading
+Value.AO.0=Выкл|Off
+Setting.OUTLINES=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Контуры|Outlines
+Value.OUTLINES.0=Выкл|Off
+Setting.CEL=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Рисованное освещение|Cel shading
+Value.CEL.0=Выкл|Off
+# Lighting
+Setting.FIRELIGHT=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.25,1.5|0.6|Свет огня|Firelight
+Value.FIRELIGHT.0=Выкл|Off
+Setting.GLOW=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Свечение|Glow
+Value.GLOW.0=Выкл|Off
+# Water
+Setting.REFLECT=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.6|Отражения|Reflections
+Value.REFLECT.0=Выкл|Off
+Setting.WATERMIX=On,Off|On|Вода без повторов|Water without repeats|cycle
+Setting.CAUSTICS=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Блики на дне|Caustics
+Value.CAUSTICS.0=Выкл|Off
+# Haze
+Setting.SHAFTS=On,Off|On|Солнечные лучи|Sun rays|cycle
+Setting.RAYS=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Сила лучей|Sun ray strength
+Value.RAYS.0=Выкл|Off
+# Post processing
+Setting.TAA=On,Off|On|Временной фильтр|Temporal filter|cycle
+Setting.FXAA=On,Off|On|Сглаживание FXAA|FXAA antialiasing|cycle
+Setting.SHARPEN=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.4|Резкость|Sharpening
+Value.SHARPEN.0=Выкл|Off
+Setting.DOF=On,Off|Off|Глубина резкости|Depth of field|cycle
+Setting.DOFSTRENGTH=0.25,0.5,0.75,1,1.5,2,3|1|Сила размытия|Blur strength
+Setting.MBLUR=On,Off|Off|Размытие движения|Motion blur|cycle
+Setting.MBLURSTRENGTH=0.25,0.5,0.75,1,1.5,2|1|Сила размытия движения|Motion blur strength
+Setting.PAINTED=On,Off|Off|Картина маслом|Painted|cycle
+Setting.VIGNETTE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Виньетка|Vignette
+Value.VIGNETTE.0=Выкл|Off
+Setting.POSTERIZE=0,2,3,4,6,8,12|0|Постеризация|Posterize
+Value.POSTERIZE.0=Выкл|Off
+# Colour correction
+Setting.BRIGHTNESS=0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Яркость|Brightness
+Setting.GAMMA=0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4|1|Гамма|Gamma
+Setting.AUTOEXP=On,Off|Off|Автоэкспозиция|Auto exposure|cycle
+Setting.TONEMAP=None,Simple,Reinhard,ACES|None|Тонмаппер|Tonemapper
+Value.TONEMAP.None=Как в игре|As in the game
+Value.TONEMAP.Simple=Простой|Simple
+Value.TONEMAP.Reinhard=Рейнхард|Reinhard
+Value.TONEMAP.ACES=ACES|ACES
+Setting.VIBRANCE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.3|Сочность|Vibrance
+Value.VIBRANCE.0=Выкл|Off
+Setting.SATURATION=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Насыщенность|Saturation
+Value.SATURATION.0=Чёрно-белое|Black and white
+Setting.SATDARK=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Насыщенность тёмного|Dark saturation
+Value.SATDARK.0=Без цвета|No colour
+Setting.SATLIGHT=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Насыщенность светлого|Light saturation
+Value.SATLIGHT.0=Без цвета|No colour
+Setting.CONTRAST=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.3|Контраст|Contrast
+Value.CONTRAST.0=Как в игре|As in the game
+Setting.WARMTH=-1,-0.75,-0.5,-0.25,0,0.25,0.5,0.75,1|0.25|Теплота|Warmth
+Value.WARMTH.0=Нейтрально|Neutral
+Setting.COLORBLIND=Off,Protanopia,Deuteranopia,Tritanopia|Off|Для дальтоников|Colourblind correction
+Value.COLORBLIND.Protanopia=Протанопия|Protanopia
+Value.COLORBLIND.Deuteranopia=Дейтеранопия|Deuteranopia
+Value.COLORBLIND.Tritanopia=Тританопия|Tritanopia
+Setting.CBSTRENGTH=0.25,0.5,0.75,1|1|Сила коррекции|Correction strength
+# Extras
+Setting.PROJECTION=Default,Panini|Default|Проекция|Projection
+Value.PROJECTION.Default=Обычная|Default
+Value.PROJECTION.Panini=Панини|Panini
+Setting.PANINI=0.25,0.5,0.75,1|0.5|Сила Панини|Panini strength
+Setting.PIXELS=1,2,3,4,6,8|1|Пиксели|Pixels
+Value.PIXELS.1=Выкл|Off
+Setting.SCANLINES=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Строки развёртки|Scanlines
+Value.SCANLINES.0=Выкл|Off
+Setting.BARREL=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Выпуклый экран|Barrel
+Value.BARREL.0=Выкл|Off
+Setting.NTSC=On,Off|Off|Сигнал NTSC|NTSC signal|cycle
+
+# Several settings at once, by how much they cost the video card (as I Like Vanilla's profiles).
+Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off FXAA=Off PROJECTION=Default BARREL=0
+Profile.VERYLOW=Очень низкий|Very low|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off FXAA=On PROJECTION=Default BARREL=0
+Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 RELIEF=0 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0.5 TAA=Off FXAA=On PROJECTION=Default BARREL=0
+Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On FXAA=On PROJECTION=Default BARREL=0
+Profile.MEDIUMPLUS=Средний+|Medium+|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On FXAA=On PROJECTION=Default BARREL=0
+Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=On REFLECT=0.6 CAUSTICS=0.5 TAA=On FXAA=On PROJECTION=Default BARREL=0
+
+Note.ABOUT=О наборе|About the pack
+
+Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: затенение углов, тени, рельеф, мягкие эффекты, лучи, отражения, блики на дне и сглаживание. «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: corner shading, shadows, relief, soft effects, rays, reflections, caustics and antialiasing. Custom: when they are set otherwise.
+Info.RELIEF=Светлое и тёмное на текстурах становится чуть выпуклым и впалым под солнцем карты. «Выкл» — плоско, как в игре.|The light and dark of the textures become slightly raised and sunken under the map's sun. Off: flat, as in the game.
+Info.SOFTFX=Огонь, дым и вспышки тают там, где касаются земли и стен, а не обрезаются резкой линией. Число — на каком расстоянии. «Как в игре» — резкая линия, как в игре.|Fire, smoke and flashes fade where they touch the ground and walls instead of being cut by a hard line. The number: over how far. As in the game: a sharp line, as the game draws it.
+Info.SHADOWMAP=Настоящие тени от солнца карты по карте теней: от роботов, зданий, деревьев и холмов, там, где игра своих не рисует. Видеокарте тяжелее.|Real shadows from the map's sun by a shadow map: from robots, buildings, trees and hills, where the game draws none of its own. Harder on the video card.
+Info.SHADOWS=Короткие тени от солнца карты у самых предметов, рядом с тенями игры. «Выкл» — без них.|Short shadows from the map's sun right by things, next to the game's own shadows. Off: none.
+Info.AO=Мягкая тень в углах, у стен и под роботами. «Выкл» — без неё.|A soft shade in corners, by walls and under robots. Off: none.
+Info.OUTLINES=Тёмная линия по краю всего, что стоит перед чем-то дальним. «Выкл» — без неё.|A dark line along the edge of whatever stands before something farther. Off: none.
+Info.CEL=Свет и тень лежат полосами, как в мультфильме. «Выкл» — плавно, как в игре.|Light and shade lie in bands, as in a cartoon. Off: smooth, as in the game.
+Info.FIRELIGHT=Как сильно пожары, взрывы, выстрелы и лазеры освещают землю, стены и роботов рядом тёплым светом.|How much fires, explosions, shots and lasers light the ground, walls and robots near them with a warm light.
+Info.GLOW=Мягкий ореол вокруг огня, вспышек, выстрелов и самых ярких мест.|A soft halo around fire, flashes, shots and the brightest places.
+Info.REFLECT=Вода отражает берега, роботов и здания, видные на экране (небо отражает сама игра). «Выкл» — только отражения игры.|The water reflects the shores, robots and buildings seen on the screen (the sky: the game's own reflection). Off: the game's reflections only.
+Info.WATERMIX=Текстура воды не повторяется квадратами: она смешана с собой же, повёрнутой и другого размера. «Выкл» — как в игре.|The water's texture does not repeat in squares: it is mixed with itself, turned and at other sizes. Off: as in the game.
+Info.CAUSTICS=Светлые подвижные линии на дне под водой, как от волн. «Выкл» — без них.|Bright moving lines on the bottom under the water, as from the waves. Off: none.
+Info.SHAFTS=Лучи солнца в дымке у земли: тени роботов, деревьев и зданий тянутся в воздухе. Выкл — без них, и видеокарте легче.|The sun's rays in the haze over the ground: the shadows of robots, trees and buildings reach through the air. Off: none, and easier on the video card.
+Info.RAYS=Насколько заметны солнечные лучи.|How strong the sun rays are.
+Info.TAA=Кадр смешивается с предыдущим: края ровнее, мерцание мелких деталей меньше.|The frame is mixed with the one before: smoother edges, less flicker of fine detail.
+Info.FXAA=Быстрое сглаживание лесенок на краях.|Fast smoothing of jagged edges.
+Info.SHARPEN=Мелкие детали чётче.|Fine details crisper.
+Info.DOF=Резко там, куда смотрит середина экрана; ближе и дальше размыто.|Sharp where the screen's middle looks; nearer and further blurred.
+Info.MBLUR=Картинка размывается, пока камера движется.|The picture blurs while the camera moves.
+Info.PAINTED=Картинка как написанная кистью: мелкие детали сливаются в мазки.|The picture as if painted with a brush: fine detail merges into strokes.
+Info.VIGNETTE=Края экрана темнее.|The screen's edges darker.
+Info.POSTERIZE=Меньше оттенков: цвет, насыщенность и яркость ступенями. Число — сколько ступеней. «Выкл» — все оттенки.|Fewer shades: the hue, saturation and brightness in steps. The number: how many. Off: every shade.
+Info.BRIGHTNESS=Всё светлее или темнее.|All lighter or darker.
+Info.GAMMA=Больше — светлее тёмное и средние тона, меньше — темнее.|More: the dark and the middle tones lighter; less: darker.
+Info.AUTOEXP=Глаз привыкает: в тёмном виде картинка понемногу светлеет, в ярком темнеет.|The eye gets used to it: a dark view slowly brightens, a bright one darkens.
+Info.TONEMAP=Как сходят на нет самые яркие места. «Как в игре» — без него; «Простой», «Рейнхард», ACES — мягче или контрастнее.|How the brightest parts roll off. As in the game: none; Simple, Reinhard, ACES: softer or with more contrast.
+Info.VIBRANCE=Блёклые цвета становятся живее, яркие остаются как есть.|Dull colours become livelier, bright ones stay as they are.
+Info.SATURATION=Насыщенность всех цветов.|The saturation of all colours.
+Info.SATDARK=Насыщенность тёмных мест.|The saturation of the dark parts.
+Info.SATLIGHT=Насыщенность светлых мест.|The saturation of the light parts.
+Info.CONTRAST=Тени чуть глубже, светлое чуть светлее.|Shadows a little deeper, the light a little lighter.
+Info.WARMTH=Больше — теплее, меньше нуля — холоднее.|More: warmer; below zero: colder.
+Info.COLORBLIND=Цвета, которые при этом виде дальтонизма сливаются, сдвигаются в различимые.|Colours that merge for this kind of colourblindness move into ones told apart.
+Info.CBSTRENGTH=Насколько сильно сдвигаются цвета.|How far the colours move.
+Info.PROJECTION=«Панини» — широкий вид без растянутых краёв, как на цилиндре. Внимание: у краёв экрана щелчок мыши попадает не туда, где нарисован робот.|Panini: a wide view without stretched edges, as on a cylinder. Note: near the screen's edges a click lands off where a robot is drawn.
+Info.PANINI=Насколько сильна проекция Панини.|How strong the Panini projection is.
+Info.PIXELS=Крупные пиксели: число — их размер. «Выкл» — обычные.|Big pixels: the number is their size. Off: as usual.
+Info.SCANLINES=Тёмные строки, как на старом мониторе.|Dark lines, as on an old monitor.
+Info.BARREL=Экран выпуклый, как кинескоп; углы чёрные. Щелчки у краёв попадают мимо.|A bulging screen, like a picture tube; black corners. Clicks near the edges miss.
+Info.NTSC=Цвет расплывается вдоль строк, по цветным местам бегут точки, как в сигнале NTSC.|The colour smears along the lines, dots crawl over the coloured parts, as in an NTSC signal.
+Info.ABOUT=Игра остаётся собой: тот же день, вода и туман карты, только мягче свет и живее цвета. Задумка навеяна набором I Like Vanilla для Minecraft; код свой, его код не использован.|The game stays itself: the same day, the map's water and fog, only softer light and livelier colours. The idea is inspired by the I Like Vanilla pack for Minecraft; the code is its own, none of its code is used.
+
+Screen=PROFILE ABOUT - [Materials] [Shadows] [Shading] [Lighting] [Sea] [Haze] [Post] [Extras]
+Screen.Materials=Материалы|Materials|RELIEF SOFTFX
+Screen.Shadows=Тени|Shadows|SHADOWMAP SHADOWS
+Screen.Shading=Затенение|Shading|AO OUTLINES CEL
+Screen.Lighting=Освещение|Lighting|FIRELIGHT GLOW
+Screen.Sea=Вода|Water|REFLECT WATERMIX CAUSTICS
+Screen.Haze=Дымка|Haze|SHAFTS RAYS
+Screen.Post=Постобработка|Post processing|TAA FXAA SHARPEN - [Blur] [Colour] - PAINTED VIGNETTE POSTERIZE
+Screen.Blur=Размытие|Blur|DOF DOFSTRENGTH MBLUR MBLURSTRENGTH
+Screen.Colour=Цветокоррекция|Colour correction|BRIGHTNESS GAMMA AUTOEXP TONEMAP - VIBRANCE SATURATION SATDARK SATLIGHT CONTRAST WARMTH - COLORBLIND CBSTRENGTH
+Screen.Extras=Дополнительно|Extras|PROJECTION PANINI - PIXELS SCANLINES BARREL NTSC
+
+# The effects drawn by its own shader in the game's place.
+Effects=effects.hlsl|SOFTFX
+# The water: the game's, its texture without repeats.
+Water=water.hlsl|WATERMIX
+# The sun's real shadows (and its rays' shade).
+Shadow=2048|2500|SHADOWMAP
+
+Target.Half=0.5|rgba16f
+Target.Glow=0.25|rgba16f
+Target.GlowH=0.25|rgba16f
+Target.GlowB=0.25|rgba16f
+Target.Wide=0.0625|rgba16f
+Target.Rays=0.5|rgba8
+Target.RaysB=0.5|rgba8
+Target.Refl=0.5|rgba16f
+Target.Color=1|rgba16f
+Target.Taa=1|rgba16f
+Target.TaaHist=1|rgba16f
+Target.Eye=1x1|r32f
+Target.EyeLast=1x1|r32f
+
+Pass=half.hlsl|Half
+Pass=glow.hlsl|Glow
+Pass=glowh.hlsl|GlowH
+Pass=glowv.hlsl|GlowB
+Pass=wide.hlsl|Wide
+Pass=rays.hlsl|Rays
+Pass=raysblur.hlsl|RaysB
+Pass=refl.hlsl|Refl
+Pass=final.hlsl|Color
+Pass=taa.hlsl|Taa
+Pass=history.hlsl|TaaHist
+Pass=eye.hlsl|Eye
+Pass=eyekeep.hlsl|EyeLast
+Pass=post.hlsl|screen

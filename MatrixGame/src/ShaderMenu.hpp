@@ -22,7 +22,8 @@ struct Layout {
     static constexpr int row_height = 17;
     static constexpr int on_y = 58;           // the list's Shaders row
     static constexpr int list_y = on_y + 2 * row_height;  // the packs, after an empty row
-    static constexpr int list_rows = 13;      // then an empty row before the legend
+    static constexpr int list_rows = 9;       // then an empty row before the legend
+    static constexpr int pack_row_height = 25;  // a pack's row: taller than a setting's, its name in its middle
     // A settings screen: on top Back (a further screen's), its title in two lines, Reset; then its rows with as much room
     // over them as under them, where the chosen row's name is said in two lines; then the buttons.
     static constexpr int header_y = 24;       // the title's first line (the second a row lower)
@@ -107,7 +108,7 @@ public:
     // Rows more than Layout's (a taller window): the list, the screens, what is under them lower by as many.
     void set_extra_rows(int rows);
     int extra_rows() const { return m_Extra; }
-    int list_rows() const { return Layout::list_rows + m_Extra; }
+    int list_rows() const { return Layout::list_rows + m_Extra * Layout::row_height / Layout::pack_row_height; }
     int legend_y() const { return Layout::legend_y + m_Extra * Layout::row_height; }
     int buttons_y() const { return Layout::buttons_y + m_Extra * Layout::row_height; }
     // Under a settings screen's rows: the chosen row's name in two lines.

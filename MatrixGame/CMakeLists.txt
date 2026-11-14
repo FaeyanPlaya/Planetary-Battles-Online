@@ -175,6 +175,11 @@ endif ()
 # (64-bit only, so the bridge is built with a 64-bit MinGW) is there; the product's ids (EOS_IDS, never in the
 # repository) go to CFG\eos.txt.
 set(EOS_SDK_DIR ${CMAKE_SOURCE_DIR}/../vendor/eos-sdk/SDK CACHE PATH "The EOS C SDK's SDK folder")
+# Sound before Windows 10: Microsoft's XAudio 2.9 redistributable beside the exe (Audio/XAudio2.cpp loads it).
+if (NOT MATRIXGAME_BUILD_DLL AND EXISTS ${CMAKE_SOURCE_DIR}/vendor/xaudio2-redist/xaudio2_9redist.dll)
+    configure_file(${CMAKE_SOURCE_DIR}/vendor/xaudio2-redist/xaudio2_9redist.dll
+                   ${CMAKE_CURRENT_BINARY_DIR}/xaudio2_9redist.dll COPYONLY)
+endif()
 set(EOS_GXX ${CMAKE_SOURCE_DIR}/.tools/winlibs-13.2.0/mingw64/bin/g++.exe CACHE FILEPATH "A 64-bit MinGW g++")
 set(EOS_IDS ${CMAKE_SOURCE_DIR}/../local/eos.txt CACHE FILEPATH "The EOS product's ids")
 if (NOT MATRIXGAME_BUILD_DLL AND EXISTS ${EOS_SDK_DIR}/Include/eos_sdk.h AND EXISTS ${EOS_GXX})
@@ -185,6 +190,11 @@ if (NOT MATRIXGAME_BUILD_DLL AND EXISTS ${EOS_SDK_DIR}/Include/eos_sdk.h AND EXI
         COMMAND ${CMAKE_COMMAND} -E env "PATH=${EOS_GXX_BIN}" ${EOS_GXX} -std=c++20 -O2 -I${EOS_SDK_DIR}/Include
             ${EOS_BRIDGE_SOURCE} ${EOS_DLL} -lws2_32 -static -o ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EOS_DLL} ${CMAKE_CURRENT_BINARY_DIR}
+        # Epic's DLL needs the Visual C++ 2015-2022 x64 runtime: Microsoft's own beside it (app-local), so a computer
+        # without it installed (Windows 7) runs the bridge too.
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/vendor/vcredist-x64/msvcp140.dll
+            ${CMAKE_SOURCE_DIR}/vendor/vcredist-x64/vcruntime140.dll ${CMAKE_SOURCE_DIR}/vendor/vcredist-x64/vcruntime140_1.dll
+            ${CMAKE_CURRENT_BINARY_DIR}
         DEPENDS ${EOS_BRIDGE_SOURCE}
         COMMENT "Building eos-bridge.exe (64-bit)")
     add_custom_target(EosBridge ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe)

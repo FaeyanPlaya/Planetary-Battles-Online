@@ -1019,9 +1019,23 @@ void test_shaders(Battle &b, int now) {
     note(b, std::format("test: shaders {}", on ? "on" : "off"));
 }
 
+// --net-test-shuffle: the window's shaders changed at random every so often (drawing only: the battles must stay the
+// same however each window draws).
+void test_shuffle(Battle &b, int now) {
+    const auto &o = b.options;
+    static int next_ms = 0;
+    static std::uint32_t random = 0;
+    if (o.test_shuffle_ms <= 0 || now < next_ms) return;
+    if (random == 0) random = std::uint32_t(o.test_shuffle_seed) * 2654435761u + 1;
+    next_ms = now + o.test_shuffle_ms;
+    random = random * 1664525u + 1013904223u;
+    if (const std::string what = ShaderPacks::shuffle_choice(random); !what.empty()) note(b, "test: shaders " + what);
+}
+
 void stepped(Battle &b, int now) {
     b.session.stepped(now);
     test_shaders(b, now);
+    test_shuffle(b, now);
     BattleHistory::set_time(now);
     b.draws.emplace_back(now, random::draw_count());
     if (b.draws.size() > 2000) b.draws.pop_front();
@@ -1894,6 +1908,8 @@ Options parse(std::vector<std::wstring_view> &arguments) {
         else if (a == L"--net-test-tab") o.test_tab_ms = parse_int(value(), "tab time");
         else if (a == L"--net-test-shaders")
             std::tie(o.test_shaders_on, o.test_shaders_flip_ms) = parse_pair(value(), "--net-test-shaders");
+        else if (a == L"--net-test-shuffle")
+            std::tie(o.test_shuffle_ms, o.test_shuffle_seed) = parse_pair(value(), "--net-test-shuffle");
         else if (a == L"--net-test-history") std::tie(o.test_history_ms, o.test_history_lines) = parse_pair(value(), "history");
         else if (a == L"--net-test-leave") o.test_leave_ms = parse_int(value(), "leave time");
         else if (a == L"--net-test-lag") std::tie(o.test_lag_ms, o.test_lag) = parse_pair(value(), "lag");

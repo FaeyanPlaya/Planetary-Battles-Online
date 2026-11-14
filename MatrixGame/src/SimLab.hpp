@@ -62,6 +62,10 @@ struct Options {
     // ShotsAt=ms,ms,from-to/every,...: pictures of the finished frame at these game times, into lab-shots\ beside
     // the executable (named by the game time), to look at a replayed battle at its moments.
     std::vector<int> shots_at;
+    // ShaderShuffleMs=: every so many ms of game time the shaders change at random (on or off, the pack, a profile or
+    // a few settings), as the menu would change them: the drawing's test. 0: never. Its own random numbers (by the
+    // seed): the battle's are not drawn.
+    int shader_shuffle_ms = 0;
 };
 
 // Reads CFG/simlab.txt beside the executable. Absent file -> inactive options.
@@ -83,6 +87,10 @@ void note(const std::string &event);
 
 // The picture due at this game time (ShotsAt), once each: its file; none else.
 std::optional<std::wstring> shot_due(int game_ms);
+
+// Whether the shaders are due to change now (ShaderShuffleMs), once each time: a random number of the lab's own for
+// the change; none else.
+std::optional<std::uint32_t> shader_shuffle_due(int game_ms);
 
 // ShotsAt's text: ms, from-to/every, separated by commas; sorted.
 std::vector<int> parse_shots(const std::wstring &text);

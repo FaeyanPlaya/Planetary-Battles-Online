@@ -48,7 +48,7 @@ bool code_name(const std::string &name) {
             "LightColor",   "LightInfo",    "ShadowColor", "SkyHorizon",   "MAX_LIGHTS",   "LIGHT_GLOW",  "LIGHT_FIRE",
             "LIGHT_FLASH",  "LIGHT_SHOT",   "ViewDepth",   "SceneDepth",   "WorldPos",     "Luma",        "ScreenPos",
             "ScenePixel",   "SceneNormal",  "SceneHeight", "ReliefSlope",  "GeneratedNormal", "PrevCameraPos",
-            "ShadowTex",    "ShadowViewProj", "ShadowInfo", "ShadowPos",   "ShadowDepth",  "ShadowLit",
+            "ReliefTex",    "ShadowTex",    "ShadowViewProj", "ShadowInfo", "ShadowPos",   "ShadowDepth",  "ShadowLit",
             "World",        "WorldTex",     "WorldInfo",   "PBO_WORLD",    "MAT_LAND",     "MAT_OBJECT",
             "MAT_ROBOT",    "MAT_BUILDING", "MAT_CANNON",  "MAT_FLYER",    "pbo_world",    "LandInfo",
             "VoxelTex",     "VoxelAt",      "VoxelOrigin", "VoxelScale",   "VoxelExtent",
@@ -260,6 +260,7 @@ Inputs pass_inputs(const Pack &pack, const Files &files, const Pass &pass) {
     inputs.shadow = pack.shadow.size > 0 &&
                     (names.contains("ShadowTex") || names.contains("ShadowDepth") || names.contains("ShadowLit"));
     inputs.voxels = pack.voxels.size > 0 && (names.contains("VoxelTex") || names.contains("VoxelAt"));
+    inputs.relief = names.contains("SceneHeight") || names.contains("ReliefSlope") || names.contains("GeneratedNormal");
     return inputs;
 }
 
@@ -357,6 +358,14 @@ Pack parse(std::wstring_view text_view, std::wstring id) {
                 continue;
             }
             pack.passes.push_back(std::move(pass));
+        }
+        else if (key == L"interface") {
+            if (pack.interface_from >= 0 || pack.passes.empty()) {
+                problems.push_back(L"Interface");
+                continue;
+            }
+            pack.interface_from = int(pack.passes.size());
+            pack.interface_when = ascii(value);
         }
         else if (key == L"screen") first_rows = value;
         else if (key.starts_with(L"screen.")) {
@@ -471,6 +480,11 @@ Pack parse(std::wstring_view text_view, std::wstring id) {
             }
             pack.profiles.push_back(std::move(profile));
         }
+        else if (key.starts_with(L"value.")) {
+            auto parts = split(value, L'|');
+            parts.resize(2);
+            pack.value_names[ascii(key_as_written.substr(6))] = {parts[0], parts[1]};
+        }
         else if (key.starts_with(L"info.")) {
             auto parts = split(value, L'|');
             parts.resize(2);
@@ -487,6 +501,16 @@ Pack parse(std::wstring_view text_view, std::wstring id) {
             if (setting == pack.settings.end() || std::ranges::find(setting->values, value) == setting->values.end())
                 problems.push_back(L"Profile " + utils::to_wstring(profile.id) + L": " + utils::to_wstring(id));
         }
+    // A value's name: of a setting's value, in one language at least.
+    for (const auto &[name, said] : pack.value_names) {
+        const auto dot = name.find('.');
+        const auto setting = dot == std::string::npos
+                                     ? pack.settings.end()
+                                     : std::ranges::find(pack.settings, name.substr(0, dot), &Mods::SettingLine::id);
+        if (setting == pack.settings.end() || (said.russian.empty() && said.english.empty()) ||
+            std::ranges::find(setting->values, utils::to_wstring(name.substr(dot + 1))) == setting->values.end())
+            problems.push_back(L"Value." + utils::to_wstring(name));
+    }
     if (!pack.shadow.when.empty() &&
         std::ranges::find(pack.settings, pack.shadow.when, &Mods::SettingLine::id) == pack.settings.end())
         problems.push_back(L"Shadow: " + utils::to_wstring(pack.shadow.when));
@@ -544,6 +568,12 @@ Pack parse(std::wstring_view text_view, std::wstring id) {
             problems.push_back(L"Pass into " + text(pass.output.c_str()));
     if (pack.passes.empty()) problems.push_back(L"no Pass");
     else if (pack.passes.back().output != "screen") problems.push_back(L"the last Pass is not into screen");
+    // Interface=: a pass after it, the one before it into the screen, its setting the pack's.
+    if (pack.interface_from >= 0 &&
+        (pack.interface_from >= int(pack.passes.size()) || pack.passes[pack.interface_from - 1].output != "screen" ||
+         (!pack.interface_when.empty() &&
+          std::ranges::find(pack.settings, pack.interface_when, &Mods::SettingLine::id) == pack.settings.end())))
+        problems.push_back(L"Interface");
     if (int(pack.passes.size()) > max_passes) problems.push_back(L"too many passes");
     if (int(pack.targets.size()) > max_targets) problems.push_back(L"too many targets");
     if (int(pack.textures.size()) > max_textures) problems.push_back(L"too many textures");
@@ -1096,6 +1126,10 @@ std::string prelude(const Pack &pack, const Mods::SettingValues &values, const I
     // MAT_: 1 the land...), 0 outside the map and when there is no copy (VoxelScale.w 0). No branches: for a loop
     // along a ray.
     if (inputs.voxels) code += "sampler3D VoxelTex : register(s" + std::to_string(slot++) + ");\n";
+    // The relief's picture: SolidTex as it was before the interface's marks were drawn into it (no ring or figure
+    // stands out of the ground); without it SolidTex itself.
+    if (inputs.relief) code += "sampler2D ReliefTex : register(s" + std::to_string(slot++) + ");\n";
+    else code += "#define ReliefTex SolidTex\n";
     code +=
         "float4 VoxelOrigin : register(c139);\n"
         "float4 VoxelScale : register(c140);\n"
@@ -1200,7 +1234,7 @@ std::string prelude(const Pack &pack, const Mods::SettingValues &values, const I
         // block's texture; the game draws without shaders, so the picture before the effects stands in for the
         // textures: the game's shadow taken out of it first, its edge is no relief).
         "float SceneHeight(float2 uv) {\n"
-        "    float4 c = tex2Dlod(SolidTex, float4(uv, 0, 0));\n"
+        "    float4 c = tex2Dlod(ReliefTex, float4(uv, 0, 0));\n"
         "    float lay = State.w > 0.5 ? (1.0 - c.a) * ShadowColor.a : 0.0;\n"
         "    float3 bare = lay > 0.001 ? max(c.rgb - ShadowColor.rgb * lay, 0) / max(1.0 - lay, 0.05) : c.rgb;\n"
         "    return Luma(bare);\n"
@@ -1262,5 +1296,48 @@ void set_choice(Choice choice) {
 }
 
 std::uint32_t choice_version() { return g_version; }
+
+std::string shuffle_choice(std::uint32_t random) {
+    std::vector<const Pack *> usable;
+    for (const auto &pack : installed())
+        if (pack.problem.empty()) usable.push_back(&pack);
+    if (usable.empty()) return {};
+    auto next = [&random]() {
+        random ^= random << 13;
+        random ^= random >> 17;
+        random ^= random << 5;
+        return random;
+    };
+    next();
+    Choice choice = ShaderPacks::choice();
+    std::string what;
+    if (next() % 8 == 0) choice.on = !choice.on;
+    else {
+        choice.on = true;
+        const Pack *pack = usable[next() % usable.size()];
+        if (choice.pack != pack->id) {
+            choice.pack = pack->id;
+            choice.settings.clear();
+        }
+        if (!pack->profiles.empty() && next() % 3 == 0) {
+            const auto &profile = pack->profiles[next() % pack->profiles.size()];
+            for (const auto &[id, value] : profile.values) choice.settings[id] = value;
+            what = "profile " + profile.id;
+        }
+        else {
+            const int count = 1 + int(next() % 4);
+            for (int i = 0; i < count && !pack->settings.empty(); ++i) {
+                const auto &line = pack->settings[next() % pack->settings.size()];
+                if (line.values.empty()) continue;
+                const std::wstring &value = line.values[next() % line.values.size()];
+                choice.settings[line.id] = value;
+                what += line.id + "=" + utils::from_wstring(value) + " ";
+            }
+        }
+    }
+    std::string said = std::string(choice.on ? "on " : "off ") + utils::from_wstring(choice.pack) + " " + what;
+    set_choice(std::move(choice));
+    return said;
+}
 
 }  // namespace ShaderPacks

@@ -1,4 +1,5 @@
-// Spooky: the night with its glow and rays onto the screen: the colours' curve, cold shadows, warm fire, the edges.
+// Spooky: the night with its glow, rays and reflections: the colours' curve, cold shadows, warm fire (into Color;
+// post.hlsl puts it on the screen).
 #include "common.hlsl"
 
 // Up to 0.65 as it is, then softly on: bright fire does not burn out white.
@@ -10,6 +11,8 @@ float3 Curve(float3 x) {
 float4 main(float2 uv : TEXCOORD0) : COLOR {
     float4 lit = tex2D(Lit, uv);
     float3 col = min(max(lit.rgb, 0), 64.0);
+    float4 refl = tex2D(Refl, uv);  // (the water's reflections of the land)
+    col = lerp(col, refl.rgb, saturate(refl.a));
     float2 px = SceneSize.zw * 8.0;
     float3 wide = (tex2D(Wide, uv + float2(-px.x, -px.y)).rgb + tex2D(Wide, uv + float2(px.x, -px.y)).rgb +
                    tex2D(Wide, uv + float2(-px.x, px.y)).rgb + tex2D(Wide, uv + px).rgb) * 0.25;
@@ -34,11 +37,5 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     // Cold in the dark, warm where it is bright.
     float l = Luma(col);
     col = lerp(col * float3(0.93, 0.96, 1.08), col * float3(1.07, 0.99, 0.88), saturate(l * 1.6));
-    // The edges darker.
-    float2 v = uv - 0.5;
-    col *= 1.0 - VIGNETTE * 0.6 * saturate(dot(v, v) * 2.2);
-    // Grain: a little brighter or darker, never down to black.
-    float noise = Hash12(uv * ScreenSize.xy + frac(Time.x * 7.31) * 911.0) - 0.5;
-    col = col * (1.0 + noise * GRAIN * 0.16) + GRAIN * 0.004;
     return float4(saturate(col), 1);
 }

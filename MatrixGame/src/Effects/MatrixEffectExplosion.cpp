@@ -332,6 +332,10 @@ CMatrixEffectExplosion::CMatrixEffectExplosion(const D3DXVECTOR3 &pos, const SEx
     m_Light.effect = NULL;
     if (m_Props->light) {
         CMatrixEffect::CreatePointLight(&m_Light, pos, m_Props->light_radius1, m_Props->light_color1, false);
+        // (the shader packs' flares tell explosions, and the mighty ones: buildings', map objects', a bomb's)
+        const bool mighty = m_Props == &ExplosionBigBoom || m_Props == &ExplosionBuildingBoom ||
+                            m_Props == &ExplosionBuildingBoom2 || m_Props == &ExplosionObject;
+        if (m_Light.effect) ((CMatrixEffectPointLight *)m_Light.effect)->SetShaderBlast(mighty ? 2.0f : 1.0f);
     }
 
     m_DebCnt = m_Props->deb_cnt + m_Props->fire_deb_cnt + m_Props->intense_cnt + m_Props->sparks_deb_cnt;

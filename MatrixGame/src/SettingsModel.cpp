@@ -944,7 +944,7 @@ std::vector<Placed> shader_frames(const Window &window) {
     const auto &menu = window.shader_menu();
     const int place = menu.chosen() - menu.list_top();
     if (!menu.settings() && menu.chosen() >= 0 && place >= 0 && place < menu.list_rows())
-        add(SL::left, menu.row_y(place) - 1, SL::right - SL::left, SL::row_height + 2, selected_color(),
+        add(SL::left, menu.row_y(place) + 1, SL::right - SL::left, SL::pack_row_height - 2, selected_color(),
             with_alpha(selected_color(), 0x24));
     for (const auto &button : menu.buttons()) {
         const bool enabled = menu.enabled(button.button), hover = enabled && menu.hover() == button.button;
@@ -1004,9 +1004,10 @@ std::wstring shaders_text(const Window &window) {
             const uint32_t name_color = !menu.packs()[pack].problem.empty() ? disabled_color()
                                         : pack == menu.chosen()              ? selected_color()
                                                                              : text_color();
-            const int width = SL::right - 8 - text_x;
+            // In the row's middle, both ways.
+            const int width = SL::right - SL::left - 16;
             result += text_element(fitted(menu.pack_name(pack), width, pack == menu.chosen()), L"Font.Heavy14", name_color,
-                                   text_x, menu.row_y(place), width, 0);
+                                   SL::left + 8, menu.row_y(place) + (SL::pack_row_height - SL::row_height) / 2, width, 1);
         }
     }
     else {

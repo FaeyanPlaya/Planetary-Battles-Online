@@ -21,6 +21,7 @@ struct Light {
     float seed = 0;             // 0..1, the same while it lives (a pack's flicker)
     const void *who = nullptr;  // what gives it (a light added twice is taken once)
     bool unit = false;          // a robot's or flyer's own (its jets): taken before the battle's others
+    float blast = 0;            // an explosion's: 1, a mighty one's (a building's, a map object's, a bomb's): 2
 };
 
 inline constexpr int max_lights = 32;            // what a pass gets
@@ -40,10 +41,12 @@ void add(const V &pos, float radius, float r, float g, float b, Kind kind, const
 }
 // An effect's colour (0x..RRGGBB: as the game lights the ground, its alpha left out).
 template<class V>
-void add_argb(const V &pos, float radius, std::uint32_t argb, Kind kind, const void *who, float strength = 1) {
+void add_argb(const V &pos, float radius, std::uint32_t argb, Kind kind, const void *who, float strength = 1,
+              float blast = 0) {
     const float k = strength / 255.0f;
-    add(pos, radius, float((argb >> 16) & 0xff) * k, float((argb >> 8) & 0xff) * k, float(argb & 0xff) * k, kind,
-        who);
+    const float r = float((argb >> 16) & 0xff) * k, g = float((argb >> 8) & 0xff) * k, b = float(argb & 0xff) * k;
+    if (!collecting() || radius <= 0 || (r <= 0 && g <= 0 && b <= 0)) return;
+    add(Light{pos.x, pos.y, pos.z, radius, r, g, b, kind, 0, who, false, blast});
 }
 
 // This frame's, as added; clear empties them. refused: those added past max_collected since the last clear.

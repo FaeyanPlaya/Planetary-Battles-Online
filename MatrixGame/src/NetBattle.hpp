@@ -128,6 +128,9 @@ struct Options {
     // --net-test-shaders on,ms: this window's shaders on (1) or off (0) from the start, the other way at ms (-1:
     // never); the person's CFG\shaders.txt left as it is (their pack, its settings).
     int test_shaders_on = -1, test_shaders_flip_ms = -1;
+    // --net-test-shuffle ms,seed: every ms of game time this window's shaders change at random (on or off, the pack,
+    // a profile or a few settings; ShaderPacks::shuffle_choice), by its own numbers from seed; -1: never.
+    int test_shuffle_ms = -1, test_shuffle_seed = 1;
     int test_lag_ms = -1, test_lag = 0, test_lag_end_ms = -1;
     bool test_desync_again = false;
     bool test_no_deputy = false;

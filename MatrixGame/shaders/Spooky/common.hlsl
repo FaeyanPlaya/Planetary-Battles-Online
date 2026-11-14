@@ -55,6 +55,28 @@ float3 Haze() { return lerp(Night(SkyHorizon.rgb), FogTint, 0.35); }
 // dir: the view's, the camera above the water; far when it never does.
 float WaterAt(float3 dir) { return CameraPos.z > GroundZ && dir.z < -1e-4 ? (GroundZ - CameraPos.z) / dir.z : 1e9; }
 
+#define REFL_SOURCE Lit
+// The words of FLARES, as the least LightInfo.z a flare's light has.
+#define All 0
+#define Blasts 1
+#define Mighty 2
+#define FLARE_FROM FLARES  // (what refl.hlsl reflects: the night's picture)
+
+// Waving: leaves and grass (the green of the picture) sway a little in the wind, by where they stand. The place on
+// the screen to read instead of uv (the picture there moved).
+float2 Wave(float2 uv) {
+    if (WAVING <= 0) return uv;
+    float3 s = tex2Dlod(SolidTex, float4(uv, 0, 0)).rgb;
+    float green = saturate((s.g - max(s.r, s.b)) * 8.0);
+    float d = SceneDepth(uv);
+    if (green <= 0 || d >= 1) return uv;
+    float3 p = WorldPos(uv, d);
+    float t = Time.y;
+    float w = sin(t * 1.9 + p.x * 0.11 + p.y * 0.07) * 0.7 + sin(t * 3.3 + p.y * 0.13 - p.x * 0.05) * 0.3;
+    float pixels = 0.5 * WAVING * green * Proj._11 * SceneSize.x * 0.5 / max(ViewDepth(d), 1.0);
+    return uv + float2(w * pixels * SceneSize.z, 0);
+}
+
 // Softly to its end: a strong light does not burn out.
 float3 Soft(float3 x) { return x / (1.0 + x * 0.6); }
 

@@ -35,9 +35,15 @@ struct ComScope {
 };
 
 struct Library {
+    // Windows 10's own; before it (7 SP1, 8.1) Microsoft's redistributable copy beside the exe
+    // (xaudio2_9redist.dll, the Microsoft.XAudio2.Redist package), the same interface.
     HMODULE module{LoadLibraryExW(L"xaudio2_9.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32)};
     Library() {
-        if (!module) throw std::runtime_error("XAudio2.9 is unavailable; standalone audio requires Windows 10 or later");
+        if (!module) module = LoadLibraryExW(L"xaudio2_9redist.dll", nullptr, LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
+                                                                           LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!module)
+            throw std::runtime_error("XAudio2.9 is unavailable: Windows 10 has it; on Windows 7 or 8.1 "
+                                     "xaudio2_9redist.dll beside the exe gives it");
     }
     ~Library() { FreeLibrary(module); }
 };
