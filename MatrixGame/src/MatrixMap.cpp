@@ -185,6 +185,7 @@ void CMatrixMap::Clear(void) {
 
     ShaderRender::shutdown();
     InterfaceHide::reset();
+    ShaderRender::map_changed();
 
     m_RN.Clear();
 
@@ -2994,12 +2995,13 @@ void CMatrixMap::Draw(void) {
 
     // HideInterface hides the cursor too; shown again when the interface is (the game's own hiding kept apart: only a
     // cursor hidden here is shown again).
+    // (CMatrixCursor::SetVisible keeps it hidden meanwhile; the frame the interface comes back shows it, whoever hid it)
     static bool cursor_hidden = false;
-    if (!interface_shown && m_Cursor.IsVisible()) {
-        m_Cursor.SetVisible(false);
+    if (!interface_shown) {
+        if (m_Cursor.IsVisible()) m_Cursor.SetVisible(false);
         cursor_hidden = true;
     }
-    else if (interface_shown && cursor_hidden) {
+    else if (cursor_hidden) {
         cursor_hidden = false;
         if (!IsMouseCam()) m_Cursor.SetVisible(true);
     }

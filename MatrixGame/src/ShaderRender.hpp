@@ -68,6 +68,9 @@ void time_end(Part part);
 void release();
 // The battle is over: everything goes.
 void shutdown();
+// The map was cleared: what was kept of it (the land's normals, the voxel copy, the horizon's colour) is made again
+// for the next one, even one at the same address.
+void map_changed();
 // Whether the game draws its own distance fog: not while a pack that turns it off draws (Game.Fog=Off). The pack's
 // other game settings (shadows) go into g_Config as each frame begins, the person's back once it stops.
 bool game_fog();

@@ -192,6 +192,7 @@ struct State {
     // The land's normals as the map keeps them at its points, a texel a point (managed): for the world pass.
     IDirect3DTexture9 *land = nullptr;
     const void *land_map = nullptr;
+    std::uintptr_t land_generation = 0;
     int land_width = 0, land_height = 0;
     bool world_plane_set = false;
     // The water by the pack (Water=): the engine's vertex shader for the water's vertices and the pack's pixel
@@ -295,6 +296,7 @@ struct VoxelCopy {
     float wanted = 0;  // the pack's voxel size (0: none)
     float built = 0;   // the size the grid was made for
     const void *map = nullptr;
+    std::uintptr_t generation = 0;
     ShaderVoxels::Grid grid;
     IDirect3DVolumeTexture9 *texture = nullptr;
     int tx = 0, ty = 0, tz = 0;  // the texture's sides (powers of two over the grid's)
@@ -321,6 +323,8 @@ void voxels_drop() {
 }
 
 // The game settings the drawn pack decides (ShaderPacks::game_settings).
+std::uintptr_t g_map_generation = 1;  // (map_changed: a map cleared, another may come at the same address)
+
 bool g_game_fog = true;
 bool g_shadows_decided = false;  // g_Config's shadows are the pack's: the person's come back when it stops
 
@@ -881,14 +885,14 @@ D3DXVECTOR4 color(DWORD argb, float w = 0) {
 // may be far from its sky (Module: a dark brown under a bright orange one). w: 1 from the skybox, 0 the sky colour
 // standing in (no skybox, or its pictures in a format not read here). Worked out once per map and sky.
 struct Horizon {
-    const void *key[6]{};
+    const void *key[7]{};
     D3DXVECTOR4 color{0, 0, 0, 0};
     int tries = 0;  // frames its skybox could not be read (a texture lost just then): tried again for a while
 };
 Horizon g_horizon;
 
 void update_horizon(CMatrixMap &map) {
-    const void *key[6] = {&map, map.m_SkyTex[0].tex, map.m_SkyTex[1].tex, map.m_SkyTex[2].tex, map.m_SkyTex[3].tex,
+    const void *key[7] = {reinterpret_cast<const void *>(g_map_generation), &map, map.m_SkyTex[0].tex, map.m_SkyTex[1].tex, map.m_SkyTex[2].tex, map.m_SkyTex[3].tex,
                           reinterpret_cast<const void *>(std::uintptr_t(map.m_SkyColor) ^
                                                          (std::uintptr_t(g_Config.m_SkyBox) << 24))};
     if (std::equal(std::begin(key), std::end(key), std::begin(g_horizon.key))) {
@@ -1142,7 +1146,7 @@ void voxels_update(CMatrixMap &map) {
         return;
     }
     if (v.refused) return;
-    if (v.map != &map || v.built != v.wanted) {
+    if (v.map != &map || v.generation != g_map_generation || v.built != v.wanted) {
         voxels_drop();
         if (!(g_D3DDCaps.TextureCaps & D3DPTEXTURECAPS_VOLUMEMAP) ||
             FAILED(g_D3D->CheckDeviceFormat(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, display_format(), 0,
@@ -1177,6 +1181,7 @@ void voxels_update(CMatrixMap &map) {
                 v.grid.fill_land(x, y, land_height(map, (float(x) + 0.5f) * shape.size, (float(y) + 0.5f) * shape.size),
                                  std::uint8_t(ShaderPacks::Material::Land));
         v.map = &map;
+        v.generation = g_map_generation;
         v.built = v.wanted;
         v.scan_in = 0;
         lgr.notice("Shaders: the voxel copy {}x{}x{}, a voxel {} of the world's units")(shape.nx, shape.ny, shape.nz,
@@ -1322,6 +1327,7 @@ void begin_frame() {
     D3DSURFACE_DESC desc{};
     screen->GetDesc(&desc);
     if ((desc.Width != g_state.width || desc.Height != g_state.height) && !make_surfaces(desc.Width, desc.Height)) {
+        g_D3DD->SetRenderTarget(0, screen);  // (make_surfaces cleared the targets it made by drawing into them)
         drop(screen);
         return;
     }
@@ -1513,9 +1519,12 @@ IDirect3DVertexShader9 *world_vertex(DWORD format) {
 // shows the mesh.
 void make_land(CMatrixMap &map) {
     const int width = map.m_Size.x + 1, height = map.m_Size.y + 1;
-    if (g_state.land_map == &map && g_state.land_width == width && g_state.land_height == height) return;
+    if (g_state.land_map == &map && g_state.land_generation == g_map_generation && g_state.land_width == width &&
+        g_state.land_height == height)
+        return;
     drop(g_state.land);
     g_state.land_map = &map;
+    g_state.land_generation = g_map_generation;
     g_state.land_width = width;
     g_state.land_height = height;
     if (width < 2 || height < 2 || DWORD(width) > g_D3DDCaps.MaxTextureWidth ||
@@ -2176,6 +2185,11 @@ void shutdown() {
     voxels_drop();
     g_state.version = 0;
     decide_game_settings(false);
+}
+
+void map_changed() {
+    if (++g_map_generation == 0) g_map_generation = 1;
+    if (g_voxels.map) voxels_drop();  // (its queue holds the cleared map's things)
 }
 
 bool game_fog() { return g_game_fog; }

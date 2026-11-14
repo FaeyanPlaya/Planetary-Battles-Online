@@ -6,10 +6,15 @@
 #include "MatrixMap.hpp"
 
 #include "CFile.hpp"
+#include "InterfaceHide.hpp"
 
 #define CURSOR_Z 0.0f
 
 void CMatrixCursor::SetVisible(bool flag) {
+    // The interface hidden (F1): the cursor too. The side's logic asks for it at every step (against the AI every
+    // 10 ms), and a system cursor shown till the frame hid it again kept appearing.
+    if (flag && InterfaceHide::hidden())
+        flag = false;
     // Partial battlefield cleanup may drop orders before Select loaded a cursor.
     if ((!m_CursorIcons && !m_CursorTexture) || !g_D3DD) return;
     if (!g_Config.m_SoftwareCursor) {
