@@ -7,8 +7,10 @@
 float Behind(float3 p, float3 r, float t, out float2 at) {
     float3 s = ScreenPos(p + r * t);
     at = s.xy;
-    if (s.z <= 0 || s.z >= 1 || any(s.xy != saturate(s.xy))) return -1e9;
-    return ViewDepth(s.z) - ViewDepth(SceneDepth(s.xy));
+    // (no early return: the June 2010 compiler got the march's loop wrong with one, every ray "off the screen")
+    bool off = s.z <= 0 || s.z >= 1 || any(s.xy != saturate(s.xy));
+    float b = ViewDepth(s.z) - ViewDepth(SceneDepth(saturate(s.xy)));
+    return off ? -1e9 : b;
 }
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {
@@ -30,22 +32,22 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     // a ray under them met the water at once and reflected the water itself).
     if (r.z < 0.003) return 0;
     float start = max(4.0, (GroundZ + 3.0 - p.z) / r.z);
-    float before = start * 0.5, t = start, step = max(4.0, start * 0.25);
+    // (the first sample behind kept, the loop run to its end: with a break there the June 2010 compiler lost the hits)
+    float before = start * 0.5, t = start, step = max(4.0, start * 0.25), lo = 0, hi = -1;
     float2 at = 0;
-    bool found = false;
+    bool gone = false;
     [loop] for (int i = 0; i < 40; i++) {
         float b = Behind(p, r, t, at);
-        if (b < -1e8) break;  // off the screen
-        if (b > 0) {
-            found = true;
-            break;
+        gone = gone || b < -1e8;  // off the screen
+        if (!gone && hi < 0 && b > 0) {
+            lo = before;
+            hi = t;
         }
         before = t;
         t += step;
         step *= 1.25;
     }
-    if (!found) return 0;
-    float lo = before, hi = t;
+    if (hi < 0) return 0;
     [unroll] for (int k = 0; k < 6; k++) {
         float mid = (lo + hi) * 0.5;
         if (Behind(p, r, mid, at) > 0) hi = mid;
