@@ -214,15 +214,32 @@ void L3GInitAsEXE(HINSTANCE hinst, [[maybe_unused]] CBlockPar& bpcfg, const wcha
     d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
     Display::configure_parameters(d3dpp);
 
-    auto cd_res =
-        g_D3D->CreateDevice(
-            D3DADAPTER_DEFAULT,
-            D3DDEVTYPE_HAL,
-            g_Wnd,
-            D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED,
-            &d3dpp,
-            &g_D3DD
-        );
+    // A device can be lost for a moment (the game starting again after a battle, the previous device just let go,
+    // the desktop busy): try again for up to 30 seconds before giving up.
+    const D3DPRESENT_PARAMETERS asked = d3dpp;
+    auto create = [&] {
+        d3dpp = asked;
+        return g_D3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, g_Wnd,
+                                   D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED, &d3dpp, &g_D3DD);
+    };
+    auto cd_res = create();
+    int lost_tries = 0;
+    for (; cd_res == D3DERR_DEVICELOST && lost_tries < 300; ++lost_tries) {
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                PostQuitMessage(int(msg.wParam));  // (for the game's own loop)
+                break;
+            }
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        cd_res = create();
+    }
+    if (lost_tries > 0)
+        lgr.warning("CreateDevice: the device was lost, {} after {} tries")(cd_res == D3D_OK ? "made" : "not made",
+                                                                            lost_tries);
     owned_device.adopt(g_D3DD);
 
     switch(cd_res)
