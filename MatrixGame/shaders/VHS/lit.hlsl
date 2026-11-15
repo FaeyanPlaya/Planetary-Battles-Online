@@ -5,6 +5,12 @@
 float4 main(float2 uv : TEXCOORD0) : COLOR {
     uv = Lens(uv);  // (the tube's glass: here, so the interface drawn after it is never bent)
     float3 scene = tex2D(SceneTex, uv).rgb;
+    if (ABERRATION > 0) {
+        // Colour fringes towards the edges: the red read further out, the blue further in.
+        float2 o = (uv - 0.5) * ABERRATION * 0.006;
+        scene.r = tex2D(SceneTex, uv + o).r;
+        scene.b = tex2D(SceneTex, uv - o).b;
+    }
     if (SOFTLIGHT <= 0) return float4(scene, 1);
     float d = SceneDepth(uv);
     if (d >= 1) return float4(scene, 1);

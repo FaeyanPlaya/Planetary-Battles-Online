@@ -32,12 +32,14 @@ Setting.VIGNETTE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.3|Виньетка|Vi
 Value.VIGNETTE.0=Выкл|Off
 Setting.LENS=0,0.25,0.5,0.75,1|0|Изгиб линзы|Lens bend
 Value.LENS.0=Выкл|Off
+Setting.ABERRATION=0,0.25,0.5,0.75,1,1.5,2|1|Хроматическая аберрация|Chromatic aberration
+Value.ABERRATION.0=Выкл|Off
 Setting.UI=On,Off|Off|Эффекты на интерфейс|Effects on the interface|cycle
 
 # How worn the tape is. Neither touches the lens or the interface: those are turned on by hand only.
-Profile.DEFAULT=По умолчанию|Default|BLEED=1 SHARPEN=1 LUMANOISE=0.05 CHROMANOISE=0.2 FADE=0.25 COLOURDEPTH=256 INTERLACE=1 INTERLACERATE=24 JITTER=0.25 TRACKING=0.25 LENS=0
-Profile.WORN=Затёртая кассета|Worn tape|BLEED=1.5 SHARPEN=1.5 LUMANOISE=0.1 CHROMANOISE=0.5 FADE=0.75 COLOURDEPTH=64 INTERLACE=1 INTERLACERATE=24 JITTER=1 TRACKING=1 LENS=0
-Profile.NOVHS=Без VHS|No VHS|BLEED=0 SHARPEN=0 LUMANOISE=0 CHROMANOISE=0 FADE=0 COLOURDEPTH=1024 INTERLACE=0 JITTER=0 TRACKING=0 LENS=0
+Profile.DEFAULT=По умолчанию|Default|BLEED=1 SHARPEN=1 LUMANOISE=0.05 CHROMANOISE=0.2 FADE=0.25 COLOURDEPTH=256 INTERLACE=1 INTERLACERATE=24 JITTER=0.25 TRACKING=0.25 ABERRATION=1 LENS=0
+Profile.WORN=Затёртая кассета|Worn tape|BLEED=1.5 SHARPEN=1.5 LUMANOISE=0.1 CHROMANOISE=0.5 FADE=0.75 COLOURDEPTH=64 INTERLACE=1 INTERLACERATE=24 JITTER=1 TRACKING=1 ABERRATION=1.5 LENS=0
+Profile.NOVHS=Без VHS|No VHS|BLEED=0 SHARPEN=0 LUMANOISE=0 CHROMANOISE=0 FADE=0 COLOURDEPTH=1024 INTERLACE=0 JITTER=0 TRACKING=0 ABERRATION=0 LENS=0
 
 Note.ABOUT=О наборе|About the pack
 
@@ -55,12 +57,13 @@ Info.JITTER=Строки слегка гуляют вбок, как при не�
 Info.TRACKING=Время от времени по картинке проходит полоса сбоя со снегом; внизу кадра — рваные строки. «Без сбоев» — без сбоев.|Now and then a band of fault with snow runs over the picture; torn lines at the bottom of the frame. No faults: no faults.
 Info.VIGNETTE=Края экрана темнее.|The screen's edges darker.
 Info.LENS=Картинка выгнута, как на выпуклом стекле кинескопа, без чёрных краёв; интерфейс не изгибается. Внимание: щелчки мыши попадают туда, где предмет стоит на самом деле, а не туда, где его видно на изогнутой картинке. «Выкл» — плоско.|The picture bulges, as on a picture tube's curved glass, with no black edges; the interface is never bent. Mind: mouse clicks land where a thing really is, not where the bent picture shows it. Off: flat.
+Info.ABERRATION=Цветная кайма к краям экрана: красное и синее расходятся, как у простого объектива. Интерфейс не задевает.|Colour fringes towards the screen's edges: the red and the blue part, as from a simple lens. The interface is left alone.
 Info.UI=Вкл — кассета ложится и на интерфейс: панели, полоски здоровья, подсказки (курсор остаётся чётким). Выкл — только бой, интерфейс чёткий.|On: the tape covers the interface too: the panels, health bars, hints (the cursor stays sharp). Off: the battle only, the interface sharp.
 Info.ABOUT=Бой как запись на старой видеокассете. Настроение навеяно набором MCVHS для Minecraft; код свой, его код не использован.|The battle as a recording on an old video tape. The mood is inspired by the MCVHS pack for Minecraft; the code is its own, none of its code is used.
 
 Screen=PROFILE - - - [Scene] [VHS] [Other] - ABOUT
 Screen.Scene=Мир|World|SOFTLIGHT
-Screen.VHS=Настройки VHS|VHS settings|LENS COLOURDEPTH - BLEED LUMANOISE CHROMANOISE INTERLACE INTERLACERATE SHARPEN
+Screen.VHS=Настройки VHS|VHS settings|LENS ABERRATION COLOURDEPTH - BLEED LUMANOISE CHROMANOISE INTERLACE INTERLACERATE SHARPEN
 Screen.Other=Прочее|Other|FADE JITTER TRACKING VIGNETTE UI
 
 Target.Shade=0.5|rgba8

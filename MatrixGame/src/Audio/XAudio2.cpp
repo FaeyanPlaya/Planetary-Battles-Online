@@ -68,6 +68,29 @@ struct Library {
     ~Library() { FreeLibrary(module); }
 };
 
+// The mastering limiter of XAudio2 2.8+ (xapofx.h's CLSID_FXMasteringLimiter; CreateFX is the library's export).
+constexpr GUID mastering_limiter{0xc4137916, 0x2be1, 0x46fd, {0x85, 0x99, 0x44, 0x15, 0x36, 0xf4, 0x98, 0x56}};
+struct LimiterParameters {
+    UINT32 release;   // 1..20, 6 by default
+    UINT32 loudness;  // 1..1800, 1000 is the gain of one
+};
+
+// A battle's many sounds together go over full scale: soft limiting instead of the hard clipping it would be (the
+// sound without it if the library cannot make one).
+void limit(HMODULE module, IXAudio2MasteringVoice *master) {
+    using Create = HRESULT (__cdecl *)(REFCLSID, IUnknown **, const void *, UINT32);  // (cdecl, unlike XAudio2Create)
+    const auto address = GetProcAddress(module, "CreateFX");
+    if (!address) return;
+    const LimiterParameters parameters{6, 1000};
+    IUnknown *effect{};
+    if (FAILED(std::bit_cast<Create>(address)(mastering_limiter, &effect, &parameters, sizeof(parameters))) || !effect)
+        return;
+    XAUDIO2_EFFECT_DESCRIPTOR descriptor{effect, TRUE, 2};
+    XAUDIO2_EFFECT_CHAIN chain{1, &descriptor};
+    master->SetEffectChain(&chain);  // (the voice holds its own reference)
+    effect->Release();
+}
+
 struct ReleaseEngine { void operator()(IXAudio2 *value) const { if (value) value->Release(); } };
 struct DestroyVoice {
     template<class T> void operator()(T *value) const { if (value) value->DestroyVoice(); }
@@ -204,6 +227,7 @@ public:
         check(engine_->CreateMasteringVoice(&master, 2, XAUDIO2_DEFAULT_SAMPLERATE, 0,
                                             nullptr, nullptr, AudioCategory_GameEffects), "CreateMasteringVoice");
         master_.reset(master);
+        limit(library_.module, master);
     }
     std::unique_ptr<Voice> create(std::shared_ptr<const Clip> clip, bool loop) override {
         return std::make_unique<XVoice>(engine_.get(), master_.get(), std::move(clip), loop);

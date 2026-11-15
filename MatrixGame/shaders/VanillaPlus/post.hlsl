@@ -133,6 +133,7 @@ float4 main(float2 screen : TEXCOORD0) : COLOR {
 #endif
     col = WorldBlur(Taa, uv, col, DOF ? DOFSTRENGTH : 0.0, MBLUR ? MBLURSTRENGTH : 0.0);
     col = Sharpen(Taa, uv, col, SHARPEN);
+    col = Aberration(Taa, uv, col, ABERRATION);
 #if NTSC
     col = Ntsc(Taa, uv, col);
 #endif
