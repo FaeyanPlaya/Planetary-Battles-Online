@@ -60,3 +60,14 @@ float2 Tracking() {
 }
 
 #endif
+
+// The bulging glass of a picture tube: the picture's edges bend in, the corners most, the screen's aspect kept; drawn
+// a little larger so the corners reach the screen's (no black edges). In lit.hlsl, before the interface: it is never
+// bent, the tape over it or not.
+float2 Lens(float2 uv) {
+    if (LENS <= 0) return uv;
+    float aspect = SceneSize.x / SceneSize.y;
+    float2 c = (uv - 0.5) * float2(aspect, 1.0);
+    float k = LENS * 0.12;
+    return 0.5 + (uv - 0.5) * (1.0 + k * dot(c, c)) / (1.0 + k * (aspect * aspect + 1.0) * 0.25);
+}

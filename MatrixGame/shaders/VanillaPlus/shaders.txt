@@ -138,7 +138,7 @@ Info.PROJECTION=«Панини» — широкий вид без растяну
 Info.PANINI=Насколько сильна проекция Панини.|How strong the Panini projection is.
 Info.PIXELS=Крупные пиксели: число — их размер. «Выкл» — обычные.|Big pixels: the number is their size. Off: as usual.
 Info.SCANLINES=Тёмные строки, как на старом мониторе.|Dark lines, as on an old monitor.
-Info.BARREL=Экран выпуклый, как кинескоп; углы чёрные. Щелчки у краёв попадают мимо.|A bulging screen, like a picture tube; black corners. Clicks near the edges miss.
+Info.BARREL=Экран выпуклый, как кинескоп; картинка чуть увеличена, чтобы у краёв не было чёрного. Щелчки у краёв попадают мимо.|A bulging screen, like a picture tube; the picture a little larger so its edges have no black. Clicks near the edges miss.
 Info.NTSC=Цвет расплывается вдоль строк, по цветным местам бегут точки, как в сигнале NTSC.|The colour smears along the lines, dots crawl over the coloured parts, as in an NTSC signal.
 Info.ABOUT=Игра остаётся собой: тот же день, вода и туман карты, только мягче свет и живее цвета. Задумка навеяна набором I Like Vanilla для Minecraft; код свой, его код не использован.|The game stays itself: the same day, the map's water and fog, only softer light and livelier colours. The idea is inspired by the I Like Vanilla pack for Minecraft; the code is its own, none of its code is used.
 

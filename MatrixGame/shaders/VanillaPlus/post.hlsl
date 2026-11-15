@@ -115,9 +115,9 @@ float4 main(float2 screen : TEXCOORD0) : COLOR {
 #endif
     if (BARREL > 0) {
         float2 c = uv * 2.0 - 1.0;
-        c *= 1.0 + dot(c, c) * BARREL * 0.1;
+        // (drawn a little larger: the corners reach the screen's, no black edges)
+        c *= (1.0 + dot(c, c) * BARREL * 0.1) / (1.0 + 2.0 * BARREL * 0.1);
         uv = c * 0.5 + 0.5;
-        if (any(uv != saturate(uv))) return float4(0, 0, 0, 1);
     }
     if (PIXELS > 1) {
         float2 n = SceneSize.xy / PIXELS;

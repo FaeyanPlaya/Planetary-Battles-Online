@@ -3,6 +3,7 @@
 #include "common.hlsl"
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {
+    uv = Lens(uv);  // (the tube's glass: here, so the interface drawn after it is never bent)
     float3 scene = tex2D(SceneTex, uv).rgb;
     if (SOFTLIGHT <= 0) return float4(scene, 1);
     float d = SceneDepth(uv);
