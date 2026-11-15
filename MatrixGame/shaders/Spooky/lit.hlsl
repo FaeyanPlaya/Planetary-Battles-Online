@@ -23,7 +23,13 @@ float3 WideAt(float2 uv) {
 }
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {
+#if GEOMETRY
+    // Only the land and the map's own things sway (trees, grass): not a robot, a building, a turret or a flyer, however
+    // green (the world pass says what each pixel is).
+    if (tex2Dlod(WorldM, float4(uv, 0, 0)).r * 16.0 < 2.5) uv = Wave(uv);
+#else
     uv = Wave(uv);
+#endif
     float3 scene = tex2D(SceneTex, uv).rgb;
     float3 solid = tex2D(SolidTex, uv).rgb;
     float3 fx = scene - solid;  // what the effects added (smoke: below 0 too)
