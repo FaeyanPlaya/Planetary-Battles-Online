@@ -2111,6 +2111,27 @@ void CMatrixMap::DrawWater(void) {
 
     // g_D3DD->SetRenderState( D3DRS_NORMALIZENORMALS,  FALSE );
 
+    // Where this water shows, for a shader pack's reflections: the same parts again behind the same depth (a road or
+    // a base's floor over land under the water hides it), each by its group's mask.
+    if (ShaderRender::water_mask_begin()) {
+        ASSERT_DX(g_D3DD->SetFVF(MATRIX_WATER_VERTEX_FORMAT));
+        ASSERT_DX(g_D3DD->SetStreamSource(0, GET_VB(m_Water->m_VB), 0, sizeof(SMatrixMapWaterVertex)));
+        ASSERT_DX(g_D3DD->SetIndices(GET_IB(m_Water->m_IB)));
+        int left = m_VisibleGroupsCount;
+        for (CMatrixMapGroup **group = m_VisibleGroups; left > 0; --left, ++group) {
+            if (!(*group)->HasWater())
+                continue;
+            const D3DXVECTOR2 &p = (*group)->GetPos0();
+            m._41 = p.x;
+            m._42 = p.y;
+            ASSERT_DX(g_D3DD->SetTexture(0, (*group)->GetWaterAlpha()->Tex()));
+            m_Water->Draw(m);
+        }
+        ShaderRender::water_mask_open();
+        DrawOpenWater(m, [](const D3DXMATRIX &) {});
+        ShaderRender::water_mask_end();
+    }
+
     int cnt;
     CMatrixMapGroup **md;
     if (SInshorewave::m_Tex) {

@@ -37,6 +37,12 @@ void world_end();
 bool water_begin(IDirect3DTexture9 *texture, IDirect3DTexture9 *reflection);
 void water_part(IDirect3DTexture9 *mask, const _D3DMATRIX &world);
 void water_end();
+// Where the game's water shows, for a pack's pass that reads it (WaterSeen): true when it is wanted this frame. The
+// caller draws the water's parts again after the game's drawing, each with its group's mask in texture 0 (its first
+// texture coordinates), water_mask_open before the parts outside the map (all water), then water_mask_end.
+bool water_mask_begin();
+void water_mask_open();
+void water_mask_end();
 // A pack's effects (its Effects= line): between these the effects' draws go through its shader (g_WorldDrawHook
 // sets each up from the game's texture stages; one the code cannot do stays the game's).
 void effects_begin();

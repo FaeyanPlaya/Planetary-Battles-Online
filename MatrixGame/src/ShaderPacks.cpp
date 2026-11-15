@@ -53,6 +53,7 @@ bool code_name(const std::string &name) {
             "MAT_ROBOT",    "MAT_BUILDING", "MAT_CANNON",  "MAT_FLYER",    "pbo_world",    "LandInfo",
             "VoxelTex",     "VoxelAt",      "VoxelOrigin", "VoxelScale",   "VoxelExtent",
             "Water",        "WaterTex",     "ReflTex",     "UnderTex",     "PBO_WATER",    "MAT_WATER",   "pbo_water",
+            "WaterMask",    "WaterSeen",
             "Effect",       "PBO_EFFECT",   "pbo_effect",  "EffectInfo",   "Faded",        "PBO_TFactor",
             "PROFILE"};
     return std::ranges::none_of(taken, [&](const char *t) { return name == t; });
@@ -261,6 +262,7 @@ Inputs pass_inputs(const Pack &pack, const Files &files, const Pass &pass) {
                     (names.contains("ShadowTex") || names.contains("ShadowDepth") || names.contains("ShadowLit"));
     inputs.voxels = pack.voxels.size > 0 && (names.contains("VoxelTex") || names.contains("VoxelAt"));
     inputs.relief = names.contains("SceneHeight") || names.contains("ReliefSlope") || names.contains("GeneratedNormal");
+    inputs.water = names.contains("WaterMask") || names.contains("WaterSeen");
     return inputs;
 }
 
@@ -1130,6 +1132,9 @@ std::string prelude(const Pack &pack, const Mods::SettingValues &values, const I
     // stands out of the ground); without it SolidTex itself.
     if (inputs.relief) code += "sampler2D ReliefTex : register(s" + std::to_string(slot++) + ");\n";
     else code += "#define ReliefTex SolidTex\n";
+    // Where the game's water shows on the screen: 0 none (land, or a road or a base's floor over land under the water),
+    // 1 all of it, the game's own mask between (a shallow flood, nearly clear).
+    if (inputs.water) code += "sampler2D WaterMask : register(s" + std::to_string(slot++) + ");\n";
     code +=
         "float4 VoxelOrigin : register(c139);\n"
         "float4 VoxelScale : register(c140);\n"
@@ -1264,6 +1269,8 @@ std::string prelude(const Pack &pack, const Mods::SettingValues &values, const I
         "    if (strength <= 0) return n;\n"
         "    return normalize(n - ReliefSlope(uv) * (strength * 6.0));\n"
         "}\n";
+    // How much of the game's water shows at a place of the screen (1 everywhere when it is not known).
+    if (inputs.water) code += "float WaterSeen(float2 uv) { return tex2Dlod(WaterMask, float4(uv, 0, 0)).r; }\n";
     return code;
 }
 

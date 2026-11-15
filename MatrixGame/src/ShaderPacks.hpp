@@ -240,8 +240,11 @@ struct Inputs {
     // The picture without the interface's marks (selection rings, the resources' figures): what the relief reads
     // (SceneHeight, ReliefSlope or GeneratedNormal named), after that.
     bool relief = false;
+    // Where the game's water shows on the screen (WaterMask or WaterSeen named), after that.
+    bool water = false;
     std::size_t size() const {
-        return targets.size() + textures.size() + (shadow ? 1 : 0) + (voxels ? 1 : 0) + (relief ? 1 : 0);
+        return targets.size() + textures.size() + (shadow ? 1 : 0) + (voxels ? 1 : 0) + (relief ? 1 : 0) +
+               (water ? 1 : 0);
     }
     bool operator==(const Inputs &) const = default;
 };

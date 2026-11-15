@@ -23,6 +23,10 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     // far view and a world pass draw it into the depth); anything higher stands above the water.
     if (water > 1e8 || (d < 1 && WorldPos(uv, d).z > GroundZ + 3.5)) return 0;
     float3 p = CameraPos.xyz + dir * water;
+    // Only where the game's water shows (not a road or a base's floor over land under it), as strong as it is there
+    // (barely over a shallow flood, where it is nearly clear).
+    float wet = WaterSeen(uv);
+    if (wet <= 0) return 0;
     // The waves bend it a little.
     float2 w = float2(sin(p.x * 0.09 + Time.y * 1.3), sin(p.y * 0.11 + Time.y * 1.1)) * 0.02;
     float3 r = reflect(dir, normalize(float3(w, 1)));
@@ -61,5 +65,5 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     float2 edge = min(at, 1 - at);
     float fade = saturate(min(edge.x, edge.y) * 12.0) * saturate(1.5 - hi / 4000.0);
     float fresnel = lerp(0.35, 1.0, pow(1.0 - abs(dir.z), 3.0));
-    return float4(col, fade * fresnel * REFLECT);
+    return float4(col, fade * fresnel * wet * REFLECT);
 }

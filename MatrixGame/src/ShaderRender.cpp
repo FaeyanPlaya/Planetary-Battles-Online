@@ -194,6 +194,14 @@ struct State {
     const void *land_map = nullptr;
     std::uintptr_t land_generation = 0;
     int land_width = 0, land_height = 0;
+    // Where the game's water shows on the screen, for a pass that reads it (WaterMask, WaterSeen): the water drawn
+    // again into it, behind the same depth (water_mask_begin).
+    bool water_wanted = false;
+    IDirect3DTexture9 *water_mask = nullptr;
+    IDirect3DSurface9 *water_mask_surface = nullptr;
+    IDirect3DSurface9 *water_mask_before = nullptr;  // the target it stood in for
+    D3DVIEWPORT9 water_mask_viewport{};
+    bool water_mask_drawn = false;  // this frame
     bool world_plane_set = false;
     // The water by the pack (Water=): the engine's vertex shader for the water's vertices and the pack's pixel
     // shader; the picture and the depth just before it (UnderTex, DepthTex: copies, the picture's own are drawn into).
@@ -358,6 +366,8 @@ void release_default() {
     drop(g_state.solid_surface);
     drop(g_state.relief_surface);
     drop(g_state.relief);
+    drop(g_state.water_mask_surface);
+    drop(g_state.water_mask);
     drop(g_state.scene);
     drop(g_state.depth);
     drop(g_state.solid);
@@ -552,6 +562,7 @@ bool build() {
         g_state.passes.push_back(built);
     }
     g_state.relief_wanted = std::ranges::any_of(g_state.passes, [](const PassCode &p) { return p.inputs.relief; });
+    g_state.water_wanted = std::ranges::any_of(g_state.passes, [](const PassCode &p) { return p.inputs.water; });
     g_state.split = pack->interface_from >= 0 ? std::size_t(pack->interface_from) : g_state.passes.size();
     g_state.over_interface = ShaderPacks::interface_on(*pack, choice.settings);
     // The world pass: the pack's code between the engine's prelude and the entry that calls its main.
@@ -777,6 +788,14 @@ bool make_surfaces(UINT width, UINT height) {
          FAILED(g_state.relief->GetSurfaceLevel(0, &g_state.relief_surface)))) {
         drop(g_state.relief);
         lgr.warning("Shaders: no texture for the relief's picture: it reads the interface's marks too");
+    }
+    // (without it all at the water's level counts as water)
+    if (g_state.water_wanted &&
+        (FAILED(g_D3DD->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+                                      &g_state.water_mask, nullptr)) ||
+         FAILED(g_state.water_mask->GetSurfaceLevel(0, &g_state.water_mask_surface)))) {
+        drop(g_state.water_mask);
+        lgr.warning("Shaders: no texture for where the water shows: all at the water's level counts as water");
     }
     // The depth the passes read (INTZ: every card of the last 15 years); without it a depth surface of our own.
     if (supported(intz, D3DUSAGE_DEPTHSTENCIL) &&
@@ -1338,6 +1357,7 @@ void begin_frame() {
     g_state.taken = true;
     g_state.solid_taken = false;
     g_state.relief_taken = false;
+    g_state.water_mask_drawn = false;
     g_state.shadow_drawn = false;
     if (g_timing && !g_timing_state.broken) {
         auto &t = g_timing_state;
@@ -1847,6 +1867,53 @@ void water_end() {
     g_D3DD->SetPixelShader(nullptr);
 }
 
+bool water_mask_begin() {
+    if (!g_state.taken || !g_state.water_mask_surface) return false;
+    if (FAILED(g_D3DD->GetRenderTarget(0, &g_state.water_mask_before))) return false;
+    g_state.saved->Capture();
+    g_D3DD->GetViewport(&g_state.water_mask_viewport);
+    g_D3DD->SetRenderTarget(0, g_state.water_mask_surface);
+    g_D3DD->SetViewport(&g_state.water_mask_viewport);
+    g_D3DD->Clear(0, nullptr, D3DCLEAR_TARGET, 0, 1.0f, 0);
+    g_D3DD->SetVertexShader(nullptr);
+    g_D3DD->SetPixelShader(nullptr);
+    for (const auto &[state, value] : std::initializer_list<std::pair<D3DRENDERSTATETYPE, DWORD>>{
+             {D3DRS_ZENABLE, D3DZB_TRUE}, {D3DRS_ZWRITEENABLE, FALSE}, {D3DRS_ZFUNC, D3DCMP_LESSEQUAL},
+             {D3DRS_ALPHABLENDENABLE, FALSE}, {D3DRS_ALPHATESTENABLE, FALSE}, {D3DRS_FOGENABLE, FALSE},
+             {D3DRS_LIGHTING, FALSE}, {D3DRS_CULLMODE, D3DCULL_NONE}, {D3DRS_STENCILENABLE, FALSE},
+             {D3DRS_COLORWRITEENABLE, 0xf}, {D3DRS_TEXTUREFACTOR, 0xffffffff}})
+        g_D3DD->SetRenderState(state, value);
+    // A part's mask (its first texture coordinates) as the colour: how much water the game shows there.
+    g_D3DD->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    g_D3DD->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE | D3DTA_ALPHAREPLICATE);
+    g_D3DD->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    g_D3DD->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    g_D3DD->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0);
+    g_D3DD->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+    g_D3DD->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    g_D3DD->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+    g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+    g_D3DD->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    g_D3DD->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+    g_D3DD->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+    g_D3DD->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+    return true;
+}
+
+void water_mask_open() {
+    g_D3DD->SetTexture(0, nullptr);
+    g_D3DD->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TFACTOR);
+    g_D3DD->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TFACTOR);
+}
+
+void water_mask_end() {
+    g_D3DD->SetRenderTarget(0, g_state.water_mask_before);
+    drop(g_state.water_mask_before);
+    g_D3DD->SetViewport(&g_state.water_mask_viewport);
+    g_state.saved->Apply();
+    g_state.water_mask_drawn = true;
+}
+
 namespace {
 
 // Before an effect's draw: the pack's shader for its stages (built the first time such stages come), the factor and
@@ -2120,6 +2187,10 @@ void draw_passes(std::size_t first, std::size_t last, IDirect3DTexture9 *scene, 
                                                                 : g_state.scene;
             sampler(slot++, bare, true, false);
         }
+        if (pass.inputs.water)  // (not drawn this frame: all water, as before)
+            sampler(slot++,
+                    g_state.water_mask_drawn ? static_cast<IDirect3DBaseTexture9 *>(g_state.water_mask) : g_state.white,
+                    true, false);
         const int now = slot - picture_sampler;
         for (; slot < picture_sampler + bound; ++slot) g_D3DD->SetTexture(slot, nullptr);
         bound = now;
