@@ -1,5 +1,7 @@
 # Making mods
 
+[Русская версия](MODDING.ru.md)
+
 Mods live in the `mods` folder beside `MatrixGame.exe`, one folder per mod. The game reads them as it starts: no rebuild of the game is needed for a mod that has only data, and a mod with code is a DLL built against this engine.
 
 ## A mod's folder
