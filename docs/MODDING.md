@@ -33,6 +33,7 @@ UTF-8 (or UTF-16 with a BOM). One `Name=value` a line; `#` and `//` start a comm
 | `Conflict=a, b` | Mods it cannot run with: a battle with both does not start. |
 | `Key.<Id>=<key>\|<Russian>\|<English>\|<group>` | A key of the mod on the settings' keys page, as `KEY_F2`; English and the group may be left out. The person's choice is kept in `CFG\keys.txt` as `<mod>.<Id>`. |
 | `Setting.<Id>=<values, comma-separated>\|<default>\|<Russian>\|<English>` | A choice on the settings' mods page; kept in `CFG\mods.txt` as `<mod>.<Id>`. |
+| `ShaderValue=a, b` | Numbers the mod gives shader packs: its code sets one with `ShaderPacks::set_mod_value("a", 0.5f)` (usually 0 to 1), a pack reads it as `MOD_A` (docs/SHADERS.md). Our Шутер gives `Shooter`: how far the view has gone into the robot or turret. |
 | `Switches=` | Our own mods' switches in the engine (below); not for a new mod. |
 
 ## Battle mods and personal mods
