@@ -27,6 +27,7 @@
 
 #include <stupid_logger.hpp>
 #include <shellapi.h>
+#include <commdlg.h>
 
 #include <algorithm>
 #include <cstring>
@@ -294,6 +295,53 @@ void ask_reset() {
     });
 }
 
+// A file's path from Windows' own dialog (save: Export's; open: Import's), starting in the packs' folder; empty when
+// cancelled.
+std::wstring ask_file(bool save, const std::wstring &suggested) {
+    std::error_code error;
+    const auto folder = std::filesystem::absolute(ShaderPacks::folder, error);
+    std::wstring name(MAX_PATH * 4, L'\0');
+    std::copy(suggested.begin(), suggested.begin() + std::min(suggested.size(), name.size() - 1), name.begin());
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = g_Wnd;
+    static const wchar_t filter[] = L"Text (*.txt)\0*.txt\0All (*.*)\0*.*\0";
+    dialog.lpstrFilter = filter;
+    dialog.lpstrFile = name.data();
+    dialog.nMaxFile = DWORD(name.size());
+    dialog.lpstrInitialDir = folder.c_str();
+    dialog.lpstrDefExt = L"txt";
+    dialog.Flags = OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
+    if (!(save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog))) return {};
+    name.resize(std::wcslen(name.c_str()));
+    return name;
+}
+
+// Export: the shown pack's settings into a file of the person's choice (<Id>=<value>, as the packs' own files).
+void export_settings() {
+    const auto &menu = model->shader_menu();
+    const auto *pack = menu.pack();
+    if (!pack) return;
+    std::wstring base = pack->id;
+    if (base.size() > 4 && _wcsicmp(base.c_str() + base.size() - 4, L".zip") == 0) base.resize(base.size() - 4);
+    const auto path = ask_file(true, base + L" settings.txt");
+    if (path.empty()) return;
+    std::string error;
+    if (Mods::save_settings(path, menu.export_values(), error, "; Planetary Battles Online: a shader pack's settings"))
+        lgr.notice("Shaders: the settings exported");
+    else
+        lgr.warning("Shaders: the settings not exported ({})")(error);
+}
+
+// Import: a file's settings as the shown pack's pending ones (applied by Apply or Done), those it knows.
+void import_settings() {
+    const auto path = ask_file(false, L"");
+    if (path.empty() || !model) return;
+    const int taken = model->shader_menu().import_values(ShaderPacks::pack_settings_in(path));
+    lgr.notice("Shaders: {} settings imported")(taken);
+    (startup_active() ? startup_rebuild : rebuild)();
+}
+
 // The shaders screens' keys (true: drawn anew).
 bool shaders_key(uint8_t vk) {
     auto &menu = model->shader_menu();
@@ -365,6 +413,8 @@ bool shaders_click(int x, int y) {
         case ShaderMenu::Hit::Kind::Button:
             if (target.button == ShaderMenu::Button::Folder) open_folder();
             else if (target.button == ShaderMenu::Button::Reset) ask_reset();
+            else if (target.button == ShaderMenu::Button::Export) export_settings();
+            else if (target.button == ShaderMenu::Button::Import) import_settings();
             else after = menu.press(target.button);
             break;
     }
@@ -423,10 +473,14 @@ void make_model(const StandaloneSettings::Values &values) {
     model->set_text_width([](const std::wstring &text, const wchar_t *font) {
         return int(Text::GetFont(g_D3DD, font).CalcTextWidth(text));
     });
-    // The shaders screens as tall as the screen allows (480 at least: none more), at most 12 rows more.
-    model->set_extra_rows(std::clamp((g_ScreenY - 600) / SettingsModel::Layout::row_height, 0, 12));
-    // The other pages: the main page's every row where the screen has the room.
-    model->set_rows(SettingsModel::rows_for_screen(g_ScreenY));
+    // Every page as tall as the tallest: the shaders screens as tall as the screen allows (480 at least: none more, at
+    // most 12 rows more), the other pages the main page's every row where the screen has the room; both by the same
+    // rows (the shaders screens' least is the others' least_rows).
+    const int extra = std::clamp((g_ScreenY - 600) / SettingsModel::Layout::row_height, 0, 12);
+    const int rows = std::min(std::max(SettingsModel::rows_for_screen(g_ScreenY), SettingsModel::least_rows + extra),
+                              SettingsModel::tall_rows);
+    model->set_rows(rows);
+    model->set_extra_rows(rows - SettingsModel::least_rows);
     shaders_shown = false;
 }
 

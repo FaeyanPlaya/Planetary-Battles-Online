@@ -1,0 +1,30 @@
+# Shooter (the owner's design): in a robot or a turret driven the view looks from it (the first person camera,
+# held, the first person mod or not) and the mouse turns it; the cursor stays in the screen's middle, where the aim
+# is. The robot's hull turns to the aim at its own speed; the chassis turns only to where it goes, the moves going
+# by the aim (forward, back, and sideways on the turn keys: Manual control+'s sideways, so it is needed); hovercraft
+# and antigravity turn with the hull. A ring shows where the hull or the turret's head looks now. The turret keeps its
+# keys (A and D turn the view, W and S tilt it). Shader packs read its way in as MOD_SHOOTER.
+Name=Шутер
+NameEn=Shooter
+Description=Управление роботом и турелью как в шутере.
+Description=- Вид всегда от первого лица, мышь поворачивает его. Прицел всегда в центре экрана, курсора нет.
+Description=- Корпус робота сам поворачивается к прицелу со своей скоростью. Кольцо показывает, куда он смотрит сейчас.
+Description=- Шасси поворачивается только в сторону движения. Вперёд, назад и вбок — относительно прицела. Вбок ходят клавиши поворота (обычно A и D).
+Description=- Воздушная подушка и антиграв поворачиваются вместе с корпусом.
+Description=- У турели клавиши остаются прежними, мышь тоже поворачивает её вид.
+Description=- Включается для всех игроков боя. Нужен мод «Ручное управление+».
+DescriptionEn=Driving a robot or a turret as in a shooter.
+DescriptionEn=- Always the first person view, turned by the mouse. The aim is always the screen's middle, no cursor.
+DescriptionEn=- The robot's hull turns to the aim by itself at its own speed. A ring shows where it looks now.
+DescriptionEn=- The chassis turns only to where it goes. Forward, back and sideways go by the aim. The turn keys (A and D by default) go sideways.
+DescriptionEn=- Hovercraft and antigravity turn with the hull.
+DescriptionEn=- A turret keeps its keys; the mouse turns its view too.
+DescriptionEn=- On for every player of the battle. Needs Manual control+.
+Author=Planetary Battles Online
+Kind=battle
+Default=off
+Dll=shooter.dll
+Switches=Shooter
+Dependence=manual
+ShaderValue=Shooter
+Setting.Sensitivity=0.25,0.5,0.75,1,1.25,1.5,2,3|1|Чувствительность мыши|Mouse sensitivity

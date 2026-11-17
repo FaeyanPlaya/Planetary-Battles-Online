@@ -89,6 +89,12 @@ Setting.SCANLINES=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Строки раз�
 Value.SCANLINES.0=Выкл|Off
 Setting.BARREL=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Выпуклый экран|Barrel
 Value.BARREL.0=Выкл|Off
+Setting.SHOOTERBARREL=-1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|-1|Выпуклый экран в «Шутере»|Barrel in «Shooter»
+Value.SHOOTERBARREL.-1=Не менять|Keep
+Value.SHOOTERBARREL.0=Выкл|Off
+Setting.SHOOTERPANINI=-1,0,0.25,0.5,0.75,1|-1|Панини в «Шутере»|Panini in «Shooter»
+Value.SHOOTERPANINI.-1=Не менять|Keep
+Value.SHOOTERPANINI.0=Выкл|Off
 Setting.NTSC=On,Off|Off|Сигнал NTSC|NTSC signal|cycle
 
 # Several settings at once, by how much they cost the video card (as I Like Vanilla's profiles).
@@ -142,10 +148,12 @@ Info.PANINI=Насколько сильна проекция Панини.|How s
 Info.PIXELS=Крупные пиксели: число — их размер. «Выкл» — обычные.|Big pixels: the number is their size. Off: as usual.
 Info.SCANLINES=Тёмные строки, как на старом мониторе.|Dark lines, as on an old monitor.
 Info.BARREL=Экран выпуклый, как кинескоп; картинка чуть увеличена, чтобы у краёв не было чёрного. Щелчки у краёв попадают мимо.|A bulging screen, like a picture tube; the picture a little larger so its edges have no black. Clicks near the edges miss.
+Info.SHOOTERBARREL=Для мода «Шутер»: пока вы управляете роботом или турелью, выпуклость экрана плавно переходит к этому значению, а при выходе — обратно. «Не менять» — как в «Выпуклом экране». Прицел в центре экрана, и выпуклость его не сдвигает.|For the Shooter mod: while you drive a robot or a turret the screen's bulge goes smoothly to this value, and back as you leave it. Keep: as Barrel has it. The aim is the screen's middle, which the bulge never moves.
+Info.SHOOTERPANINI=Для мода «Шутер»: пока вы управляете роботом или турелью, сила Панини плавно переходит к этому значению (с обычной проекцией — от нуля), а при выходе — обратно. «Не менять» — как в «Проекции».|For the Shooter mod: while you drive a robot or a turret the Panini strength goes smoothly to this value (from none with the default projection), and back as you leave it. Keep: as Projection has it.
 Info.NTSC=Цвет расплывается вдоль строк, по цветным местам бегут точки, как в сигнале NTSC.|The colour smears along the lines, dots crawl over the coloured parts, as in an NTSC signal.
 Info.ABOUT=Игра остаётся собой: тот же день, вода и туман карты, только мягче свет и живее цвета. Задумка навеяна набором I Like Vanilla для Minecraft; код свой, его код не использован.|The game stays itself: the same day, the map's water and fog, only softer light and livelier colours. The idea is inspired by the I Like Vanilla pack for Minecraft; the code is its own, none of its code is used.
 
-Screen=PROFILE ABOUT - [Materials] [Shadows] [Shading] [Lighting] [Sea] [Haze] [Post] [Extras]
+Screen=PROFILE ABOUT - [Materials] [Shadows] [Shading] [Lighting] [Sea] [Haze] [Post] [Extras] [Mods]
 Screen.Materials=Материалы|Materials|RELIEF SOFTFX
 Screen.Shadows=Тени|Shadows|SHADOWMAP SHADOWS
 Screen.Shading=Затенение|Shading|AO OUTLINES CEL
@@ -156,6 +164,7 @@ Screen.Post=Постобработка|Post processing|TAA FXAA SHARPEN - [Blur]
 Screen.Blur=Размытие|Blur|DOF DOFSTRENGTH MBLUR MBLURSTRENGTH
 Screen.Colour=Цветокоррекция|Colour correction|BRIGHTNESS GAMMA AUTOEXP TONEMAP - VIBRANCE SATURATION SATDARK SATLIGHT CONTRAST WARMTH - COLORBLIND CBSTRENGTH
 Screen.Extras=Дополнительно|Extras|PROJECTION PANINI - PIXELS SCANLINES BARREL NTSC
+Screen.Mods=Поддержка модов|Mod support|SHOOTERBARREL SHOOTERPANINI
 
 # The effects drawn by its own shader in the game's place.
 Effects=effects.hlsl|SOFTFX

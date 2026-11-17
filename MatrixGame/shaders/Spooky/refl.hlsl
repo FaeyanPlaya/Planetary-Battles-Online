@@ -4,13 +4,19 @@
 #include "common.hlsl"
 
 // How far the reflected ray at t is behind what the screen shows there (over 0: behind it); -1e9 off the screen.
-float Behind(float3 p, float3 r, float t, out float2 at) {
+// `z`: how far from the eye the ray is there.
+float Behind(float3 p, float3 r, float t, out float2 at, out float z) {
     float3 s = ScreenPos(p + r * t);
     at = s.xy;
+    z = ViewDepth(s.z);
     // (no early return: the June 2010 compiler got the march's loop wrong with one, every ray "off the screen")
     bool off = s.z <= 0 || s.z >= 1 || any(s.xy != saturate(s.xy));
-    float b = ViewDepth(s.z) - ViewDepth(SceneDepth(saturate(s.xy)));
+    float b = z - ViewDepth(SceneDepth(saturate(s.xy)));
     return off ? -1e9 : b;
+}
+float Behind(float3 p, float3 r, float t, out float2 at) {
+    float z;
+    return Behind(p, r, t, at, z);
 }
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {
@@ -37,17 +43,24 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     if (r.z < 0.003) return 0;
     float start = max(4.0, (GroundZ + 3.0 - p.z) / r.z);
     // (the first sample behind kept, the loop run to its end: with a break there the June 2010 compiler lost the hits)
+    // A step that went behind what the screen shows by more than the ray itself went away in it passed behind
+    // something nearer (a palm, a robot, a wall: what stands before the water on the screen): not a hit, the march
+    // goes on past it (it stopped there, and the water behind such a thing reflected nothing).
     float before = start * 0.5, t = start, step = max(4.0, start * 0.25), lo = 0, hi = -1;
     float2 at = 0;
+    float zBefore;
+    Behind(p, r, before, at, zBefore);
     bool gone = false;
     [loop] for (int i = 0; i < 40; i++) {
-        float b = Behind(p, r, t, at);
+        float z;
+        float b = Behind(p, r, t, at, z);
         gone = gone || b < -1e8;  // off the screen
-        if (!gone && hi < 0 && b > 0) {
+        if (!gone && hi < 0 && b > 0 && b < abs(z - zBefore) + 6.0 + t * 0.04) {
             lo = before;
             hi = t;
         }
         before = t;
+        zBefore = z;
         t += step;
         step *= 1.25;
     }

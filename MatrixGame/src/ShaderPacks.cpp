@@ -8,8 +8,10 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <set>
 
 namespace ShaderPacks {
@@ -53,7 +55,7 @@ bool code_name(const std::string &name) {
             "MAT_ROBOT",    "MAT_BUILDING", "MAT_CANNON",  "MAT_FLYER",    "pbo_world",    "LandInfo",
             "VoxelTex",     "VoxelAt",      "VoxelOrigin", "VoxelScale",   "VoxelExtent",
             "Water",        "WaterTex",     "ReflTex",     "UnderTex",     "PBO_WATER",    "MAT_WATER",   "pbo_water",
-            "WaterMask",    "WaterSeen",
+            "WaterMask",    "WaterSeen",    "ModValues",
             "Effect",       "PBO_EFFECT",   "pbo_effect",  "EffectInfo",   "Faded",        "PBO_TFactor",
             "PROFILE"};
     return std::ranges::none_of(taken, [&](const char *t) { return name == t; });
@@ -1102,8 +1104,55 @@ std::optional<Combiner> combiner(const Stages &stages) {
     return result;
 }
 
+namespace {
+std::once_flag g_mod_names_once;
+std::vector<std::string> g_mod_names;
+std::array<float, max_mod_values> g_mod_values{};
+}  // namespace
+
+void set_mod_value_names(std::vector<std::string> names) {
+    std::call_once(g_mod_names_once, [] {});
+    std::ranges::sort(names);
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    std::erase_if(names, [](const std::string &name) { return !code_name(name); });
+    if (names.size() > std::size_t(max_mod_values)) names.resize(max_mod_values);
+    g_mod_names = std::move(names);
+    g_mod_values = {};
+}
+
+const std::vector<std::string> &mod_value_names() {
+    std::call_once(g_mod_names_once, [] {
+        std::vector<std::string> names;
+        for (const auto &mod : Mods::installed())
+            for (const auto &name : mod.shader_values) names.push_back(name);
+        std::ranges::sort(names);
+        names.erase(std::unique(names.begin(), names.end()), names.end());
+        std::erase_if(names, [](const std::string &name) { return !code_name(name); });
+        if (names.size() > std::size_t(max_mod_values)) names.resize(max_mod_values);
+        g_mod_names = std::move(names);
+    });
+    return g_mod_names;
+}
+
+void set_mod_value(std::string_view name, float value) {
+    const auto &names = mod_value_names();
+    const auto found = std::ranges::find(names, name);
+    if (found != names.end()) g_mod_values[std::size_t(found - names.begin())] = value;
+}
+
+const float *mod_value_registers() { return g_mod_values.data(); }
+
 std::string prelude(const Pack &pack, const Mods::SettingValues &values, const Inputs &inputs) {
     std::string code = settings_code(pack, values);
+    // The mods' numbers (ShaderValue=): MOD_SHOOTER...
+    code += "float4 ModValues[2] : register(c142);\n";
+    const auto &mod_names = mod_value_names();
+    for (std::size_t i = 0; i < mod_names.size(); ++i) {
+        std::string upper = mod_names[i];
+        for (char &ch : upper)
+            if (ch >= 'a' && ch <= 'z') ch = char(ch - 'a' + 'A');
+        code += "#define MOD_" + upper + " ModValues[" + std::to_string(i / 4) + "]." + "xyzw"[i % 4] + "\n";
+    }
     code +=
         "sampler2D SceneTex : register(s0);\n"
         "sampler2D DepthTex : register(s1);\n"
@@ -1274,19 +1323,92 @@ std::string prelude(const Pack &pack, const Mods::SettingValues &values, const I
     return code;
 }
 
+namespace {
+// A pack's part of a setting's key (setting_key): its id, non-ASCII letters as _.
+std::string key_prefix(std::wstring_view id) {
+    std::string key;
+    for (wchar_t ch : id) key += ch < 0x80 ? char(ch) : '_';
+    return key;
+}
+// A pack's settings' file: <Id>=<value> lines (UTF-8; ; and # start a comment).
+Mods::SettingValues read_pack_settings(const std::filesystem::path &path) {
+    Mods::SettingValues values;
+    std::ifstream stream(path, std::ios::binary);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.starts_with("\xEF\xBB\xBF")) line.erase(0, 3);
+        if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+        const auto eq = line.find('=');
+        if (eq == std::string::npos || eq == 0) continue;
+        std::string id = line.substr(0, eq), text = line.substr(eq + 1);
+        auto trim = [](std::string &v) {
+            while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
+            while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.erase(0, 1);
+        };
+        trim(id);
+        trim(text);
+        if (id.empty() || id.find('.') != std::string::npos) continue;
+        std::wstring value(text.size(), L'\0');
+        value.resize(std::size_t(MultiByteToWideChar(CP_UTF8, 0, text.data(), int(text.size()), value.data(), int(value.size()))));
+        values[id] = value;
+    }
+    return values;
+}
+// The packs' folder beside the choice's file (CFG\shaders.txt: shaders).
+std::filesystem::path packs_beside(const std::filesystem::path &path) {
+    return path.parent_path().parent_path() / folder;
+}
+}  // namespace
+
+Mods::SettingValues pack_settings_in(const std::filesystem::path &path) { return read_pack_settings(path); }
+
+std::filesystem::path pack_settings_file(const std::filesystem::path &packs, std::wstring_view id) {
+    return packs / (std::wstring(id) + L".txt");
+}
+
 Choice load_choice(const std::filesystem::path &path) {
     Choice choice;
+    // Each pack's settings beside it, as Minecraft's shader packs keep theirs: shaders\<pack>.txt, <Id>=<value>.
+    std::error_code failed;
+    for (std::filesystem::directory_iterator it(packs_beside(path), failed), end; !failed && it != end;
+         it.increment(failed)) {
+        if (!it->is_regular_file(failed) || it->path().extension() != L".txt") continue;
+        const std::string prefix = key_prefix(it->path().stem().native());
+        for (auto &[id, value] : read_pack_settings(it->path())) choice.settings[prefix + "." + id] = std::move(value);
+    }
+    // CFG\shaders.txt: on, the pack; an older one's <pack>.<Id>= lines too (they win: moved out on the next save).
     auto values = Mods::load_settings(path);
     if (const auto on = values.find("Shaders.On"); on != values.end()) choice.on = on->second == L"1";
     if (const auto pack = values.find("Shaders.Pack"); pack != values.end()) choice.pack = pack->second;
     values.erase("Shaders.On");
     values.erase("Shaders.Pack");
-    choice.settings = std::move(values);
+    for (auto &[key, value] : values) choice.settings[key] = std::move(value);
     return choice;
 }
 
 bool save_choice(const std::filesystem::path &path, const Choice &choice, std::string &error) {
-    Mods::SettingValues values = choice.settings;
+    // The settings by pack (a key's last dot: a pack's id may have its own, Gloomy.zip.GLOW).
+    std::map<std::string, Mods::SettingValues> by_pack;
+    for (const auto &[key, value] : choice.settings)
+        if (const auto dot = key.rfind('.'); dot != std::string::npos && dot > 0)
+            by_pack[key.substr(0, dot)][key.substr(dot + 1)] = value;
+    // A pack's file by its real name (an installed pack's id; else the key's part, the same for ASCII names).
+    const auto packs = packs_beside(path);
+    std::map<std::string, std::wstring> names;
+    for (const auto &pack : installed()) names[key_prefix(pack.id)] = pack.id;
+    std::error_code failed;
+    for (std::filesystem::directory_iterator it(packs, failed), end; !failed && it != end; it.increment(failed))
+        if (it->is_regular_file(failed) && it->path().extension() == L".txt")
+            by_pack.try_emplace(key_prefix(it->path().stem().native()));  // (a file of settings now all default: emptied)
+    for (const auto &[prefix, values] : by_pack) {
+        const auto name = names.find(prefix);
+        std::wstring id = name != names.end() ? name->second : std::wstring(prefix.begin(), prefix.end());
+        if (!Mods::save_settings(pack_settings_file(packs, id), values, error,
+                                 "; Planetary Battles Online: this person's settings of this shader pack"))
+            return false;
+    }
+    Mods::SettingValues values;
     values["Shaders.On"] = choice.on ? L"1" : L"0";
     values["Shaders.Pack"] = choice.pack;
     return Mods::save_settings(path, values, error, "; Planetary Battles Online: this person's shaders (the settings' Shaders page)");

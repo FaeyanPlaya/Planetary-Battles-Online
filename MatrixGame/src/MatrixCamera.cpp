@@ -12,6 +12,7 @@
 #include "MatrixObjectCannon.hpp"
 #include "Mods.hpp"
 #include "ModHooks.hpp"
+#include "Shooter.hpp"
 #include <input.hpp>
 
 #include "Effects/MatrixEffectBigBoom.hpp"
@@ -23,6 +24,9 @@
 #define FIRST_PERSON_ANG_UP   GRAD2RAD(100)
 #define FIRST_PERSON_ANG_DOWN GRAD2RAD(45)
 #define FIRST_PERSON_BLEND_MS 400.0f  // the way in, after which the view is held to the robot or turret
+// Shooter: its look from up to down (the mouse's: further up, at what flies, than the wheel's first person).
+#define SHOOTER_ANG_UP   GRAD2RAD(125)
+#define SHOOTER_ANG_DOWN GRAD2RAD(35)
 
 float MAX_VIEW_DISTANCE = 4000.0f;
 static float view_distance = 4000.0f;  // the original's setting
@@ -678,7 +682,16 @@ float CMatrixCamera::MaxDistParam(int index) const {
     return Mods::switches().zoom_far && hook ? hook(index) : 4.0f;
 }
 
+void CMatrixCamera::ShooterLook(float dx, float dy) {
+    float &turn = m_TurretView ? m_TurretAngZ : m_ShooterAngZ;
+    turn = float(AngleNorm(turn + dx));
+    // (the angle param from up, 0, to down, 1: as many radians a pixel as the turn)
+    m_AngleParam[m_ModeIndex] = std::clamp(m_AngleParam[m_ModeIndex] + dy / (SHOOTER_ANG_UP - SHOOTER_ANG_DOWN), 0.0f, 1.0f);
+}
+
 void CMatrixCamera::ZoomOutStep(void) {
+    if (Shooter::driving())
+        return;  // Shooter: held in the robot's or turret's own view
     if (m_FirstPerson) {
         m_FirstPerson = false;  // a step out leaves the robot's or turret's own view
         return;
@@ -688,6 +701,8 @@ void CMatrixCamera::ZoomOutStep(void) {
 }
 
 void CMatrixCamera::ZoomInStep(void) {
+    if (Shooter::driving())
+        return;
     const auto first_person = ModHooks::hooks().first_person_in;  // the first person mod's
     if (Mods::switches().first_person && first_person && first_person(*this))
         return;
@@ -912,6 +927,8 @@ void CMatrixCamera::CalcLinkPoint(D3DXVECTOR3 &lp, float &angz) {
                 // Nothing here may touch the robot's bounds cache or matrices: the battle's logic is paced by them
                 // (a desync otherwise).
                 D3DXVECTOR3 way(heading.x, heading.y, 0);
+                if (m_ShooterView == bot)  // Shooter: where the mouse turned the view (as angz below goes)
+                    way = D3DXVECTOR3(std::sin(m_ShooterAngZ), -std::cos(m_ShooterAngZ), 0);
                 D3DXVec3Normalize(&way, &way);
                 if (m_RearView)
                     way = -way;
@@ -935,6 +952,8 @@ void CMatrixCamera::CalcLinkPoint(D3DXVECTOR3 &lp, float &angz) {
             }
 
             angz = (float)(atan2(-heading.x, heading.y) + M_PI_MUL(1));
+            if (m_ShooterView == bot)
+                angz = m_ShooterAngZ;
             if (m_RearView)
                 angz += float(M_PI_MUL(1));
         }
@@ -1043,14 +1062,33 @@ void CMatrixCamera::Takt(float ms) {
     else {
         m_TurretView = nullptr;
     }
-    if (const auto rear = ModHooks::hooks().rear_view; !(Mods::switches().manual_extras && rear && rear()))
-        m_RearView = false;
+    // Shooter: in the robot or turret driven, its own view held (the first person mod or not), turned by the mouse,
+    // from where it looked as it came in.
+    const bool shooter = Shooter::driving() && index == CAMERA_INROBOT;
+    CMatrixMapStatic *driven = g_MatrixMap->GetPlayerSide()->GetArcadedObject();
+    if (shooter && driven && driven->IsRobot()) {
+        if (m_ShooterView != driven) {
+            m_ShooterView = driven;
+            const D3DXVECTOR3 &heading = driven->AsRobot()->DriveHeading();
+            m_ShooterAngZ = float(atan2(-heading.x, heading.y) + M_PI_MUL(1));
+            m_AngleParam[m_ModeIndex] = (SHOOTER_ANG_UP - GRAD2RAD(90)) / (SHOOTER_ANG_UP - SHOOTER_ANG_DOWN);  // level
+        }
+    }
+    else {
+        m_ShooterView = nullptr;
+    }
+    if (const auto rear = ModHooks::hooks().rear_view;
+        shooter || !(Mods::switches().manual_extras && rear && rear()))
+        m_RearView = false;  // (Shooter: the mouse looks back)
     const auto keeps = ModHooks::hooks().first_person_keeps;
-    if (!Mods::switches().first_person || !keeps || !keeps(*this, index))
+    if (shooter)
+        EnterFirstPerson();
+    else if (!Mods::switches().first_person || !keeps || !keeps(*this, index))
         m_FirstPerson = false;
     if (m_FirstPerson) {
         newdist = 0;  // the eye at the link point
-        newangx = LERPFLOAT(m_AngleParam[m_ModeIndex], FIRST_PERSON_ANG_UP, FIRST_PERSON_ANG_DOWN);
+        newangx = shooter ? LERPFLOAT(m_AngleParam[m_ModeIndex], SHOOTER_ANG_UP, SHOOTER_ANG_DOWN)
+                          : LERPFLOAT(m_AngleParam[m_ModeIndex], FIRST_PERSON_ANG_UP, FIRST_PERSON_ANG_DOWN);
     }
 
     DCP();

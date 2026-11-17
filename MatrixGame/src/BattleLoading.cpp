@@ -130,6 +130,8 @@ class Screen {
         if (window) {
             // No hide button: a battle loads in about half a second; Escape or the close box still dismiss it.
             ShowWindow(window, SW_SHOWNOACTIVATE);
+            // In front of other programs' windows all the same (never active, see above; it lasts a moment).
+            SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             UpdateWindow(window);
             SetTimer(window, 1, 350, nullptr);
         }

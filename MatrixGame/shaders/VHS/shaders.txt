@@ -32,6 +32,9 @@ Setting.VIGNETTE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.3|Виньетка|Vi
 Value.VIGNETTE.0=Выкл|Off
 Setting.LENS=0,0.25,0.5,0.75,1|0|Изгиб линзы|Lens bend
 Value.LENS.0=Выкл|Off
+Setting.SHOOTERLENS=-1,0,0.25,0.5,0.75,1|-1|Линза в «Шутере»|Lens in «Shooter»
+Value.SHOOTERLENS.-1=Не менять|Keep
+Value.SHOOTERLENS.0=Выкл|Off
 Setting.ABERRATION=0,0.25,0.5,0.75,1,1.5,2|1|Хроматическая аберрация|Chromatic aberration
 Value.ABERRATION.0=Выкл|Off
 Setting.UI=On,Off|Off|Эффекты на интерфейс|Effects on the interface|cycle
@@ -57,14 +60,16 @@ Info.JITTER=Строки слегка гуляют вбок, как при не�
 Info.TRACKING=Время от времени по картинке проходит полоса сбоя со снегом; внизу кадра — рваные строки. «Без сбоев» — без сбоев.|Now and then a band of fault with snow runs over the picture; torn lines at the bottom of the frame. No faults: no faults.
 Info.VIGNETTE=Края экрана темнее.|The screen's edges darker.
 Info.LENS=Картинка выгнута, как на выпуклом стекле кинескопа, без чёрных краёв; интерфейс не изгибается. Внимание: щелчки мыши попадают туда, где предмет стоит на самом деле, а не туда, где его видно на изогнутой картинке. «Выкл» — плоско.|The picture bulges, as on a picture tube's curved glass, with no black edges; the interface is never bent. Mind: mouse clicks land where a thing really is, not where the bent picture shows it. Off: flat.
+Info.SHOOTERLENS=Для мода «Шутер»: пока вы управляете роботом или турелью, изгиб линзы плавно переходит к этому значению, а при выходе — обратно. «Не менять» — как в «Изгибе линзы». Прицел в центре экрана, и изгиб его не сдвигает.|For the Shooter mod: while you drive a robot or a turret the lens bend goes smoothly to this value, and back as you leave it. Keep: as Lens bend has it. The aim is the screen's middle, which the bend never moves.
 Info.ABERRATION=Цветная кайма к краям экрана: красное и синее расходятся, как у простого объектива. Интерфейс не задевает.|Colour fringes towards the screen's edges: the red and the blue part, as from a simple lens. The interface is left alone.
 Info.UI=Вкл — кассета ложится и на интерфейс: панели, полоски здоровья, подсказки (курсор остаётся чётким). Выкл — только бой, интерфейс чёткий.|On: the tape covers the interface too: the panels, health bars, hints (the cursor stays sharp). Off: the battle only, the interface sharp.
 Info.ABOUT=Бой как запись на старой видеокассете. Настроение навеяно набором MCVHS для Minecraft; код свой, его код не использован.|The battle as a recording on an old video tape. The mood is inspired by the MCVHS pack for Minecraft; the code is its own, none of its code is used.
 
-Screen=PROFILE - - - [Scene] [VHS] [Other] - ABOUT
+Screen=PROFILE - - - [Scene] [VHS] [Other] [Mods] - ABOUT
 Screen.Scene=Мир|World|SOFTLIGHT
 Screen.VHS=Настройки VHS|VHS settings|LENS ABERRATION COLOURDEPTH - BLEED LUMANOISE CHROMANOISE INTERLACE INTERLACERATE SHARPEN
 Screen.Other=Прочее|Other|FADE JITTER TRACKING VIGNETTE UI
+Screen.Mods=Поддержка модов|Mod support|SHOOTERLENS
 
 Target.Shade=0.5|rgba8
 Target.TapeY=1|rg16f

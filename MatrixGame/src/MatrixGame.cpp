@@ -72,6 +72,13 @@
 logger_type lgr{LogFolder::file(L"test.log")};
 ////////////////////////////////////////////////////////////////////////////////
 
+// A window of the game as it appears (the lobby, the battle): in front and active, not behind what another program
+// opened meanwhile (the process before this one let it: NetBattle::restart_to_menu).
+static void to_front(HWND window) {
+    SetForegroundWindow(window);
+    BringWindowToTop(window);
+}
+
 CHeap *g_MatrixHeap;
 CBlockPar *g_MatrixData;
 CMatrixMapLogic *g_MatrixMap;
@@ -186,6 +193,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
             }
             ShowWindow(g_Wnd, SW_SHOWNORMAL);
             UpdateWindow(g_Wnd);
+            to_front(g_Wnd);
 
             timer_active = timeBeginPeriod(1) == TIMERR_NOERROR;
 
@@ -539,6 +547,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
     if (!BattleLoading::has_parent()) {
         ShowWindow(g_Wnd, SW_SHOWNORMAL);
         UpdateWindow(g_Wnd);
+        to_front(g_Wnd);
     }
 
     DCP();
@@ -581,6 +590,7 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
                 Display::request(standalone.values.display.mode, standalone.values.display.fullscreen);
                 ShowWindow(g_Wnd, SW_SHOWNORMAL);
                 UpdateWindow(g_Wnd);
+                to_front(g_Wnd);
             }
             if (MapPacks::check_requested()) {
                 MapPacks::log_missing();

@@ -72,14 +72,17 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         }
 #endif
         col *= shade;
-        // The bottom under the water: the light the waves gather, less the deeper.
-        if (CAUSTICS > 0 && reach > water) {
+        // The bottom under the water: the light the waves gather, less the deeper. Only where the game's water shows
+        // and the point lies under its level (not the shore's relief, a road or the water's own surface, which the
+        // view's ray met beyond the water's plane at a low camera).
+        float under = CAUSTICS > 0 && reach > water ? WaterSeen(uv) * saturate((GroundZ - 0.5 - p.z) / 2.0) : 0.0;
+        if (under > 0) {
             float below = max(GroundZ - p.z, 0.0);
             float2 q = p.xy * 0.07 + float2(Noise(p.xy * 0.004), Noise(p.xy * 0.004 + 17.3)) * 9.0;
             float2 q2 = mul(q, float2x2(0.6, -0.8, 0.8, 0.6)) * 1.37 + 3.7;
             float c = lerp(Caustic(q, Time.y * 1.5), Caustic(q2, Time.y * 1.3), smoothstep(0.3, 0.7, Noise(p.xy * 0.006 - 9.1)));
             c *= lerp(0.35, 1.2, Noise(p.xy * 0.003 + 5.1));
-            col *= 1.0 + c * CAUSTICS * 0.6 * exp(-below / 25.0) * near;
+            col *= 1.0 + c * CAUSTICS * 0.6 * exp(-below / 25.0) * near * under;
         }
         // The fires' light: warm, on what is near them.
         float3 light = Soft(h.rgb * FIRELIGHT) * near;

@@ -18,7 +18,7 @@ namespace ShaderMenu {
 // rows' counts and what is under them as with no extra rows (Menu::set_extra_rows makes the window taller on a taller
 // screen).
 struct Layout {
-    static constexpr int width = 600;         // the window's (640x480 the least screen)
+    static constexpr int width = 600;         // the window's, every page's (640x480 the least screen)
     static constexpr int row_height = 17;
     static constexpr int on_y = 58;           // the list's Shaders row
     static constexpr int list_y = on_y + 2 * row_height;  // the packs, after an empty row
@@ -29,6 +29,7 @@ struct Layout {
     static constexpr int header_y = 24;       // the title's first line (the second a row lower)
     static constexpr int header_button_y = 32;  // Back and Reset, as wide as their texts (Menu::set_header_widths)
     static constexpr int header_button_pad = 10;  // their text from their sides
+    static constexpr int icon_button = 20;     // Import's and Export's side (a square: an icon)
     static constexpr int settings_y = 68;     // a settings screen's rows
     static constexpr int settings_rows = 14;
     static constexpr int row_gap = 8;         // over the rows and under them
@@ -50,7 +51,8 @@ struct Layout {
     static constexpr int info_size = 16;
 };
 
-enum class Button { None, Folder, PackSettings, Done, Cancel, List, Apply, Back, Reset };
+// Import and Export: a settings screen's, by Back (right of it) and Reset (left of it); icons, no keys.
+enum class Button { None, Folder, PackSettings, Done, Cancel, List, Apply, Back, Reset, Import, Export };
 
 struct ButtonPlace {
     Button button;
@@ -116,13 +118,21 @@ public:
     // Back's and Reset's widths: their texts' and Layout::header_button_pad each side (the window measures them).
     void set_header_widths(int back, int reset);
     // The title's place between Back and Reset (as far from either side: in the middle).
-    int title_left() const { return Layout::left + std::max(m_BackWidth, m_ResetWidth) + Layout::gap; }
+    int title_left() const {
+        const int icon = settings() ? Layout::gap + Layout::icon_button : 0;  // (Import by Back, Export by Reset)
+        return Layout::left + std::max(m_BackWidth, m_ResetWidth) + icon + Layout::gap;
+    }
     int title_width() const { return Layout::width - 2 * title_left(); }
     // Every setting of the pack as its author set it (not applied: Apply or Done do); the window asks first.
     void reset();
+    // A settings screen's pack's settings as they are now (every one, by its <Id>): what Export writes.
+    Mods::SettingValues export_values() const;
+    // Those of the values that are the shown pack's settings and one of their values, as the pending ones (applied by
+    // Apply or Done): how many were taken.
+    int import_values(const Mods::SettingValues &values);
     // A further screen (opened from a row): Back over its rows.
     bool further() const { return m_Stack.size() > 1; }
-    // The screen's buttons: under the rows (and a further screen's Back).
+    // The screen's buttons: under the rows (and a settings screen's Back, Reset, Import and Export over them).
     std::vector<ButtonPlace> buttons() const;
 
     // Shown from top() on; the arrows right of the list while it scrolls further that way.

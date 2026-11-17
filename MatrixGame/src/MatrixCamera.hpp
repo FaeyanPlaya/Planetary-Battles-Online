@@ -176,6 +176,10 @@ class CMatrixCamera : public CMain {
     // it); the turret's head follows the cursor.
     float m_TurretAngZ = 0;
     const CMatrixMapStatic *m_TurretView = nullptr;  // the turret it was set for
+    // Shooter (the shooter mod): in a robot the view's own turn, by the mouse (the hull follows the aim in the middle);
+    // the robot it was set for.
+    float m_ShooterAngZ = 0;
+    const CMatrixMapStatic *m_ShooterView = nullptr;
     bool m_RearView = false;  // ManualExtras: in a robot, looking back (X); off out of it
     bool m_FirstPerson = false;  // FirstPerson: looking from the robot or turret driven; off out of it
     float m_Near = 1.0f;         // the projection's near clip plane (the far view moves it, see BeforeDraw)
@@ -248,6 +252,10 @@ public:
         if (m_AngleParam[m_ModeIndex] < 0.0f)
             m_AngleParam[m_ModeIndex] = 0.0f;
     }
+
+    // Shooter: the mouse turns the view of the robot or turret driven (right: dx > 0) and tilts it (down: dy > 0), by
+    // these radians.
+    void ShooterLook(float dx, float dy);
 
     void InitStrategyAngle(float ang) {
         m_Ang_Strategy = (float)AngleNorm(g_Config.m_CamBaseAngleZ + ang);

@@ -18,6 +18,7 @@
 #include "Mods.hpp"
 #include "ModApi.hpp"
 #include "ModHooks.hpp"
+#include "Shooter.hpp"
 #include "BattleLoading.hpp"
 #include "ScreenLayout.hpp"
 #include "MatrixMap.hpp"
@@ -217,6 +218,7 @@ CFormMatrixGame::CFormMatrixGame() : CForm() {
 
 CFormMatrixGame::~CFormMatrixGame() {
     DTRACE();
+    Shooter::release();  // (a battle over in a robot: the Windows cursor free)
 }
 
 void CFormMatrixGame::Enter(void) {
@@ -260,6 +262,7 @@ void CFormMatrixGame::Enter(void) {
 
 void CFormMatrixGame::Leave(void) {
     DTRACE();
+    Shooter::release();
 }
 
 void CFormMatrixGame::Draw(void) {
@@ -441,6 +444,7 @@ void CFormMatrixGame::Takt(int step) {
         CMultiSelection::m_GameSelection->UpdatePending(SelectionMask(), selcallback, (uintptr_t)&cbs);
     }
 
+    Shooter::frame(step);  // (before the map's takt: its trace from the cursor in the middle)
     g_MatrixMap->Takt(step);
 
     CPoint mp = g_MatrixMap->m_Cursor.GetPos();
@@ -539,6 +543,10 @@ void CFormMatrixGame::MouseMove(int x, int y) {
     DTRACE();
 
     CMatrixSideUnit *p_side = g_MatrixMap->GetPlayerSide();
+
+    // Shooter (the shooter mod): in a robot or turret driven the mouse turns the view; the cursor stays in the middle.
+    if (Shooter::mouse_move(x, y))
+        return;
 
     if (g_MatrixMap->IsMouseCam()) {
         g_MatrixMap->m_Camera.RotateByMouse(x - g_MatrixMap->m_Cursor.GetPosX(), y - g_MatrixMap->m_Cursor.GetPosY());
@@ -654,6 +662,8 @@ void CFormMatrixGame::MouseKey(ButtonStatus status, int key, int x, int y) {
         g_MatrixMap->MouseCam(false);
         return;
     }
+    if (key == VK_MBUTTON && Shooter::captured())
+        return;  // (Shooter: the mouse turns the view already)
     if (status == B_DOWN && key == VK_MBUTTON) {
         g_MatrixMap->MouseCam(true);
         // SetCursorPos(g_ScreenX/2, g_ScreenY/2);
@@ -1923,6 +1933,7 @@ void CFormMatrixGame::SystemEvent(ESysEvent se) {
         g_MatrixMap->MouseCam(false);
         g_MatrixMap->m_Console.Keyboard(VK_SHIFT, false);
         if (CMultiSelection::m_GameSelection) CMultiSelection::m_GameSelection->End(false);
+        Shooter::release();  // (the Windows cursor free in another window)
     }
     if (se == SYSEV_DEACTIVATING) {
         if (FLAG(g_MatrixMap->m_Flags, MMFLAG_VIDEO_RESOURCES_READY)) {

@@ -57,6 +57,7 @@ target_link_libraries(
     PUBLIC
         winmm
         ws2_32
+        comdlg32
         ${DIRECTX9_LIBRARIES}
         MatrixLib
         MatrixAudio
@@ -211,7 +212,7 @@ if (NOT MATRIXGAME_BUILD_DLL)
     # Our mods (mods/<id>: mod.txt, <id>.cpp for a mod with code: its DLL; data.txt for its data: ModData).
     # tools/make-build.ps1 ships them.
     set(MATRIXGAME_MODS autoboom ballistics farview firstperson fixes homing interface manual newsky pbo rally repair
-                        sky sr2 turrets)
+                        shooter sky sr2 turrets)
     set(MATRIXGAME_MOD_FOLDERS)
     set(MATRIXGAME_MOD_FILES)
     foreach(mod ${MATRIXGAME_MODS})

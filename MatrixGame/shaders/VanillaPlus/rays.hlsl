@@ -8,12 +8,13 @@
 #include "common.hlsl"
 
 // The ground the sun's light through p reaches (twice: the first guess on the water's level, then the land seen
-// there), on the screen; false off it.
-bool GroundUnder(float3 p, out float2 at) {
+// there), on the screen; false off it. `q`: that ground in the world.
+bool GroundUnder(float3 p, out float2 at, out float3 q) {
     float z = GroundZ;
     at = 0;
+    q = p;
     [unroll] for (int k = 0; k < 2; k++) {
-        float3 q = p - SunDir.xyz * (max(p.z - z, 0.0) / SunDir.z);
+        q = p - SunDir.xyz * (max(p.z - z, 0.0) / SunDir.z);
         float3 s = ScreenPos(q);
         if (s.z <= 0 || s.z >= 1 || any(s.xy < 0) || any(s.xy > 1)) return false;  // (behind the eye, past the far)
         at = s.xy;
@@ -22,6 +23,21 @@ bool GroundUnder(float3 p, out float2 at) {
         z = WorldPos(at, d).z;
     }
     return true;
+}
+
+// Whether what shades the ground at q stands between q and p (p then lies on its lit side: over it, or before it
+// towards the light), not past p: a point of the way from q up to p inside a thing, as the screen shows it (behind
+// what is seen there, by less than a thing is thick). Without it every point over a shaded patch counted as shaded,
+// on both sides of what casts the shade.
+bool CasterBelow(float3 q, float3 p) {
+    bool below = false;
+    [unroll] for (int k = 1; k <= 6; k++) {
+        float3 s = ScreenPos(lerp(q, p, k / 7.0));
+        bool on = s.z > 0 && s.z < 1 && all(s.xy == saturate(s.xy));
+        float behind = ViewDepth(s.z) - ViewDepth(SceneDepth(saturate(s.xy)));
+        below = below || (on && behind > 0.5 && behind < 30.0 + ViewDepth(s.z) * 0.02);
+    }
+    return below;
 }
 
 // How lit the ground is there by the sun: the game's shadows (SolidTex.a: robots', buildings', trees'). The pack's own
@@ -48,10 +64,16 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         float h = max(p.z - GroundZ, 0.0);
         float dens = exp(-h / FOGHEIGHT);
         float2 at;
+        float3 q;
         float l;
         if (ShadowInfo.w > 0) l = ShadowLit(p, ShadowInfo.z * 4.0);  // (some pixels of the map nearer: the ground itself is no shade)
         // Low enough to be shaded by what stands on the ground; higher, open.
-        else l = GroundUnder(p, at) ? lerp(LitAt(at), 1.0, saturate(h / (FOGHEIGHT * 3.0))) : 1.0;
+        else if (!GroundUnder(p, at, q)) l = 1.0;
+        else {
+            l = LitAt(at);
+            if (l < 0.99 && CasterBelow(q, p)) l = 1.0;  // the shade's caster under p: p in its light
+            l = lerp(l, 1.0, saturate(h / (FOGHEIGHT * 3.0)));
+        }
         shade += dens * (1.0 - l);
         fog += dens;
         t += step;

@@ -19,8 +19,15 @@ std::vector<ButtonPlace> Menu::buttons() const {
                                     {Button::Cancel, l, b, third},
                                     {Button::Apply, l + third + Layout::gap, b, third},
                                     {Button::Done, r - third, b, third}};
-    if (further()) result.push_back({Button::Back, Layout::left, Layout::header_button_y, m_BackWidth});
+    // A settings screen's Back always there (greyed on the first one: nothing to go back to), Import right of it.
+    if (settings()) result.push_back({Button::Back, Layout::left, Layout::header_button_y, m_BackWidth});
     if (settings()) result.push_back({Button::Reset, Layout::right - m_ResetWidth, Layout::header_button_y, m_ResetWidth});
+    if (settings()) {
+        result.push_back({Button::Import, Layout::left + m_BackWidth + Layout::gap, Layout::header_button_y,
+                          Layout::icon_button});
+        result.push_back({Button::Export, Layout::right - m_ResetWidth - Layout::gap - Layout::icon_button,
+                          Layout::header_button_y, Layout::icon_button});
+    }
     return result;
 }
 
@@ -33,6 +40,27 @@ void Menu::reset() {
     const auto *shown = pack();
     if (!shown) return;
     for (const auto &setting : shown->settings) m_Pending.settings.erase(ShaderPacks::setting_key(*shown, setting));
+}
+
+Mods::SettingValues Menu::export_values() const {
+    Mods::SettingValues values;
+    if (const auto *shown = pack())
+        for (const auto &setting : shown->settings)
+            values[setting.id] = ShaderPacks::setting_value(*shown, setting, m_Pending.settings);
+    return values;
+}
+
+int Menu::import_values(const Mods::SettingValues &values) {
+    const auto *shown = pack();
+    if (!settings() || !shown) return 0;
+    int taken = 0;
+    for (const auto &setting : shown->settings) {
+        const auto found = values.find(setting.id);
+        if (found == values.end() || std::ranges::find(setting.values, found->second) == setting.values.end()) continue;
+        m_Pending.settings[ShaderPacks::setting_key(*shown, setting)] = found->second;
+        ++taken;
+    }
+    return taken;
 }
 
 void Menu::set_extra_rows(int rows) {
@@ -239,6 +267,8 @@ bool Menu::enabled(Button button) const {
         case Button::PackSettings: return !settings() && m_Chosen >= 0 && m_Packs[m_Chosen].problem.empty();
         case Button::List: return settings();
         case Button::Back: return further();
+        case Button::Import:
+        case Button::Export: return settings() && pack() && !pack()->settings.empty();
         case Button::Reset: {
             const auto *shown = pack();
             if (!settings() || !shown) return false;

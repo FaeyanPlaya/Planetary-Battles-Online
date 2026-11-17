@@ -110,13 +110,20 @@ float3 FromHSV(float3 c) {
 
 float4 main(float2 screen : TEXCOORD0) : COLOR {
     float2 uv = screen;
+    float panini = 0.0, barrel = BARREL;
 #if PROJECTION == Panini
-    uv = PaniniUV(uv, PANINI);
+    panini = PANINI;
 #endif
-    if (BARREL > 0) {
+#ifdef MOD_SHOOTER
+    // The Shooter mod: to its own strengths as the view goes into the robot or turret (MOD_SHOOTER 0 out, 1 in).
+    if (SHOOTERPANINI >= 0) panini = lerp(panini, SHOOTERPANINI, MOD_SHOOTER);
+    if (SHOOTERBARREL >= 0) barrel = lerp(barrel, SHOOTERBARREL, MOD_SHOOTER);
+#endif
+    if (panini > 0) uv = PaniniUV(uv, panini);
+    if (barrel > 0) {
         float2 c = uv * 2.0 - 1.0;
         // (drawn a little larger: the corners reach the screen's, no black edges)
-        c *= (1.0 + dot(c, c) * BARREL * 0.1) / (1.0 + 2.0 * BARREL * 0.1);
+        c *= (1.0 + dot(c, c) * barrel * 0.1) / (1.0 + 2.0 * barrel * 0.1);
         uv = c * 0.5 + 0.5;
     }
     if (PIXELS > 1) {
@@ -131,9 +138,9 @@ float4 main(float2 screen : TEXCOORD0) : COLOR {
 #if PAINTED
     col = Painted(Taa, uv);
 #endif
-    col = WorldBlur(Taa, uv, col, DOF ? DOFSTRENGTH : 0.0, MBLUR ? MBLURSTRENGTH : 0.0);
-    col = Sharpen(Taa, uv, col, SHARPEN);
     col = Aberration(Taa, uv, col, ABERRATION);
+    col = WorldBlur(Taa, uv, col, DOF ? DOFSTRENGTH : 0.0, MBLUR ? MBLURSTRENGTH : 0.0, FringeAt(uv, ABERRATION));
+    col = Sharpen(Taa, uv, col, SHARPEN);
 #if NTSC
     col = Ntsc(Taa, uv, col);
 #endif

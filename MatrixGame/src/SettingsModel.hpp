@@ -79,23 +79,24 @@ struct Resolution {
 
 // Window geometry in pixels, relative to the window's top-left corner.
 struct Layout {
-    static constexpr int width = 460;
+    static constexpr int width = 600;  // every page as wide as the shaders screens (ShaderMenu::Layout::width)
     // The window's height on the least screen; the shaders screens' (with no extra rows) on every screen. The other
     // pages: Window::legend_y and Window::content_height, by the rows shown.
     static constexpr int title_y = 30;
     static constexpr int first_row_y = 55;
     static constexpr int row_height = 17;  // (15 while the mods were rows of the main page: 640x480)
     static constexpr int label_x = 70;
-    static constexpr int previous_x = 250;  // "<" marker; the left half of the value cell steps back.
-    static constexpr int value_x = 264;
+    static constexpr int previous_x = 390;  // "<" marker; the left half of the value cell steps back.
+    static constexpr int value_x = 404;
     static constexpr int value_width = 136;
-    static constexpr int next_x = 404;  // ">" marker; the right half of the value cell steps forward.
-    static constexpr int cell_right = 420;
-    // A mod row's switch (in the value cell's middle) and its "i" just left of it, as the lobby's: SR HD's mods menu's
-    // buttons. The mods page has no arrows (a click on the value's halves steps it, as everywhere).
+    static constexpr int next_x = 544;  // ">" marker; the right half of the value cell steps forward.
+    static constexpr int cell_right = 560;
+    // A mod row's switch (in the value cell's middle), as the lobby's: SR HD's mods menu's button; its "i" left of the
+    // value's "<" column, as the shaders menu's. A value of its (not a switch) has the arrows as everywhere (a click on
+    // the value's halves steps it).
     static constexpr int button_size = 16;
     static constexpr int switch_x = value_x + (value_width - button_size) / 2;
-    static constexpr int info_x = switch_x - 6 - button_size;
+    static constexpr int info_x = previous_x - 20;
     static constexpr int legend_y = first_row_y + least_rows * row_height + 2;
     static constexpr int content_height = legend_y + row_height;  // (a failed save's text in the legend's place)
 };
@@ -223,9 +224,11 @@ public:
     void close_shaders();
     ShaderMenu::Menu &shader_menu() { return m_ShaderMenu; }
     const ShaderMenu::Menu &shader_menu() const { return m_ShaderMenu; }
-    // A row of a mods folder's mod's setting (drawn further in).
+    // A row of a mods folder's mod's setting.
     bool setting_row(int row) const;
-    // A mod's own row (Far view, Interface fixes, First person, HD sky, a mods folder's mod): it has an "i".
+    // One under its personal mod's row (drawn further in; a battle mod's stands alone, the mod named in it).
+    bool nested_row(int row) const;
+    // A mod's own row (Far view, Interface fixes, First person, HD sky, a mods folder's personal mod): it has an "i".
     bool info_row(int row) const;
     // A mod's row that is on or off (all of them but Far view, which has its scales): a switch, no arrows.
     bool switch_row(int row) const;
@@ -342,8 +345,8 @@ std::wstring hint_template(const Window &window);
 // draws text buttons under its options instead (from the window's content height on).
 struct StartupLayout {
     static constexpr int buttons_room = 34;
-    static constexpr int apply_x = 100;
-    static constexpr int cancel_x = 230;
+    static constexpr int apply_x = 170;  // (the two in the window's middle)
+    static constexpr int cancel_x = 300;
     static constexpr int button_width = 130;
 };
 std::wstring startup_template(const Window &window);

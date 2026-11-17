@@ -154,14 +154,16 @@ Window::Window(StandaloneSettings::Values values, std::vector<Resolution> resolu
     }
     m_KeyRows.push_back({-1, -1, -1, true});
     m_KeyRows.push_back({});
-    // The mods page: the mods folder's personal mods (not those with rows of their own) before Saved designs.
+    // The mods page: the mods folder's personal mods (not those with rows of their own) before Saved designs, and the
+    // settings of battle mods (each person's, as the Shooter's mouse sensitivity: the host chooses only whether the mod
+    // is on, in the lobby), without a row of the mod's own: named "<setting> for the <mod> mod".
     for (const auto &mod : mods) {
         const bool fixed = mod.id == "farview" || mod.id == "interface" || mod.id == "firstperson" || mod.id == "newsky";
-        if (mod.kind != Mods::Kind::Personal || mod.folder.empty() || fixed) continue;
+        if (mod.folder.empty() || fixed || (mod.kind != Mods::Kind::Personal && mod.settings.empty())) continue;
         const int index = int(m_Mods.size());
         m_Mods.push_back(mod);
         if (mod.problem != Mods::Problem::None) m_Unavailable.push_back(mod.id);
-        m_FolderRows.push_back({index, -1});
+        if (mod.kind == Mods::Kind::Personal) m_FolderRows.push_back({index, -1});
         for (int s = 0; s < int(mod.settings.size()); ++s) m_FolderRows.push_back({index, s});
     }
     for (int row = mods_first; row < row_count; ++row) {
@@ -189,6 +191,10 @@ std::string Window::row_mod(int row) const {
 bool Window::info_row(int row) const { return !row_mod(row).empty(); }
 
 bool Window::switch_row(int row) const { return info_row(row) && row != static_cast<int>(Row::FarView); }
+
+bool Window::nested_row(int row) const {
+    return setting_row(row) && m_Mods[m_FolderRows[row - row_count].mod].kind == Mods::Kind::Personal;
+}
 
 bool Window::switched_on(int row) const {
     const std::string id = row_mod(row);
@@ -554,7 +560,11 @@ std::wstring Window::label(int row) const {
         const bool russian = m_Language == Language::Russian;
         if (place.setting < 0) return GameLanguage::pick(russian, mod.name, mod.name_en);
         const Mods::SettingLine &setting = mod.settings[place.setting];
-        return GameLanguage::pick(russian, setting.russian, setting.english);
+        const std::wstring name = GameLanguage::pick(russian, setting.russian, setting.english);
+        if (mod.kind == Mods::Kind::Personal) return name;
+        // A battle mod's (no row of the mod's own above it): the mod named.
+        return name + (russian ? L" для мода «" : L" for the «") +  // dlya moda
+               GameLanguage::pick(russian, mod.name, mod.name_en) + (russian ? L"»" : L"» mod");
     }
     std::wstring result;
     switch (static_cast<Row>(row)) {
@@ -930,11 +940,28 @@ std::wstring frame_name(int width, int height, uint32_t border, uint32_t fill) {
     return L"SettingsFrame" + std::to_wstring(width) + L"x" + std::to_wstring(height) + L"_" + hex(border) + hex(fill);
 }
 
-// The frames of the shaders screens, where they are drawn: the pack chosen, the buttons.
+// The frames of the shaders screens, where they are drawn: the pack chosen, the buttons, the icons of Import and Export.
 struct Placed {
     Frame frame;
     int x, y;
 };
+
+// Import's and Export's icon in a 20x20 button: a tray, an arrow into it (Import) or out of it (Export); x, y, width,
+// height of each square.
+struct IconPart {
+    int x, y, width, height;
+};
+std::vector<IconPart> icon_parts(ShaderMenu::Button button) {
+    std::vector<IconPart> parts{{4, 14, 12, 2}, {4, 10, 2, 4}, {14, 10, 2, 4}};  // the tray
+    if (button == ShaderMenu::Button::Import)  // down into it
+        parts.insert(parts.end(), {{9, 3, 2, 8}, {6, 8, 8, 1}, {7, 9, 6, 1}, {8, 10, 4, 1}, {9, 11, 2, 1}});
+    else  // up out of it
+        parts.insert(parts.end(), {{9, 3, 2, 1}, {8, 4, 4, 1}, {7, 5, 6, 1}, {6, 6, 8, 1}, {9, 7, 2, 6}});
+    return parts;
+}
+bool icon_button(ShaderMenu::Button button) {
+    return button == ShaderMenu::Button::Import || button == ShaderMenu::Button::Export;
+}
 std::vector<Placed> shader_frames(const Window &window) {
     std::vector<Placed> result;
     const auto add = [&](int x, int y, int width, int height, uint32_t border, uint32_t fill) {
@@ -951,6 +978,13 @@ std::vector<Placed> shader_frames(const Window &window) {
         const uint32_t border = !enabled ? with_alpha(disabled_color(), 0x90) : hover ? selected_color() : arrow_color();
         const uint32_t fill = !enabled ? 0 : hover ? with_alpha(selected_color(), 0x30) : with_alpha(text_color(), 0x14);
         add(button.x, button.y, button.width, SL::button_height, border, fill);
+    }
+    for (const auto &button : menu.buttons()) {
+        if (!icon_button(button.button)) continue;
+        const bool enabled = menu.enabled(button.button), hover = enabled && menu.hover() == button.button;
+        const uint32_t color = !enabled ? disabled_color() : hover ? selected_color() : text_color();
+        for (const auto &part : icon_parts(button.button))
+            add(button.x + part.x, button.y + part.y, part.width, part.height, color, color);
     }
     return result;
 }
@@ -1084,6 +1118,12 @@ std::wstring shaders_text(const Window &window) {
         result += text_element(window.fit(menu.button_text(button.button), L"Font.Heavy14", button.width), L"Font.Heavy14",
                                color, button.x, button.y + 2, button.width, 1);  // as much room over the text as under it
     }
+    // The icons (after the buttons' frames, in their order).
+    std::size_t icon = next_frame + places.size();
+    for (const auto &button : places)
+        if (icon_button(button.button))
+            for (std::size_t k = 0, n = icon_parts(button.button).size(); k < n && icon < frames.size(); ++k, ++icon)
+                result += bitmap_at(frames[icon].x, frames[icon].y, frames[icon].frame.name);
     return result;
 }
 
@@ -1105,17 +1145,17 @@ std::wstring options_text(const Window &window) {
         }
         const bool selected = row == window.selected();
         const bool enabled = window.enabled(row);
-        // A row that cannot change, or opens a page, has no arrows; nor has the mods page.
-        const bool arrowed = enabled && !opener(row) && !window.mods_page();
+        // A row that cannot change, or opens a page, has no arrows; nor has a mod's switch on the mods page.
+        const bool arrowed = enabled && !opener(row) && !(window.mods_page() && window.switch_row(row));
         const uint32_t color = !enabled                    ? disabled_color()
                                : window.conflicting(row) ? error_color()
                                : selected                ? selected_color()
                                                          : text_color();
         const uint32_t arrows = selected ? selected_color() : arrow_color();
-        const int indent = window.setting_row(row) ? 2 * option_indent : option_indent;
+        const int indent = window.nested_row(row) ? 2 * option_indent : option_indent;
         // A mod's row: its "i" left of the value; on or off, a switch in the value's place.
         const bool info = window.mods_page() && window.info_row(row);
-        const int label_right = window.mods_page() ? Layout::info_x - 4 : Layout::previous_x;
+        const int label_right = info ? Layout::info_x - 4 : Layout::previous_x;
         result += text_element(window.label(row), L"Font.Heavy14", color, Layout::label_x + indent, y,
                                label_right - Layout::label_x - indent, 0);
         const auto button = [&](int x, const std::wstring &bitmap) {

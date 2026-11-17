@@ -30,6 +30,7 @@
 #include "MatrixObjectCannon.hpp"
 #include "Interface/CInterface.h"
 #include "ShaderPacks.hpp"
+#include "Shooter.hpp"
 #include "SimLab.hpp"
 #include "SoundBridge.hpp"
 #include "random.hpp"
@@ -973,11 +974,18 @@ void test_drive(Battle &b, int now) {
     CMatrixRobotAI *r = robot->AsRobot();
     using namespace Commands;
     const int phase = (now - start) / 1000 % 4;
+    // The Shooter: its sideways keys, and the aim going round the robot (the hull after it, the chassis by the moves).
+    const bool shooter = Shooter::on();
+    const int left = shooter ? DRIVE_STRAFE_LEFT : DRIVE_LEFT, right = shooter ? DRIVE_STRAFE_RIGHT : DRIVE_RIGHT;
     const int keys = DRIVE_AIMING | (phase == 0   ? DRIVE_FORWARD
-                                     : phase == 1 ? DRIVE_FORWARD | DRIVE_LEFT
-                                     : phase == 2 ? DRIVE_FIRE | DRIVE_RIGHT
+                                     : phase == 1 ? DRIVE_FORWARD | left
+                                     : phase == 2 ? DRIVE_FIRE | right
                                                   : DRIVE_BACKWARD);
-    const D3DXVECTOR3 aim(r->m_PosX + r->m_Forward.x * 150, r->m_PosY + r->m_Forward.y * 150, r->GetGeoCenter().z);
+    D3DXVECTOR3 aim(r->m_PosX + r->m_Forward.x * 150, r->m_PosY + r->m_Forward.y * 150, r->GetGeoCenter().z);
+    if (shooter) {
+        const float angle = float(now - start) * 0.0008f;
+        aim = D3DXVECTOR3(r->m_PosX + std::cos(angle) * 200, r->m_PosY + std::sin(angle) * 200, r->GetGeoCenter().z);
+    }
     side->IssueDrive(keys, aim);
     if ((now - start) % 1000 == 500)
         note(b, std::format("test: driving robot {} at {:.0f},{:.0f} (phase {}, max speed {:.3f})", r->GetSimId(), r->m_PosX,
@@ -2427,6 +2435,8 @@ bool restart_to_menu() {
         lgr.error("Net: cannot start the game again at its menu (Windows error {})")(GetLastError());
         return false;
     }
+    // (it may come to the front: this process is in front now, the next one is not yet)
+    AllowSetForegroundWindow(process.dwProcessId);
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     lgr.notice(g_restart_arguments.empty() ? "Net: the battle is over; the game starts again at its menu"

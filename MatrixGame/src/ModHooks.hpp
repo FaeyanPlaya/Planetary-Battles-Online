@@ -120,6 +120,14 @@ struct Hooks {
     bool (*homing_waits)(const SMOProps &props) = nullptr;
     void (*homing_turn)(SMOProps &props, const D3DXVECTOR3 &dir, float takt) = nullptr;
 
+    // Шутер (shooter, Shooter; with ManualExtras): a driven robot's turning this takt, from where its driver aims (the
+    // hull follows the aim by itself; the chassis turns only to where it goes, its moves the aim's: Manual control+'s
+    // sideways with the aim as the heading; hovercraft and antigravity turn with the hull); the move keys this person
+    // adds (the turn keys go sideways); how far the view turns for a pixel of the mouse, in radians.
+    void (*shooter_turn)(CMatrixRobotAI &robot, int keys, const D3DXVECTOR3 &aim) = nullptr;
+    int (*shooter_keys)(CMatrixSideUnit &side) = nullptr;
+    float (*shooter_look)() = nullptr;
+
     // Ручное управление+ (manual, ManualExtras): the sideways of a driver's keys (1 right, -1 left, 0 none); a driven
     // robot's turning this takt (true: the mod's, a chassis turning to go sideways); its going sideways (its move
     // order's takt); whether a weapon slot is held off by the driver's keys; the keys this person adds to a robot

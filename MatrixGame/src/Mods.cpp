@@ -44,6 +44,7 @@ constexpr SwitchName battle_switches[] = {
     {"missileballistics", &Switches::missile_ballistics},
     {"rallypoint", &Switches::rally_point},
     {"manualextras", &Switches::manual_extras},
+    {"shooter", &Switches::shooter},
 };
 // Every switch a personal mod may turn on: what this person sees and how their input becomes commands.
 constexpr SwitchName personal_switches[] = {
@@ -247,6 +248,7 @@ Mod parse(std::wstring_view text) {
         else if (key == L"switches") mod.switches = list_of(value);
         else if (key == L"dependence") mod.depends = list_of(value);
         else if (key == L"conflict") mod.conflicts = list_of(value);
+        else if (key == L"shadervalue") mod.shader_values = list_of(value);
         else if (key.starts_with(L"key.")) {
             if (auto parsed = key_line(utils::trim(line.substr(0, eq)), value)) mod.keys.push_back(std::move(*parsed));
         }

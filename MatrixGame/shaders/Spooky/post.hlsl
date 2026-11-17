@@ -9,8 +9,8 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
 #else
     float3 col = tex2D(Taa, uv).rgb;
 #endif
-    col = WorldBlur(Taa, uv, col, DOF ? DOFSTRENGTH : 0.0, MBLUR ? MBLURSTRENGTH : 0.0);
     col = Aberration(Taa, uv, col, ABERRATION);
+    col = WorldBlur(Taa, uv, col, DOF ? DOFSTRENGTH : 0.0, MBLUR ? MBLURSTRENGTH : 0.0, FringeAt(uv, ABERRATION));
     col = Sharpen(Taa, uv, col, SHARPEN);
     if (FLARE > 0) col += tex2D(Flare, uv).rgb;
     // The colours' balance: brightness, contrast round the middle grey, saturation.

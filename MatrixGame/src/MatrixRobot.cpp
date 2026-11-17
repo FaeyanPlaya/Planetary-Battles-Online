@@ -10,6 +10,7 @@
 #include "DelayedDamage.hpp"
 #include "Mods.hpp"
 #include "ModHooks.hpp"
+#include "Shooter.hpp"
 #include "MatrixObjectBuilding.hpp"
 #include "Logic/MatrixRule.h"
 #include "MatrixObjectCannon.hpp"
@@ -973,7 +974,11 @@ void CMatrixRobotAI::LogicTakt(int ms) {
         const int strafe = extras ? hooks.drive_strafe(keys) : 0;  // 1 right, -1 left
         if (!extras)
             m_DriveSplit = false;
-        if (extras && hooks.drive_turn(*this, keys, strafe)) {
+        if (Shooter::on()) {
+            // Shooter (the shooter mod): the chassis turns by the aim and the moves, not by the turn keys.
+            hooks.shooter_turn(*this, keys, driver->DriveAim());
+        }
+        else if (extras && hooks.drive_turn(*this, keys, strafe)) {
         }
         else {
             if (keys & Commands::DRIVE_LEFT)
@@ -1198,7 +1203,8 @@ void CMatrixRobotAI::LogicTakt(int ms) {
                 m_OrdersList[0].GetParams(&f1, &f2, &f3, &type);
 
                 if (driver) {
-                    m_WeaponDir = driver->DriveAim();
+                    // Shooter: along the hull (it turns to the aim at its own speed: the ring shows where it is).
+                    m_WeaponDir = Shooter::on() ? Shooter::hull_aim(*this, driver->DriveAim()) : driver->DriveAim();
                 }
                 else {
                     /*

@@ -17,6 +17,7 @@
 #include "NetBattle.hpp"
 #include "Mods.hpp"
 #include "ModHooks.hpp"
+#include "Shooter.hpp"
 #include "NewBattle.hpp"
 #include "StandaloneRuntime.hpp"
 #include "BattleRules.hpp"
@@ -3027,6 +3028,7 @@ void CMatrixMap::Draw(void) {
         if (!IsMouseCam()) m_Cursor.SetVisible(true);
     }
     ShaderRender::finish_interface();  // a shader pack's passes over the interface (not the cursor: clicks go by it)
+    if (interface_shown) Shooter::draw_marker();  // (where the hull looks; the cursor in the middle is the aim)
     m_Cursor.Draw();
 }
 

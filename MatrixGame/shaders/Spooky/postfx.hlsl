@@ -46,9 +46,20 @@ float3 Temporal(sampler2D now, sampler2D before, float2 uv, float2 px, float kee
     return lerp(c, h, keep);
 }
 
+// The picture at a place with its colour fringes (Aberration's: red read `o` further out, blue `o` further in).
+float3 Fringed(sampler2D s, float2 at, float2 o) {
+    float3 c = tex2Dlod(s, float4(at, 0, 0)).rgb;
+    return float3(tex2Dlod(s, float4(at + o, 0, 0)).r, c.g, tex2Dlod(s, float4(at - o, 0, 0)).b);
+}
+
+// Colour fringes' offset at a place of the screen (Aberration's).
+float2 FringeAt(float2 uv, float k) { return k > 0 ? (uv - 0.5) * k * 0.006 : float2(0, 0); }
+
 // Depth of field and motion blur by reads around the pixel: a disc as wide as its blur (the view's sharp distance:
-// the screen's middle) and a line along the camera's move.
-float3 WorldBlur(sampler2D s, float2 uv, float3 c, float dof, float motion) {
+// the screen's middle) and a line along the camera's move. `fringe`: the colour fringes' offset there (FringeAt), so
+// the blur smears the fringed picture: red and blue read sharp beside a smeared green parted into ghosts on a fast
+// turn.
+float3 WorldBlur(sampler2D s, float2 uv, float3 c, float dof, float motion, float2 fringe) {
     float d = SceneDepth(uv);
     float z = ViewDepth(d < 1 ? d : 0.9999), focus = ViewDepth(min(SceneDepth(float2(0.5, 0.5)), 0.9999));
     float radius = dof > 0 ? min(abs(1.0 - focus / z) * dof * 14.0, 12.0) : 0.0;  // in pixels at 1080 rows
@@ -57,11 +68,12 @@ float3 WorldBlur(sampler2D s, float2 uv, float3 c, float dof, float motion) {
     if (radius < 0.5 && dot(move, move) * SceneSize.x * SceneSize.x < 1.0) return c;
     float2 px = SceneSize.zw * (SceneSize.y / 1080.0) * radius;
     float3 sum = c;
+    bool fringed = any(fringe != 0);
     [unroll] for (int i = 0; i < 12; i++) {
         float f = (i + 0.5) / 12.0;
         float a = i * 2.3999632;
         float2 at = uv + float2(cos(a), sin(a)) * sqrt(f) * px + move * (f - 0.5);
-        sum += tex2Dlod(s, float4(at, 0, 0)).rgb;
+        sum += fringed ? Fringed(s, at, fringe) : tex2Dlod(s, float4(at, 0, 0)).rgb;
     }
     return sum / 13.0;
 }
@@ -69,7 +81,7 @@ float3 WorldBlur(sampler2D s, float2 uv, float3 c, float dof, float motion) {
 // Colour fringes towards the screen's edges.
 float3 Aberration(sampler2D s, float2 uv, float3 c, float k) {
     if (k <= 0) return c;
-    float2 o = (uv - 0.5) * k * 0.006;
+    float2 o = FringeAt(uv, k);
     return float3(tex2D(s, uv + o).r, c.g, tex2D(s, uv - o).b);
 }
 

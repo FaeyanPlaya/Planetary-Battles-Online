@@ -336,8 +336,8 @@ inline void set_profile(const Pack &pack, int profile, Mods::SettingValues &valu
             values[setting_key(pack, *setting)] = value;
 }
 
-// The person's choice: shaders on or off, the pack, its settings (CFG\shaders.txt: Shaders.On=, Shaders.Pack=, then
-// <pack>.<Id>= lines).
+// The person's choice: shaders on or off, the pack (CFG\shaders.txt: Shaders.On=, Shaders.Pack=), its settings (each
+// pack's in shaders\<pack>.txt beside it, <Id>= lines, as Minecraft's shader packs; here keyed <pack>.<Id>).
 struct Choice {
     bool on = false;
     std::wstring pack;
@@ -357,6 +357,18 @@ inline std::optional<bool> game_setting(const std::vector<Pack> &packs, const Ch
     return found->second;
 }
 bool save_choice(const std::filesystem::path &path, const Choice &choice, std::string &error);
+// The numbers mods give the packs (mod.txt's ShaderValue=<name>): MOD_<NAME> in a pass's code (a pack that also
+// runs without the mod reads it under #ifdef MOD_<NAME>), as the mod sets it now, 0 while it does not. The installed
+// mods' names (lower case) by the alphabet, at most max_mod_values; in c142 and c143.
+constexpr int max_mod_values = 8;
+const std::vector<std::string> &mod_value_names();
+void set_mod_value_names(std::vector<std::string> names);  // tests (the game: the installed mods')
+void set_mod_value(std::string_view name, float value);
+const float *mod_value_registers();  // max_mod_values floats, the names' order
+// A file of a pack's settings (shaders\<pack>.txt, an exported one): its <Id>=<value> lines.
+Mods::SettingValues pack_settings_in(const std::filesystem::path &path);
+// A pack's settings' file in the packs' folder: <id>.txt (a zip's with its .zip: Gloomy.zip.txt).
+std::filesystem::path pack_settings_file(const std::filesystem::path &packs, std::wstring_view id);
 // The person's now (read from choice_file the first time); set_choice also makes the battle's drawing take it up.
 const Choice &choice();
 void set_choice(Choice choice);

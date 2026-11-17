@@ -972,9 +972,9 @@ void update_horizon(CMatrixMap &map) {
 
 // This frame's constants as constants() set them: the passes after Interface= are given the same (constants() moves
 // the frame on: the previous camera, the time's step, the lights collected).
-// (to the last register a pass reads, VoxelExtent's c141: the shadow's colour, the horizon, the shadow map's matrix
-// and the rest past the lights are given again too)
-constexpr int constants_count = 142;
+// (to the last register a pass reads, the mods' numbers' c143: the shadow's colour, the horizon, the shadow map's
+// matrix and the rest past the lights are given again too)
+constexpr int constants_count = 144;
 static_assert(constants_count >= lights_register + 1 + 3 * ShaderLights::max_lights);
 std::array<D3DXVECTOR4, constants_count> g_constants{};
 
@@ -1002,6 +1002,8 @@ void constants(const CMatrixMap &map) {
     const float step = g_state.last_frame ? std::min(float(now - g_state.last_frame) / 1000.0f, 1.0f) : 0.0f;
     g_state.last_frame = now;
     set(2, {seconds, float(map.GetTime()) / 1000.0f, g_state.frame, step});
+    static_assert(ShaderPacks::max_mod_values == 8);
+    put_constants(142, ShaderPacks::mod_value_registers(), 2);  // the mods' numbers (ShaderValue=: MOD_<NAME>)
     const D3DXVECTOR3 &eye = camera.GetFrustumCenter();
     set(3, {eye.x, eye.y, eye.z, 1});
     set(4, {-map.m_LightMain.x, -map.m_LightMain.y, -map.m_LightMain.z, 0});

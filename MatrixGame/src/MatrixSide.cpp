@@ -28,6 +28,7 @@
 #include "GroupCounts.hpp"
 #include "random.hpp"
 #include "BattleRules.hpp"
+#include "Shooter.hpp"
 #include "input.hpp"
 
 #include <algorithm>
@@ -1458,19 +1459,27 @@ void CMatrixSideUnit::SampleDrive() {
     if (!(IsRobotMode() || IsTurretMode()) || m_DriveLeaving || !g_IFaceList || g_MatrixMap->IsPaused() || g_MatrixMap->IsSpectating())
         return;
     using namespace Commands;
-    const bool over_battle = g_IFaceList->m_InFocus != INTERFACE;
+    // Shooter (the shooter mod): the aim always the screen's middle, over the battle; in a robot the turn keys go
+    // sideways (the mod's keys) and the mouse turns the view, not the robot (a turret's keys stay its view's).
+    const bool shooter = Shooter::driving();
+    const bool over_battle = shooter || g_IFaceList->m_InFocus != INTERFACE;
     int keys = over_battle ? DRIVE_AIMING : 0;
     if (Input::isKeyPressed(KA_UNIT_FORWARD) || Input::isKeyPressed(KA_UNIT_FORWARD_ALT))
         keys |= DRIVE_FORWARD;
     if (Input::isKeyPressed(KA_UNIT_BACKWARD) || Input::isKeyPressed(KA_UNIT_BACKWARD_ALT))
         keys |= DRIVE_BACKWARD;
-    if (Input::isKeyPressed(KA_UNIT_LEFT) || Input::isKeyPressed(KA_UNIT_LEFT_ALT))
-        keys |= DRIVE_LEFT;
-    if (Input::isKeyPressed(KA_UNIT_RIGHT) || Input::isKeyPressed(KA_UNIT_RIGHT_ALT))
-        keys |= DRIVE_RIGHT;
-    if (const auto extra = ModHooks::hooks().drive_keys; Mods::switches().manual_extras && extra && IsRobotMode())
-        keys |= extra(*this);  // ManualExtras (the manual control+ mod): sideways, slots off
-    if (m_MouseTurn && g_MatrixMap->GetTime() < m_MouseTurnUntil && g_MatrixMap->IsMouseCam())
+    if (shooter && IsRobotMode()) {
+        keys |= ModHooks::hooks().shooter_keys(*this) | m_DriveSlotsOff;
+    }
+    else {
+        if (Input::isKeyPressed(KA_UNIT_LEFT) || Input::isKeyPressed(KA_UNIT_LEFT_ALT))
+            keys |= DRIVE_LEFT;
+        if (Input::isKeyPressed(KA_UNIT_RIGHT) || Input::isKeyPressed(KA_UNIT_RIGHT_ALT))
+            keys |= DRIVE_RIGHT;
+        if (const auto extra = ModHooks::hooks().drive_keys; Mods::switches().manual_extras && extra && IsRobotMode())
+            keys |= extra(*this);  // ManualExtras (the manual control+ mod): sideways, slots off
+    }
+    if (!shooter && m_MouseTurn && g_MatrixMap->GetTime() < m_MouseTurnUntil && g_MatrixMap->IsMouseCam())
         keys |= m_MouseTurn < 0 ? DRIVE_LEFT : DRIVE_RIGHT;
     else
         m_MouseTurn = 0;
@@ -1482,6 +1491,8 @@ void CMatrixSideUnit::SampleDrive() {
     D3DXVECTOR3 aim = g_MatrixMap->m_TraceStopPos;
     if (const auto aim_far = ModHooks::hooks().drive_aim; Mods::switches().drive_aim_far && aim_far)
         aim_far(aim);
+    else if (shooter && g_MatrixMap->m_TraceStopObj == TRACE_STOP_NONE)  // (Shooter: along the view, the fixes on or off)
+        aim = DriveFarAim(g_MatrixMap->m_Camera.GetFrustumCenter(), g_MatrixMap->m_MouseDir);
     IssueDrive(keys, over_battle ? aim : m_DriveSentAim);
 }
 

@@ -28,6 +28,8 @@
 //   <mod>.<Id>); Group: Camera, Driving, Orders, Building, else the page's Mods group
 //   Setting.<Id>=a,b,c|b|Русское название|English name  a row of the settings' mods page (CFG\mods.txt's
 //   <mod>.<Id>): its values, its default (not one of them: the first)
+//   ShaderValue=Name,Name  numbers the mod's code gives shader packs (ShaderPacks::set_mod_value): MOD_<NAME>
+//   in their passes
 //   (the English name and the group may be left out; <Id>: letters, digits and _)
 namespace Mods {
 
@@ -56,6 +58,8 @@ struct Switches {
     // Battle: Помощь с небес
     // Battle: Ручное управление+
     bool manual_extras = false;  // ManualExtras: in a robot Q/E go sideways, F sets the bomb off, X looks back, 1-5 slots
+    // Battle: Шутер
+    bool shooter = false;  // Shooter: a driven robot or turret seen from itself, turned by the mouse, aimed at the middle
     // Battle: Точка сбора
     bool rally_point = false;  // RallyPoint: a base sends the robots it builds to its rally point (a right click)
     // Battle: Баланс КР2
@@ -144,6 +148,7 @@ struct Mod {
     std::wstring dll;                   // Dll=: its code in the folder; empty: none
     Problem problem = Problem::None;    // set by load_code
     std::vector<std::string> depends, conflicts;  // Dependence=, Conflict=
+    std::vector<std::string> shader_values;       // ShaderValue=: the numbers it gives shader packs (MOD_<NAME>)
     std::vector<KeyLine> keys;                    // Key.<Id>=
     std::vector<SettingLine> settings;            // Setting.<Id>=
     bool operator==(const Mod &) const = default;
