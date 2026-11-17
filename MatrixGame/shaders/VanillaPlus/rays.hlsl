@@ -8,7 +8,9 @@
 #include "common.hlsl"
 
 // The ground the sun's light through p reaches (twice: the first guess on the water's level, then the land seen
-// there), on the screen; false off it. `q`: that ground in the world.
+// there), on the screen; false off it, and where the screen does not show that ground (something nearer stands before
+// it there: a palm before the far sea read as the ground shaded the air over the sea, a plume over the sky that moved
+// with the view). `q`: that ground in the world.
 bool GroundUnder(float3 p, out float2 at, out float3 q) {
     float z = GroundZ;
     at = 0;
@@ -21,23 +23,29 @@ bool GroundUnder(float3 p, out float2 at, out float3 q) {
         float d = SceneDepth(at);
         if (d >= 1) return false;  // the sky there: nothing to ask
         z = WorldPos(at, d).z;
+        // (the second guess: the land seen there is that ground, as far from the eye; nearer, it is what hides it)
+        float far = ViewDepth(s.z);
+        if (k == 1 && far - ViewDepth(d) > 8.0 + far * 0.05) return false;
     }
     return true;
 }
 
-// Whether what shades the ground at q stands between q and p (p then lies on its lit side: over it, or before it
-// towards the light), not past p: a point of the way from q up to p inside a thing, as the screen shows it (behind
-// what is seen there, by less than a thing is thick). Without it every point over a shaded patch counted as shaded,
-// on both sides of what casts the shade.
-bool CasterBelow(float3 q, float3 p) {
-    bool below = false;
-    [unroll] for (int k = 1; k <= 6; k++) {
-        float3 s = ScreenPos(lerp(q, p, k / 7.0));
+// Whether something stands between p and the sun, as the screen shows it: points of the way from p towards the
+// sun (as high as things stand) inside a thing (behind what is seen there, by less than a thing is thick). The
+// ground's shade alone counted every point over a shaded patch as shaded, before the thing as well as behind it; the
+// shade is only where the light's way is blocked. Closer points first, more of them (a thin trunk near p).
+bool CasterAbove(float3 p) {
+    float reach = min(max(140.0 - (p.z - GroundZ), 0.0) / SunDir.z, 500.0);
+    bool hit = false;
+    [unroll] for (int k = 1; k <= 8; k++) {
+        float f = k / 8.0;
+        float3 s = ScreenPos(p + SunDir.xyz * (reach * f * f));
         bool on = s.z > 0 && s.z < 1 && all(s.xy == saturate(s.xy));
-        float behind = ViewDepth(s.z) - ViewDepth(SceneDepth(saturate(s.xy)));
-        below = below || (on && behind > 0.5 && behind < 30.0 + ViewDepth(s.z) * 0.02);
+        float z = ViewDepth(s.z);
+        float behind = z - ViewDepth(SceneDepth(saturate(s.xy)));
+        hit = hit || (on && behind > 1.0 && behind < 25.0 + z * 0.015);
     }
-    return below;
+    return hit;
 }
 
 // How lit the ground is there by the sun: the game's shadows (SolidTex.a: robots', buildings', trees'). The pack's own
@@ -54,13 +62,20 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     float dist = d < 1 ? length(WorldPos(uv, d) - CameraPos.xyz) : 1e9;
     dist = min(min(dist, WaterAt(dir)), FogRange.z * 0.6);
     const int N = 16;
-    float step = dist / N;
+    // The shade the near part of the way only, in finer steps (the whole view's way in 16 steps let a thin column
+    // fall between them: over the sky, the far water and land its edges came out jagged and moved with the view; and
+    // the same near part over all of them, so the shade has no step where the sky meets the land). The fog: the whole
+    // way.
+    float shadeDist = min(dist, 700.0);
+    float step = dist / N, shadeStep = shadeDist / N;
     // Each pixel of a 4x4 block its own start along the steps, in order (no grain): raysblur.hlsl takes the block's
     // average.
-    float t = step * Bayer4(floor(uv * ScreenSize.xy));
+    float start = Bayer4(floor(uv * ScreenSize.xy));
+    float t = step * start, ts = shadeStep * start;
     float shade = 0, fog = 0;
     [loop] for (int i = 0; i < N; i++) {
-        float3 p = CameraPos.xyz + dir * t;
+        fog += exp(-max(CameraPos.z + dir.z * t - GroundZ, 0.0) / FOGHEIGHT);
+        float3 p = CameraPos.xyz + dir * ts;
         float h = max(p.z - GroundZ, 0.0);
         float dens = exp(-h / FOGHEIGHT);
         float2 at;
@@ -71,15 +86,15 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         else if (!GroundUnder(p, at, q)) l = 1.0;
         else {
             l = LitAt(at);
-            if (l < 0.99 && CasterBelow(q, p)) l = 1.0;  // the shade's caster under p: p in its light
+            if (l < 0.99 && !CasterAbove(p)) l = 1.0;  // nothing between p and the sun: p in its light
             l = lerp(l, 1.0, saturate(h / (FOGHEIGHT * 3.0)));
         }
         shade += dens * (1.0 - l);
-        fog += dens;
         t += step;
+        ts += shadeStep;
     }
     // (as thick as the pack's fog: lit.hlsl's measure; the shade's columns are thin, so it counts more)
-    float k = step * FOG * 0.0025;
-    return float4(1.0 - exp(-fog * k), 1.0 - exp(-shade * k * 6.0), 0, 1);
+    float k = FOG * 0.0025;
+    return float4(1.0 - exp(-fog * step * k), 1.0 - exp(-shade * shadeStep * k * 6.0), 0, 1);
 #endif
 }

@@ -187,15 +187,20 @@ if (NOT MATRIXGAME_BUILD_DLL AND EXISTS ${EOS_SDK_DIR}/Include/eos_sdk.h AND EXI
     set(EOS_BRIDGE_SOURCE ${CMAKE_SOURCE_DIR}/EosBridge/eos-bridge.cpp)
     set(EOS_DLL ${EOS_SDK_DIR}/Bin/EOSSDK-Win64-Shipping.dll)
     get_filename_component(EOS_GXX_BIN ${EOS_GXX} DIRECTORY)
+    # Epic's DLL needs the Visual C++ 2015-2022 x64 runtime: Microsoft's own beside it (app-local), so a computer
+    # without it installed (Windows 7) runs the bridge too. Only where vendor/vcredist-x64 has it (not in the public
+    # repository: a build from it runs the bridge where the runtime is installed).
+    set(EOS_RUNTIME ${CMAKE_SOURCE_DIR}/vendor/vcredist-x64)
+    set(EOS_RUNTIME_COPY)
+    if (EXISTS ${EOS_RUNTIME}/msvcp140.dll AND EXISTS ${EOS_RUNTIME}/vcruntime140.dll AND EXISTS ${EOS_RUNTIME}/vcruntime140_1.dll)
+        set(EOS_RUNTIME_COPY COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EOS_RUNTIME}/msvcp140.dll
+            ${EOS_RUNTIME}/vcruntime140.dll ${EOS_RUNTIME}/vcruntime140_1.dll ${CMAKE_CURRENT_BINARY_DIR})
+    endif ()
     add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe
         COMMAND ${CMAKE_COMMAND} -E env "PATH=${EOS_GXX_BIN}" ${EOS_GXX} -std=c++20 -O2 -I${EOS_SDK_DIR}/Include
             ${EOS_BRIDGE_SOURCE} ${EOS_DLL} -lws2_32 -static -o ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EOS_DLL} ${CMAKE_CURRENT_BINARY_DIR}
-        # Epic's DLL needs the Visual C++ 2015-2022 x64 runtime: Microsoft's own beside it (app-local), so a computer
-        # without it installed (Windows 7) runs the bridge too.
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/vendor/vcredist-x64/msvcp140.dll
-            ${CMAKE_SOURCE_DIR}/vendor/vcredist-x64/vcruntime140.dll ${CMAKE_SOURCE_DIR}/vendor/vcredist-x64/vcruntime140_1.dll
-            ${CMAKE_CURRENT_BINARY_DIR}
+        ${EOS_RUNTIME_COPY}
         DEPENDS ${EOS_BRIDGE_SOURCE}
         COMMENT "Building eos-bridge.exe (64-bit)")
     add_custom_target(EosBridge ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/eos-bridge.exe)

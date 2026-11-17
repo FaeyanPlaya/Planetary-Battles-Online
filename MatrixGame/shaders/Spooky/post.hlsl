@@ -1,6 +1,7 @@
 // Spooky's camera: the picture (after the temporal filter) onto the screen: antialiasing, depth of field and motion
 // blur, colour fringes, sharpness, lens flares, the colours' balance and grading, the edges, the grain.
 #include "common.hlsl"
+#include "motion.hlsl"
 #include "postfx.hlsl"
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {

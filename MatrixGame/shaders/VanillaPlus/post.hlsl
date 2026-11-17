@@ -3,6 +3,7 @@
 // motion blur, sharpness, the NTSC signal; then the colour correction (exposure, brightness, the tonemapper, gamma,
 // vibrance and saturation, contrast, warmth, the colourblind correction, posterize); the edges and the scanlines last.
 #include "common.hlsl"
+#include "motion.hlsl"
 #include "postfx.hlsl"
 
 // Panini projection: the wide view's edges as on a cylinder (round things stay round, straight uprights straight).

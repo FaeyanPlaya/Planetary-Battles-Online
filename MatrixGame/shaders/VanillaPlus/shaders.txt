@@ -45,6 +45,7 @@ Setting.DOF=On,Off|Off|Глубина резкости|Depth of field|cycle
 Setting.DOFSTRENGTH=0.25,0.5,0.75,1,1.5,2,3|1|Сила размытия|Blur strength
 Setting.MBLUR=On,Off|Off|Размытие движения|Motion blur|cycle
 Setting.MBLURSTRENGTH=0.25,0.5,0.75,1,1.5,2|1|Сила размытия движения|Motion blur strength
+Setting.MOVING=On,Off|On|Движение объектов|Object motion|cycle
 Setting.PAINTED=On,Off|Off|Картина маслом|Painted|cycle
 Setting.VIGNETTE=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0|Виньетка|Vignette
 Value.VIGNETTE.0=Выкл|Off
@@ -98,16 +99,16 @@ Value.SHOOTERPANINI.0=Выкл|Off
 Setting.NTSC=On,Off|Off|Сигнал NTSC|NTSC signal|cycle
 
 # Several settings at once, by how much they cost the video card (as I Like Vanilla's profiles).
-Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off FXAA=Off PROJECTION=Default BARREL=0
-Profile.VERYLOW=Очень низкий|Very low|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off FXAA=On PROJECTION=Default BARREL=0
-Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 RELIEF=0 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0.5 TAA=Off FXAA=On PROJECTION=Default BARREL=0
-Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On FXAA=On PROJECTION=Default BARREL=0
-Profile.MEDIUMPLUS=Средний+|Medium+|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On FXAA=On PROJECTION=Default BARREL=0
-Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=On REFLECT=0.6 CAUSTICS=0.5 TAA=On FXAA=On PROJECTION=Default BARREL=0
+Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off MOVING=Off FXAA=Off PROJECTION=Default BARREL=0
+Profile.VERYLOW=Очень низкий|Very low|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off MOVING=Off FXAA=On PROJECTION=Default BARREL=0
+Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 RELIEF=0 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0.5 TAA=Off MOVING=Off FXAA=On PROJECTION=Default BARREL=0
+Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=Off FXAA=On PROJECTION=Default BARREL=0
+Profile.MEDIUMPLUS=Средний+|Medium+|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=On FXAA=On PROJECTION=Default BARREL=0
+Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=On REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=On FXAA=On PROJECTION=Default BARREL=0
 
 Note.ABOUT=О наборе|About the pack
 
-Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: затенение углов, тени, рельеф, мягкие эффекты, лучи, отражения, блики на дне и сглаживание. «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: corner shading, shadows, relief, soft effects, rays, reflections, caustics and antialiasing. Custom: when they are set otherwise.
+Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: затенение углов, тени, рельеф, мягкие эффекты, лучи, отражения, блики на дне, сглаживание и движение объектов. «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: corner shading, shadows, relief, soft effects, rays, reflections, caustics, antialiasing and object motion. Custom: when they are set otherwise.
 Info.RELIEF=Светлое и тёмное на текстурах становится чуть выпуклым и впалым под солнцем карты. «Выкл» — плоско, как в игре.|The light and dark of the textures become slightly raised and sunken under the map's sun. Off: flat, as in the game.
 Info.SOFTFX=Огонь, дым и вспышки тают там, где касаются земли и стен, а не обрезаются резкой линией. Число — на каком расстоянии. «Как в игре» — резкая линия, как в игре.|Fire, smoke and flashes fade where they touch the ground and walls instead of being cut by a hard line. The number: over how far. As in the game: a sharp line, as the game draws it.
 Info.SHADOWMAP=Настоящие тени от солнца карты по карте теней: от роботов, зданий, деревьев и холмов, там, где игра своих не рисует. Видеокарте тяжелее.|Real shadows from the map's sun by a shadow map: from robots, buildings, trees and hills, where the game draws none of its own. Harder on the video card.
@@ -123,6 +124,7 @@ Info.CAUSTICS=Светлые подвижные линии на дне под в
 Info.SHAFTS=Лучи солнца в дымке у земли: тени роботов, деревьев и зданий тянутся в воздухе. Выкл — без них, и видеокарте легче.|The sun's rays in the haze over the ground: the shadows of robots, trees and buildings reach through the air. Off: none, and easier on the video card.
 Info.RAYS=Насколько заметны солнечные лучи.|How strong the sun rays are.
 Info.TAA=Кадр смешивается с предыдущим: края ровнее, мерцание мелких деталей меньше.|The frame is mixed with the one before: smoother edges, less flicker of fine detail.
+Info.MOVING=Временной фильтр и размытие движения знают, как движутся сами роботы, турели и летуны, а не только камера: за ними нет следов, и они размываются по своему ходу. Движок рисует мир ещё раз, видеокарте тяжелее. Выкл — движение только от камеры.|The temporal filter and motion blur know how robots, turrets and flyers themselves move, not the camera alone: no trails behind them, and they blur along their own way. The engine draws the world once more, harder on the video card. Off: the motion from the camera alone.
 Info.FXAA=Быстрое сглаживание лесенок на краях.|Fast smoothing of jagged edges.
 Info.SHARPEN=Мелкие детали чётче.|Fine details crisper.
 Info.DOF=Резко там, куда смотрит середина экрана; ближе и дальше размыто.|Sharp where the screen's middle looks; nearer and further blurred.
@@ -160,8 +162,8 @@ Screen.Shading=Затенение|Shading|AO OUTLINES CEL
 Screen.Lighting=Освещение|Lighting|FIRELIGHT GLOW
 Screen.Sea=Вода|Water|REFLECT WATERMIX CAUSTICS
 Screen.Haze=Дымка|Haze|SHAFTS RAYS
-Screen.Post=Постобработка|Post processing|TAA FXAA SHARPEN - [Blur] [Colour] - PAINTED VIGNETTE ABERRATION POSTERIZE
-Screen.Blur=Размытие|Blur|DOF DOFSTRENGTH MBLUR MBLURSTRENGTH
+Screen.Post=Постобработка|Post processing|TAA MOVING FXAA SHARPEN - [Blur] [Colour] - PAINTED VIGNETTE ABERRATION POSTERIZE
+Screen.Blur=Размытие|Blur|DOF DOFSTRENGTH MBLUR MBLURSTRENGTH MOVING
 Screen.Colour=Цветокоррекция|Colour correction|BRIGHTNESS GAMMA AUTOEXP TONEMAP - VIBRANCE SATURATION SATDARK SATLIGHT CONTRAST WARMTH - COLORBLIND CBSTRENGTH
 Screen.Extras=Дополнительно|Extras|PROJECTION PANINI - PIXELS SCANLINES BARREL NTSC
 Screen.Mods=Поддержка модов|Mod support|SHOOTERBARREL SHOOTERPANINI
@@ -172,6 +174,9 @@ Effects=effects.hlsl|SOFTFX
 Water=water.hlsl|WATERMIX
 # The sun's real shadows (and its rays' shade).
 Shadow=2048|2500|SHADOWMAP
+# The world drawn by world.hlsl: how each place moved on the screen (only while MOVING is on; half floats).
+Target.WorldV=1|rgba16f
+World=world.hlsl|WorldV|MOVING
 
 Target.Half=0.5|rgba16f
 Target.Glow=0.25|rgba16f

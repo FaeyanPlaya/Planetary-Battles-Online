@@ -87,7 +87,7 @@ Info.AO=Тень в углах, у стен и под роботами. 2 — с
 Info.SHADOWS=Короткие тени от солнца карты у самых предметов, рядом с тенями игры. «Выкл» — без них.|Short shadows from the map's sun right by things, next to the game's own shadows. Off: none.
 Info.FOGHEIGHT=Как высоко поднимается туман от земли и воды. Выше — гуще и дальше вверх по склонам.|How high the fog rises from the ground and the water. Higher: thicker, further up the slopes.
 Info.NORMALS=Генерируемые нормали: светлое и тёмное на поверхностях становится выпуклым и впалым под луной и у огня. «Выкл» — без них.|Generated normals: the light and dark of surfaces become raised and sunken under the moon and by fire. Off: none.
-Info.GEOMETRY=Свет огня и вспышек ложится по настоящей форме роботов, зданий и земли: движок рисует мир ещё раз шейдером набора. Выкл — форма берётся из глубины кадра, и видеокарте легче.|The light of fire and flashes follows the true shape of robots, buildings and the land: the engine draws the world once more with the pack's shader. Off: the shape is taken from the frame's depth, easier on the video card.
+Info.GEOMETRY=Свет огня и вспышек ложится по настоящей форме роботов, зданий и земли, а временной фильтр и размытие движения знают, как движутся сами роботы и турели (без следов за ними): движок рисует мир ещё раз шейдером набора. Выкл — форма берётся из глубины кадра, движение только от камеры, и видеокарте легче.|The light of fire and flashes follows the true shape of robots, buildings and the land, and the temporal filter and motion blur know how robots and turrets themselves move (no trails behind them): the engine draws the world once more with the pack's shader. Off: the shape is taken from the frame's depth, the motion from the camera alone, easier on the video card.
 Info.SHAFTS=Лунный свет в тумане: тени роботов, деревьев и зданий встают от земли столбами к луне. Выкл — без них, и видеокарте легче.|The moonlight in the fog: the shadows of robots, trees and buildings rise from the ground in columns towards the moon. Off: none, and easier on the video card.
 Info.RAYS=Насколько заметны объёмные лучи.|How strong the light shafts are.
 Info.VIGNETTE=Края экрана темнее.|The screen's edges darker.
@@ -126,9 +126,10 @@ Screen.Materials=Материалы|Materials|NORMALS GEOMETRY REFLECT WAVING SO
 # The world's depth as the moon sees it, for the rays (drawn only while they are on: the world is drawn twice).
 Shadow=2048|2000|SHAFTS
 
-# The world drawn by world.hlsl: the surfaces' normals, what each thing is (only while GEOMETRY is on).
-Target.WorldN=1|rgba8
-Target.WorldM=1|rgba8
+# The world drawn by world.hlsl: the surfaces' normals, what each thing is and how it moved (only while GEOMETRY is
+# on; half floats for the move).
+Target.WorldN=1|rgba16f
+Target.WorldM=1|rgba16f
 World=world.hlsl|WorldN WorldM|GEOMETRY
 
 # The effects drawn by its own shader in the game's place.

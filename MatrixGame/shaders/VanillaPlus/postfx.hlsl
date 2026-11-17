@@ -12,6 +12,17 @@ float2 PrevUV(float2 uv) {
     return float2(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5);
 }
 
+// Where this pixel's place was on the screen a frame ago: by the world pass's motion where the pack keeps it and a
+// thing was drawn there (a robot's, a turret's own move too: motion.hlsl's ObjectMotion), by the camera's move
+// elsewhere and without it.
+float2 PrevAt(float2 uv) {
+#ifdef PBO_OBJECT_MOTION
+    float2 motion;
+    if (ObjectMotion(uv, motion)) return uv - motion;
+#endif
+    return PrevUV(uv);
+}
+
 // Fast approximate antialiasing: along an edge of the brightness, two reads its way; the wider pair when it stays
 // within the edge's range.
 float3 Fxaa(sampler2D s, float2 uv, float2 px) {
@@ -40,7 +51,7 @@ float3 Temporal(sampler2D now, sampler2D before, float2 uv, float2 px, float kee
             lo = min(lo, n);
             hi = max(hi, n);
         }
-    float2 at = PrevUV(uv);
+    float2 at = PrevAt(uv);
     if (State.z < 2 || any(at != saturate(at))) return c;
     float3 h = clamp(tex2D(before, at).rgb, lo, hi);
     return lerp(c, h, keep);
@@ -56,14 +67,14 @@ float3 Fringed(sampler2D s, float2 at, float2 o) {
 float2 FringeAt(float2 uv, float k) { return k > 0 ? (uv - 0.5) * k * 0.006 : float2(0, 0); }
 
 // Depth of field and motion blur by reads around the pixel: a disc as wide as its blur (the view's sharp distance:
-// the screen's middle) and a line along the camera's move. `fringe`: the colour fringes' offset there (FringeAt), so
+// the screen's middle) and a line along the place's move (the camera's and the thing's own: PrevAt). `fringe`: the colour fringes' offset there (FringeAt), so
 // the blur smears the fringed picture: red and blue read sharp beside a smeared green parted into ghosts on a fast
 // turn.
 float3 WorldBlur(sampler2D s, float2 uv, float3 c, float dof, float motion, float2 fringe) {
     float d = SceneDepth(uv);
     float z = ViewDepth(d < 1 ? d : 0.9999), focus = ViewDepth(min(SceneDepth(float2(0.5, 0.5)), 0.9999));
     float radius = dof > 0 ? min(abs(1.0 - focus / z) * dof * 14.0, 12.0) : 0.0;  // in pixels at 1080 rows
-    float2 move = motion > 0 ? (uv - PrevUV(uv)) * motion : float2(0, 0);
+    float2 move = motion > 0 ? (uv - PrevAt(uv)) * motion : float2(0, 0);
     move = clamp(move, -0.04, 0.04);
     if (radius < 0.5 && dot(move, move) * SceneSize.x * SceneSize.x < 1.0) return c;
     float2 px = SceneSize.zw * (SceneSize.y / 1080.0) * radius;
