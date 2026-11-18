@@ -152,16 +152,31 @@ void parse(std::string_view text, Pack &pack) {
     if (pack.description.empty()) pack.description = pack.description_en;
 }
 
+namespace {
+// A Windows device's name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), with or without an extension.
+bool device_name(std::wstring_view part) {
+    std::wstring base = lower(std::wstring(part.substr(0, part.find(L'.'))));
+    for (const wchar_t *device : {L"con", L"prn", L"aux", L"nul"})
+        if (base == device) return true;
+    return base.size() == 4 && (base.starts_with(L"com") || base.starts_with(L"lpt")) && base[3] >= L'1' &&
+           base[3] <= L'9';
+}
+}  // namespace
+
 std::wstring inside(std::wstring_view name) {
     std::wstring path(name);
     std::replace(path.begin(), path.end(), L'\\', L'/');
     while (path.starts_with(L"./")) path.erase(0, 2);
-    if (path.empty() || path.starts_with(L"/") || path.find(L':') != std::wstring::npos) return {};
+    if (path.empty() || path.starts_with(L"/")) return {};
+    // Characters a Windows name cannot hold (':' a drive or a stream), controls.
+    for (const wchar_t ch : path)
+        if (ch < 0x20 || std::wstring_view(L"<>:\"|?*").find(ch) != std::wstring_view::npos) return {};
     std::size_t from = 0;
     while (from <= path.size()) {
         const auto slash = path.find(L'/', from);
         const std::wstring_view part = std::wstring_view(path).substr(from, slash == std::wstring::npos ? std::wstring::npos : slash - from);
-        if ((part.empty() && slash != std::wstring::npos) || part == L"." || part == L"..") return {};
+        // Windows drops a name's trailing dots and spaces (".. " would be ".."): no such names, nor devices.
+        if (part.empty() || part.back() == L'.' || part.back() == L' ' || device_name(part)) return {};
         if (slash == std::wstring::npos) break;
         from = slash + 1;
     }
@@ -396,6 +411,13 @@ bool unpack(const std::filesystem::path &zip, const std::filesystem::path &into,
     fresh += L".new";
     std::filesystem::remove_all(fresh, failed);
     std::filesystem::create_directories(fresh, failed);
+    std::uint64_t total = 0;
+    for (const auto &entry : *entries) total += entry.size;
+    if (total > max_unpacked) {
+        error = "over 16 GB unpacked";
+        std::filesystem::remove_all(fresh, failed);
+        return false;
+    }
     std::ifstream stream(zip, std::ios::binary);
     for (const auto &entry : *entries) {
         if (entry.size > max_file) {

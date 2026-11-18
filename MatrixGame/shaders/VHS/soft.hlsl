@@ -1,4 +1,4 @@
-// VHS, at half size: soft lighting, as in Minecraft: corners, the foot of walls, the ground under robots softly darker
+// VHS, at half size: soft lighting: corners, the foot of walls, the ground under robots softly darker
 // (r: 1 open). Wide and gentle, over the game's own light.
 #include "common.hlsl"
 

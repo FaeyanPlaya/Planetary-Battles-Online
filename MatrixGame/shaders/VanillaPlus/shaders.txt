@@ -8,6 +8,12 @@ Author=PBO
 # Materials
 Setting.RELIEF=0,0.25,0.5,0.75,1|0.5|Рельеф текстур|Texture relief
 Value.RELIEF.0=Выкл|Off
+Setting.PBR=0,1,2|1|Тип PBR|PBR type|cycle
+Value.PBR.0=Выкл|Off
+Value.PBR.1=Встроенный|Internal
+Value.PBR.2=LabPBR 1.3|LabPBR 1.3
+Setting.NORMALMAP=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Сила PBR-нормалей|PBR normals amount
+Value.NORMALMAP.0=Выкл|Off
 Setting.SOFTFX=0,5,10,15,20,30,40|15|Мягкие эффекты|Soft effects
 Value.SOFTFX.0=Как в игре|As in the game
 # Shadows
@@ -26,6 +32,8 @@ Setting.FIRELIGHT=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.25,1.5|0.6|Свет 
 Value.FIRELIGHT.0=Выкл|Off
 Setting.GLOW=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Свечение|Glow
 Value.GLOW.0=Выкл|Off
+Setting.PACKGLOW=0,0.25,0.5,0.75,1,1.25,1.5,2,3|1|Свечение ресурспаков|Resource packs' glow
+Value.PACKGLOW.0=Выкл|Off
 # Water
 Setting.REFLECT=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.6|Отражения|Reflections
 Value.REFLECT.0=Выкл|Off
@@ -109,7 +117,9 @@ Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOW
 Note.ABOUT=О наборе|About the pack
 
 Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: затенение углов, тени, рельеф, мягкие эффекты, лучи, отражения, блики на дне, сглаживание и движение объектов. «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: corner shading, shadows, relief, soft effects, rays, reflections, caustics, antialiasing and object motion. Custom: when they are set otherwise.
-Info.RELIEF=Светлое и тёмное на текстурах становится чуть выпуклым и впалым под солнцем карты. «Выкл» — плоско, как в игре.|The light and dark of the textures become slightly raised and sunken under the map's sun. Off: flat, as in the game.
+Info.PBR=Откуда рельеф и свечение поверхностей. «Выкл» — плоско, как в игре. «Встроенный» — рельеф по светлому и тёмному самих текстур («Рельеф текстур»). «LabPBR 1.3» — карты из ресурспака (_n, _s, _e, _e_s, нужен такой пак): его рельеф и свечение; генерируемых нормалей нет. Движок рисует мир ещё раз (как при «Движении объектов»).|Where the surfaces' relief and glow come from. Off: flat, as in the game. Internal: relief from the textures' own light and dark (Texture relief). LabPBR 1.3: a resource pack's maps (_n, _s, _e, _e_s; such a pack needed): its relief and glow, no generated normals. The engine draws the world once more (as with Object motion).
+Info.NORMALMAP=Насколько выпуклы поверхности по картам _n ресурспака. Только при «Тип PBR: LabPBR 1.3».|How raised the surfaces are by a resource pack's _n maps. Only with PBR type: LabPBR 1.3.
+Info.RELIEF=Светлое и тёмное на текстурах становится чуть выпуклым и впалым под солнцем карты (генерируемые нормали). Только при «Тип PBR: Встроенный». «Выкл» — плоско, как в игре.|The light and dark of the textures become slightly raised and sunken under the map's sun (generated normals). Only with PBR type: Internal. Off: flat, as in the game.
 Info.SOFTFX=Огонь, дым и вспышки тают там, где касаются земли и стен, а не обрезаются резкой линией. Число — на каком расстоянии. «Как в игре» — резкая линия, как в игре.|Fire, smoke and flashes fade where they touch the ground and walls instead of being cut by a hard line. The number: over how far. As in the game: a sharp line, as the game draws it.
 Info.SHADOWMAP=Настоящие тени от солнца карты по карте теней: от роботов, зданий, деревьев и холмов, там, где игра своих не рисует. Видеокарте тяжелее.|Real shadows from the map's sun by a shadow map: from robots, buildings, trees and hills, where the game draws none of its own. Harder on the video card.
 Info.SHADOWS=Короткие тени от солнца карты у самых предметов, рядом с тенями игры. «Выкл» — без них.|Short shadows from the map's sun right by things, next to the game's own shadows. Off: none.
@@ -118,6 +128,7 @@ Info.OUTLINES=Тёмная линия по краю всего, что стои�
 Info.CEL=Свет и тень лежат полосами, как в мультфильме. «Выкл» — плавно, как в игре.|Light and shade lie in bands, as in a cartoon. Off: smooth, as in the game.
 Info.FIRELIGHT=Как сильно пожары, взрывы, выстрелы и лазеры освещают землю, стены и роботов рядом тёплым светом.|How much fires, explosions, shots and lasers light the ground, walls and robots near them with a warm light.
 Info.GLOW=Мягкий ореол вокруг огня, вспышек, выстрелов и самых ярких мест.|A soft halo around fire, flashes, shots and the brightest places.
+Info.PACKGLOW=Сила свечения по картам ресурспака: излучение в альфе _s и картинки _e. Только при «Тип PBR: LabPBR 1.3». «Выкл» — без него.|How strong the glow by a resource pack's maps is: the emission in _s's alpha and the _e pictures. Only with PBR type: LabPBR 1.3. Off: none.
 Info.REFLECT=Вода отражает берега, роботов и здания, видные на экране (небо отражает сама игра). «Выкл» — только отражения игры.|The water reflects the shores, robots and buildings seen on the screen (the sky: the game's own reflection). Off: the game's reflections only.
 Info.WATERMIX=Текстура воды не повторяется квадратами: она смешана с собой же, повёрнутой и другого размера. «Выкл» — как в игре.|The water's texture does not repeat in squares: it is mixed with itself, turned and at other sizes. Off: as in the game.
 Info.CAUSTICS=Светлые подвижные линии на дне под водой, как от волн. «Выкл» — без них.|Bright moving lines on the bottom under the water, as from the waves. Off: none.
@@ -156,7 +167,9 @@ Info.NTSC=Цвет расплывается вдоль строк, по цвет
 Info.ABOUT=Игра остаётся собой: тот же день, вода и туман карты, только мягче свет и живее цвета. Задумка навеяна набором I Like Vanilla для Minecraft; код свой, его код не использован.|The game stays itself: the same day, the map's water and fog, only softer light and livelier colours. The idea is inspired by the I Like Vanilla pack for Minecraft; the code is its own, none of its code is used.
 
 Screen=PROFILE ABOUT - [Materials] [Shadows] [Shading] [Lighting] [Sea] [Haze] [Post] [Extras] [Mods]
-Screen.Materials=Материалы|Materials|RELIEF SOFTFX
+Screen.Materials=Материалы|Materials|PBR [LabPBR] [Internal] SOFTFX
+Screen.LabPBR=Материалы LabPBR|LabPBR materials|NORMALMAP PACKGLOW
+Screen.Internal=Встроенные материалы|Internal materials|RELIEF
 Screen.Shadows=Тени|Shadows|SHADOWMAP SHADOWS
 Screen.Shading=Затенение|Shading|AO OUTLINES CEL
 Screen.Lighting=Освещение|Lighting|FIRELIGHT GLOW
@@ -176,7 +189,8 @@ Water=water.hlsl|WATERMIX
 Shadow=2048|2500|SHADOWMAP
 # The world drawn by world.hlsl: how each place moved on the screen (only while MOVING is on; half floats).
 Target.WorldV=1|rgba16f
-World=world.hlsl|WorldV|MOVING
+Target.WorldG=1|rgba16f
+World=world.hlsl|WorldV WorldG|MOVING+PBR=2
 
 Target.Half=0.5|rgba16f
 Target.Glow=0.25|rgba16f

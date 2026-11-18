@@ -11,6 +11,10 @@
 #include "MatrixConfig.hpp"
 #include "StandaloneRuntime.hpp"
 #include "3g.hpp"
+#include "Cache.hpp"
+#include "CBuf.hpp"
+#include "CFile.hpp"
+#include "TextureName.hpp"
 #include "utils.hpp"
 
 #include <d3dx9.h>
@@ -23,7 +27,9 @@
 #include <format>
 #include <future>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
+#include <cwctype>
 #include <deque>
 #include <map>
 #include <optional>
@@ -194,6 +200,17 @@ struct State {
     const void *land_map = nullptr;
     std::uintptr_t land_generation = 0;
     int land_width = 0, land_height = 0;
+    // A resource pack's maps of the textures the world pass draws (_n, _s, _e, _e_s; only the packs', and only while
+    // the world shader reads them: the game itself never does): by the picture's name (TextureName), each read once
+    // (managed; none: null), a few milliseconds of it a frame; which a texture has, found once a frame.
+    bool world_maps = false;
+    std::unordered_map<std::wstring, std::array<IDirect3DTexture9 *, 4>> maps;
+    struct Seen {
+        bool picture = false;  // a picture's own texture (not a gloss, not unnamed)
+        const std::array<IDirect3DTexture9 *, 4> *maps = nullptr;
+    };
+    std::unordered_map<IDirect3DBaseTexture9 *, Seen> maps_seen;
+    std::chrono::steady_clock::duration maps_spent{};
     // Where the game's water shows on the screen, for a pass that reads it (WaterMask, WaterSeen): the water drawn
     // again into it, behind the same depth (water_mask_begin).
     bool water_wanted = false;
@@ -402,6 +419,11 @@ void release_code() {
     drop(g_state.world);
     drop(g_state.land);
     g_state.land_map = nullptr;
+    g_state.world_maps = false;
+    for (auto &[name, maps] : g_state.maps)
+        for (auto *&map : maps) drop(map);
+    g_state.maps.clear();
+    g_state.maps_seen.clear();
     g_state.world_now.clear();
     g_state.world_before.clear();
     for (auto &[format, shader] : g_state.world_vertices) drop(shader);
@@ -584,6 +606,13 @@ bool build() {
                 FAILED(g_D3DD->CreatePixelShader(reinterpret_cast<const DWORD *>(code->data()), &g_state.world))) {
                 fail(problem.empty() ? wide(name) + L": the video card refused it" : problem);
                 return false;
+            }
+            // (a resource pack's maps only for a world shader that reads one: the compiler leaves out the rest)
+            ID3DXConstantTable *table = nullptr;
+            if (SUCCEEDED(D3DXGetShaderConstantTable(reinterpret_cast<const DWORD *>(code->data()), &table))) {
+                for (const char *map : {"PBO_MapN", "PBO_MapS", "PBO_MapE", "PBO_MapES", "PBO_MapTex"})
+                    if (table->GetConstantByName(nullptr, map)) g_state.world_maps = true;
+                table->Release();
             }
             for (const auto &output : pack->world.outputs)
                 g_state.world_outputs.push_back(int(
@@ -1573,6 +1602,117 @@ void make_land(CMatrixMap &map) {
     g_state.land->UnlockRect(0);
 }
 
+// A resource pack's map of a picture (its name and the map's suffix): only from a pack (the game has no such
+// pictures; its own robots' "_e" pictures, the enemies' look of old, are not maps), at most 4096 a side, as it is.
+IDirect3DTexture9 *pack_map(const std::wstring &picture, const wchar_t *suffix) {
+    std::wstring file;
+    if (!Base::CFile::FileExist(file, (picture + suffix).c_str(), CacheExtsTex) || !Base::CFile::InPackRoots(file))
+        return nullptr;
+    Base::CBuf buf;
+    try {
+        buf.LoadFromFile(file);
+    } catch (...) {
+        return nullptr;
+    }
+    D3DXIMAGE_INFO info{};
+    if (buf.Len() == 0 || FAILED(D3DXGetImageInfoFromFileInMemory(buf.Get(), UINT(buf.Len()), &info)) ||
+        info.Width == 0 || info.Height == 0 || info.Width > 4096 || info.Height > 4096) {
+        lgr.warning("Resource pack map {}: not a picture of at most 4096 a side, not used")(utils::from_wstring(file));
+        return nullptr;
+    }
+    // (32 bits: a map's channels are numbers, compression would change them)
+    IDirect3DTexture9 *texture = nullptr;
+    if (FAILED(D3DXCreateTextureFromFileInMemoryEx(g_D3DD, buf.Get(), UINT(buf.Len()), 0, 0, 0, 0, D3DFMT_A8R8G8B8,
+                                                   D3DPOOL_MANAGED, D3DX_FILTER_TRIANGLE, D3DX_FILTER_BOX, 0, nullptr,
+                                                   nullptr, &texture))) {
+        lgr.warning("Resource pack map {}: not loaded")(utils::from_wstring(file));
+        return nullptr;
+    }
+    return texture;
+}
+
+// Whether the game's fixed pipeline reads a stage's texture in this draw, by the coordinates the world pass has (the
+// vertex's first): a stage the draw leaves alone keeps the texture of an earlier draw (the land after a robot: the
+// robot's picture in stage 2, which the land's stages only blend with; its maps were laid on the ground).
+bool stage_reads(DWORD stage) {
+    DWORD index = 0;
+    g_D3DD->GetTextureStageState(stage, D3DTSS_TEXCOORDINDEX, &index);
+    if (index != 0) return false;
+    for (const auto arg : {D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2}) {
+        DWORD value = 0;
+        g_D3DD->GetTextureStageState(stage, arg, &value);
+        if ((value & D3DTA_SELECTMASK) == D3DTA_TEXTURE) return true;
+    }
+    return false;
+}
+
+// The maps of the picture a draw has into s9..s12, which of them in c139 (none: all 0); the picture itself into s13
+// (c140.x 1): of the stages the draw uses (up to the first one off) and reads by the vertex's first coordinates, the
+// first named texture that is not a gloss or the reflection (a model with a gloss has the gloss first, the
+// reflection next, then its own picture; the land its tiles, unnamed, then the macrotexture by other coordinates).
+// A picture's maps are read the first time it is drawn, while this frame has spent less than 4 ms on them (the
+// others wait).
+void bind_maps() {
+    const std::array<IDirect3DTexture9 *, 4> *found = nullptr;
+    IDirect3DBaseTexture9 *own = nullptr;
+    IDirect3DBaseTexture9 *reflection =
+            g_MatrixMap && g_MatrixMap->GetReflectionTexture() ? g_MatrixMap->GetReflectionTexture()->Tex() : nullptr;
+    for (DWORD stage = 0; stage < 4 && !own; ++stage) {
+        DWORD op = D3DTOP_DISABLE;
+        g_D3DD->GetTextureStageState(stage, D3DTSS_COLOROP, &op);
+        if (op == D3DTOP_DISABLE) break;
+        if (!stage_reads(stage)) continue;
+        IDirect3DBaseTexture9 *texture = nullptr;
+        g_D3DD->GetTexture(stage, &texture);
+        if (!texture) continue;
+        texture->Release();  // (the game's stage keeps it)
+        if (texture == reflection) continue;
+        auto seen = g_state.maps_seen.find(texture);
+        if (seen == g_state.maps_seen.end()) {
+            std::wstring picture = TextureName::get(texture);
+            for (auto &ch : picture) ch = ch == L'/' ? L'\\' : wchar_t(std::towlower(ch));
+            while (picture.starts_with(L".\\")) picture.erase(0, 2);
+            State::Seen now;
+            now.picture = !picture.empty() && !picture.ends_with(L"_gloss");
+            if (now.picture) {
+                if (const auto kept = g_state.maps.find(picture); kept != g_state.maps.end()) now.maps = &kept->second;
+                else if (g_state.maps_spent < std::chrono::milliseconds(4)) {
+                    const auto from = std::chrono::steady_clock::now();
+                    std::array<IDirect3DTexture9 *, 4> read{};
+                    static const wchar_t *const suffixes[] = {L"_n", L"_s", L"_e", L"_e_s"};
+                    for (int i = 0; i < 4; ++i) read[i] = pack_map(picture, suffixes[i]);
+                    if (std::ranges::any_of(read, [](auto *map) { return map != nullptr; }))
+                        lgr.notice("Resource pack maps of {}:{}{}{}{}")(utils::from_wstring(picture), read[0] ? " _n" : "",
+                                                                         read[1] ? " _s" : "", read[2] ? " _e" : "",
+                                                                         read[3] ? " _e_s" : "");
+                    now.maps = &(g_state.maps[picture] = read);
+                    g_state.maps_spent += std::chrono::steady_clock::now() - from;
+                }
+                // (maps that wait for a later frame: looked for again)
+                else {
+                    own = texture;
+                    break;
+                }
+            }
+            seen = g_state.maps_seen.emplace(texture, now).first;
+        }
+        if (seen->second.picture) {
+            own = texture;
+            found = seen->second.maps;
+        }
+    }
+    D3DXVECTOR4 has{0, 0, 0, 0};
+    for (int i = 0; i < 4; ++i) {
+        IDirect3DTexture9 *map = found ? (*found)[i] : nullptr;
+        g_D3DD->SetTexture(9 + i, map);
+        (&has.x)[i] = map ? 1.0f : 0.0f;
+    }
+    g_D3DD->SetPixelShaderConstantF(139, &has.x, 1);
+    g_D3DD->SetTexture(13, own);
+    const D3DXVECTOR4 picture{own ? 1.0f : 0.0f, 0, 0, 0};
+    g_D3DD->SetPixelShaderConstantF(140, &picture.x, 1);
+}
+
 // Before a draw of the world pass (g_WorldDrawHook): the game has set the draw's states and textures for its fixed
 // pipeline; the shaders take its place. The game's blending off (an overlay's second drawing would add to or
 // multiply what the pack wrote); a clip plane of the game's (a robot's chassis by halves) into the shader's space,
@@ -1596,6 +1736,7 @@ void world_hook(bool visible) {
         g_state.world_now[key] = world;
     }
     g_D3DD->SetVertexShaderConstantF(8, &before->_11, 4);
+    if (g_state.world_maps && visible && vertex) bind_maps();
     g_D3DD->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
     // (a draw for the depth alone, or one in a format unknown here: nothing into the further targets; the game
     // itself keeps such a draw out of the first)
@@ -1667,6 +1808,14 @@ bool world_begin() {
         sampler(8, g_state.land, true, false);
         set(138, {1.0f / GLOBAL_SCALE, 0, 1.0f / float(g_state.land_width), 1.0f / float(g_state.land_height)});
     }
+    // The packs' maps: tiled as the textures are, smooth, with their small copies far off.
+    if (g_state.world_maps) {
+        for (int i = 9; i <= 13; ++i) sampler(i, nullptr, false, false);
+        set(139, {0, 0, 0, 0});
+        set(140, {0, 0, 0, 0});
+        g_state.maps_seen.clear();
+        g_state.maps_spent = {};
+    }
     world_material(0, nullptr);
     g_state.world_plane_set = false;
     g_state.world_write = 0x100;  // (none set yet)
@@ -1688,6 +1837,7 @@ void world_end() {
     g_D3DD->SetPixelShader(nullptr);
     for (DWORD i = 1; i < DWORD(ShaderPacks::max_world_outputs); ++i) g_D3DD->SetRenderTarget(i, nullptr);
     g_D3DD->SetTexture(8, nullptr);
+    for (DWORD i = 9; i <= 13; ++i) g_D3DD->SetTexture(i, nullptr);
     g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE1, 0xf);
     g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE2, 0xf);
     g_D3DD->SetRenderState(D3DRS_COLORWRITEENABLE3, 0xf);

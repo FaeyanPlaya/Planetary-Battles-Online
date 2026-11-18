@@ -21,8 +21,10 @@ struct Asked {
 };
 std::optional<Asked> g_asked;
 
+// (a space: as wide as the game's text puts between words, Text::calc_lines)
 int text_width(const std::wstring &text, const wchar_t *font) {
-    return int(Text::GetFont(g_D3DD, font).CalcTextWidth(text));
+    Text::Font &face = Text::GetFont(g_D3DD, font);
+    return int(text == L" " ? face.GetSpaceWidth() : face.CalcTextWidth(text));
 }
 
 void build(const std::wstring &markup) {

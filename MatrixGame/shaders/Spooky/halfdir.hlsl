@@ -3,7 +3,7 @@
 #include "common.hlsl"
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {
-    if (NORMALS <= 0 || LightCount.x < 0.5) return float4(0, 0, 0, 0);
+    if (MATERIALS != 1 || NORMALS <= 0 || LightCount.x < 0.5) return float4(0, 0, 0, 0);  // (generated normals only)
     uv = ScenePixel(uv);
     float d = SceneDepth(uv);
     if (d >= 1) return float4(0, 0, 0, 0);

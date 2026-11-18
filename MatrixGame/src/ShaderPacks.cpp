@@ -53,6 +53,8 @@ bool code_name(const std::string &name) {
             "ReliefTex",    "ShadowTex",    "ShadowViewProj", "ShadowInfo", "ShadowPos",   "ShadowDepth",  "ShadowLit",
             "World",        "WorldTex",     "WorldInfo",   "PBO_WORLD",    "MAT_LAND",     "MAT_OBJECT",
             "MAT_ROBOT",    "MAT_BUILDING", "MAT_CANNON",  "MAT_FLYER",    "pbo_world",    "LandInfo",
+            "PBO_MapN",     "PBO_MapS",     "PBO_MapE",    "PBO_MapES",    "PBO_Maps",    "PBO_MapTex",
+            "PBO_MapPicture",
             "VoxelTex",     "VoxelAt",      "VoxelOrigin", "VoxelScale",   "VoxelExtent",
             "Water",        "WaterTex",     "ReflTex",     "UnderTex",     "PBO_WATER",    "MAT_WATER",   "pbo_water",
             "WaterMask",    "WaterSeen",    "ModValues",
@@ -515,22 +517,14 @@ Pack parse(std::wstring_view text_view, std::wstring id) {
             std::ranges::find(setting->values, utils::to_wstring(name.substr(dot + 1))) == setting->values.end())
             problems.push_back(L"Value." + utils::to_wstring(name));
     }
-    if (!pack.shadow.when.empty() &&
-        std::ranges::find(pack.settings, pack.shadow.when, &Mods::SettingLine::id) == pack.settings.end())
-        problems.push_back(L"Shadow: " + utils::to_wstring(pack.shadow.when));
-    if (!pack.voxels.when.empty() &&
-        std::ranges::find(pack.settings, pack.voxels.when, &Mods::SettingLine::id) == pack.settings.end())
-        problems.push_back(L"Voxels: " + utils::to_wstring(pack.voxels.when));
+    if (!when_known(pack, pack.shadow.when)) problems.push_back(L"Shadow: " + utils::to_wstring(pack.shadow.when));
+    if (!when_known(pack, pack.voxels.when)) problems.push_back(L"Voxels: " + utils::to_wstring(pack.voxels.when));
     for (const auto &[shaded, name] : {std::pair{&pack.water, L"Water: "}, {&pack.effects, L"Effects: "}})
-        if (!shaded->when.empty() &&
-            std::ranges::find(pack.settings, shaded->when, &Mods::SettingLine::id) == pack.settings.end())
-            problems.push_back(name + utils::to_wstring(shaded->when));
+        if (!when_known(pack, shaded->when)) problems.push_back(name + utils::to_wstring(shaded->when));
     // The world pass's targets: the pack's, each once, of the screen's size and one format (they are drawn into
     // together).
     if (!pack.world.file.empty()) {
-        if (!pack.world.when.empty() &&
-            std::ranges::find(pack.settings, pack.world.when, &Mods::SettingLine::id) == pack.settings.end())
-            problems.push_back(L"World: " + utils::to_wstring(pack.world.when));
+        if (!when_known(pack, pack.world.when)) problems.push_back(L"World: " + utils::to_wstring(pack.world.when));
         const Target *first = nullptr;
         for (std::size_t i = 0; i < pack.world.outputs.size(); ++i) {
             const auto &name = pack.world.outputs[i];
@@ -575,8 +569,7 @@ Pack parse(std::wstring_view text_view, std::wstring id) {
     // Interface=: a pass after it, the one before it into the screen, its setting the pack's.
     if (pack.interface_from >= 0 &&
         (pack.interface_from >= int(pack.passes.size()) || pack.passes[pack.interface_from - 1].output != "screen" ||
-         (!pack.interface_when.empty() &&
-          std::ranges::find(pack.settings, pack.interface_when, &Mods::SettingLine::id) == pack.settings.end())))
+         !when_known(pack, pack.interface_when)))
         problems.push_back(L"Interface");
     if (int(pack.passes.size()) > max_passes) problems.push_back(L"too many passes");
     if (int(pack.targets.size()) > max_targets) problems.push_back(L"too many targets");
@@ -812,6 +805,15 @@ std::string world_prelude(const Pack &pack, const Mods::SettingValues &values) {
            "float4 WorldInfo : register(c137);\n"
            "float4 LandInfo : register(c138);\n"
            "sampler2D PBO_LandNormals : register(s8);\n"
+           // A resource pack's maps of the drawn texture (ShaderRender: pack_maps), and which of them it has.
+           "sampler2D PBO_MapN : register(s9);\n"
+           "sampler2D PBO_MapS : register(s10);\n"
+           "sampler2D PBO_MapE : register(s11);\n"
+           "sampler2D PBO_MapES : register(s12);\n"
+           "float4 PBO_Maps : register(c139);\n"
+           // (the picture the maps are of: a model with a gloss has the gloss first, in WorldTex)
+           "sampler2D PBO_MapTex : register(s13);\n"
+           "float4 PBO_MapPicture : register(c140);\n"
            "#define MAT_LAND 1\n"
            "#define MAT_OBJECT 2\n"
            "#define MAT_ROBOT 3\n"
@@ -833,6 +835,16 @@ std::string world_prelude(const Pack &pack, const Mods::SettingValues &values) {
            // How far it moved on the screen since the previous frame, in the screen's uv (the camera's movement
            // and the thing's own: a robot's part by its place then): it was at this pixel's uv - motion.
            "    float2 motion;\n"
+           // A resource pack's maps of the surface's texture, as they are (docs/RESOURCEPACKS.md): _n (LabPBR: the
+           // normal's x and y, occlusion, height), _s (smoothness, F0 or a metal, porosity or scattering, emission),
+           // _e (what glows: its colour, alpha where), _e_s (_e's own _s: its alpha how strongly _e glows). Where the
+           // pack has none: (0.5, 0.5, 1, 1), (0, 0, 0, 1), 0, (0, 0, 0, 1). maps: 1 for each the surface has (x _n,
+           // y _s, z _e, w _e_s).
+           "    float4 nmap, smap, emap, esmap, maps;\n"
+           // The normal with _n's relief (normal where there is no _n).
+           "    float3 mapped;\n"
+           // The light the surface gives (0: none): the texture's colour by _s's emission, and _e's colour by its own.
+           "    float3 glow;\n"
            "};\n";
 }
 
@@ -867,6 +879,27 @@ std::string world_wrapper(const Pack &pack) {
         "    w.color = i.color;\n"
         "    w.tex = tex2D(WorldTex, i.uv);\n"
         "    w.material = WorldInfo.x;\n"
+        "    w.maps = PBO_Maps;\n"
+        "    w.nmap = PBO_Maps.x > 0.5 ? tex2D(PBO_MapN, i.uv) : float4(0.5, 0.5, 1, 1);\n"
+        "    w.smap = PBO_Maps.y > 0.5 ? tex2D(PBO_MapS, i.uv) : float4(0, 0, 0, 1);\n"
+        "    w.emap = PBO_Maps.z > 0.5 ? tex2D(PBO_MapE, i.uv) : float4(0, 0, 0, 0);\n"
+        "    w.esmap = PBO_Maps.w > 0.5 ? tex2D(PBO_MapES, i.uv) : float4(0, 0, 0, 1);\n"
+        // (_n: DirectX's way, green down the picture, z from x and y; the texture's directions on the surface from
+        // how its place and its coordinates change across the pixel: the game's models keep no tangents)
+        "    float2 nxy = w.nmap.xy * 2.0 - 1.0;\n"
+        "    float3 tn = float3(nxy, sqrt(saturate(1.0 - dot(nxy, nxy))));\n"
+        "    float3 dp1 = ddx(i.pos), dp2 = ddy(i.pos);\n"
+        "    float2 du1 = ddx(i.uv), du2 = ddy(i.uv);\n"
+        "    float3 side2 = cross(dp2, w.normal), side1 = cross(w.normal, dp1);\n"
+        "    float3 along = side2 * du1.x + side1 * du2.x, down = side2 * du1.y + side1 * du2.y;\n"
+        "    float frame = rsqrt(max(max(dot(along, along), dot(down, down)), 1e-20));\n"
+        "    float3 bent = (along * tn.x + down * tn.y) * frame + w.normal * tn.z;\n"
+        "    w.mapped = PBO_Maps.x > 0.5 ? bent * rsqrt(max(dot(bent, bent), 1e-12)) : w.normal;\n"
+        // (LabPBR's emission: 0..254 of alpha, 255 none; _e without _e_s glows whole)
+        "    float own = w.smap.a < 254.5 / 255.0 ? w.smap.a * (255.0 / 254.0) : 0.0;\n"
+        "    float overlay = PBO_Maps.w > 0.5 ? (w.esmap.a < 254.5 / 255.0 ? w.esmap.a * (255.0 / 254.0) : 0.0) : 1.0;\n"
+        "    float3 picture = PBO_MapPicture.x > 0.5 ? tex2D(PBO_MapTex, i.uv).rgb : w.tex.rgb;\n"
+        "    w.glow = picture * own + w.emap.rgb * w.emap.a * overlay;\n"
         // (behind the camera then: no place on the screen to come from)
         "    w.motion = i.now.w > 1e-4 && i.before.w > 1e-4\n"
         "                       ? (i.now.xy / i.now.w - i.before.xy / i.before.w) * float2(0.5, -0.5)\n"

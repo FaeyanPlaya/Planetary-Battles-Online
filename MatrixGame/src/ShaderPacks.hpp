@@ -25,7 +25,7 @@ inline constexpr const wchar_t *choice_file = L"CFG\\shaders.txt";  // this pers
 // What a pack may use. Shader Model 3 gives a pass 16 samplers: the scene, its depth, the previous pass and SolidTex
 // are the engine's, the other 12 are the pack's targets and textures that pass's code names (each pass its own 12).
 inline constexpr int max_passes = 100;
-inline constexpr int max_targets = 16;
+inline constexpr int max_targets = 24;
 inline constexpr int max_textures = 8;
 inline constexpr int max_pass_pictures = 12;  // the targets and textures one pass reads (the shadow map: one of them)
 inline constexpr std::size_t max_file = 8u << 20;     // a file of a pack
@@ -284,14 +284,45 @@ inline std::wstring setting_value(const Pack &pack, const Mods::SettingLine &set
             if (value == found->second) return value;
     return setting.default_value;
 }
-// Whether the setting a line names (Shadow=...|<setting>, World=...|<setting>) has it on: not 0 or Off (no setting
-// named: on).
+// The parts of a line's <setting> (Shadow=...|<setting>, World=...|<setting>): one, or several joined by "+" (on while
+// any of them is); each "ID" (on while not 0 or Off) or "ID=VALUE" (on while it is that value).
+inline std::vector<std::pair<std::string, std::string>> when_parts(const std::string &when) {
+    std::vector<std::pair<std::string, std::string>> parts;
+    std::size_t from = 0;
+    while (from <= when.size()) {
+        const auto plus = when.find('+', from);
+        const std::string part = when.substr(from, plus == std::string::npos ? std::string::npos : plus - from);
+        const auto equals = part.find('=');
+        parts.emplace_back(part.substr(0, equals), equals == std::string::npos ? std::string() : part.substr(equals + 1));
+        if (plus == std::string::npos) break;
+        from = plus + 1;
+    }
+    return parts;
+}
+// Whether every part names a setting of the pack (and a value of it where it gives one).
+inline bool when_known(const Pack &pack, const std::string &when) {
+    if (when.empty()) return true;
+    for (const auto &[id, value] : when_parts(when)) {
+        const auto setting = std::ranges::find(pack.settings, id, &Mods::SettingLine::id);
+        if (setting == pack.settings.end()) return false;
+        if (!value.empty() && std::ranges::find(setting->values, std::wstring(value.begin(), value.end())) ==
+                                      setting->values.end())
+            return false;
+    }
+    return true;
+}
+// Whether a line's <setting> has it on (no setting named: on).
 inline bool setting_on(const Pack &pack, const std::string &when, const Mods::SettingValues &values) {
     if (when.empty()) return true;
-    const auto setting = std::ranges::find(pack.settings, when, &Mods::SettingLine::id);
-    if (setting == pack.settings.end()) return true;
-    const std::wstring value = setting_value(pack, *setting, values);
-    return value != L"0" && value != L"Off" && value != L"off" && value != L"OFF";
+    for (const auto &[id, wanted] : when_parts(when)) {
+        const auto setting = std::ranges::find(pack.settings, id, &Mods::SettingLine::id);
+        if (setting == pack.settings.end()) return true;
+        const std::wstring value = setting_value(pack, *setting, values);
+        if (!wanted.empty() ? value == std::wstring(wanted.begin(), wanted.end())
+                            : value != L"0" && value != L"Off" && value != L"off" && value != L"OFF")
+            return true;
+    }
+    return false;
 }
 // Whether the pack's shadow map is drawn: it asks for one and its setting has it on.
 inline bool shadow_on(const Pack &pack, const Mods::SettingValues &values) {

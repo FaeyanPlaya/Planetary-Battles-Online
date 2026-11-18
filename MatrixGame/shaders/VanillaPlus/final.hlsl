@@ -48,7 +48,10 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         float4 h = HalfAt(uv, ViewDepth(d));
         float shade = lerp(1.0, h.a, near);
         // The textures' relief under the map's sun (their light and dark taken for height): not on the water.
-        if (RELIEF > 0 && reach <= water) {
+        // A resource pack's _n where it has one (world.hlsl, WorldG's alpha): its relief instead.
+        float packed = tex2D(WorldG, uv).a;
+        if (packed > 0.005 && reach <= water) shade *= lerp(1.0, packed * 2.0, near);
+        else if (PBR == 1 && RELIEF > 0 && reach <= water) {  // (generated normals: Internal only)
             float3 slope = ReliefSlope(uv) * (RELIEF * 6.0);
             shade *= lerp(1.0, clamp(1.0 - dot(slope, SunDir.xyz) * 0.8, 0.75, 1.25), near);
         }
@@ -120,5 +123,6 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     col *= 1.0 - saturate(rays.g * phase * RAYS * 2.0) * 0.35;
     col += SunColor.rgb * max(rays.r - rays.g, 0) * phase * RAYS * 0.35;
 #endif
+    col += tex2D(WorldG, uv).rgb * PACKGLOW;  // what a resource pack's maps make glow
     return float4(max(col, 0), 1);
 }

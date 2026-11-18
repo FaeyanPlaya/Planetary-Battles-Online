@@ -21,6 +21,8 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     float3 fx = max(tex2D(SceneTex, uv).rgb - tex2D(SolidTex, uv).rgb, 0);
     float3 hot = fx * saturate(Luma(fx) * 4.0 - 0.2);
     col += max(tex2D(GlowB, uv).rgb * 0.9 + wide * 0.7 - hot * 1.6, 0) * GLOW;
+    // What a resource pack's maps make glow: as bright in the night as by day.
+    col += tex2D(WorldG, uv).rgb * PACKGLOW;
 #if SHAFTS
     // The moon's rays in the fog: its light where it gets through, the shade where something stands in its way, the
     // more fog the view goes through the more; brighter looking towards the moon (its light scatters forwards).

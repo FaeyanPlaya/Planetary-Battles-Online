@@ -47,7 +47,7 @@ Profile.NOVHS=Без VHS|No VHS|BLEED=0 SHARPEN=0 LUMANOISE=0 CHROMANOISE=0 FADE
 Note.ABOUT=О наборе|About the pack
 
 Info.PROFILE=Как в исходном наборе: «По умолчанию», «Без VHS» (одно мягкое освещение) и «Затёртая кассета». Изгиб линзы и эффекты на интерфейс профили не трогают. «Свой» — когда настройки выставлены иначе.|As in the original pack: Default, No VHS (the soft lighting alone) and Worn tape. The profiles leave the lens bend and the effects on the interface alone. Custom: when the settings are set otherwise.
-Info.SOFTLIGHT=Мягкое освещение, как в Minecraft: углы, подножия стен и земля под роботами плавно темнее. «Выкл» — свет игры как есть.|Soft lighting, as in Minecraft: corners, the foot of walls and the ground under robots smoothly darker. Off: the game's light as it is.
+Info.SOFTLIGHT=Мягкое освещение: углы, подножия стен и земля под роботами плавно темнее. «Выкл» — свет игры как есть.|Soft lighting: corners, the foot of walls and the ground under robots smoothly darker. Off: the game's light as it is.
 Info.BLEED=Цвет на кассете размыт сильнее, чем яркость, и сползает вправо от предметов.|On a tape the colour is blurred more than the brightness and runs to the right of things.
 Info.SHARPEN=Светлые и тёмные каёмки у краёв, как от подкрутки резкости в видеомагнитофоне.|Light and dark fringes at edges, as from a video recorder's sharpening.
 Info.LUMANOISE=Мягкий шум яркости: заметен в тенях, на светлом почти прозрачен.|Soft noise in the brightness: seen in the shadows, almost clear over the bright.

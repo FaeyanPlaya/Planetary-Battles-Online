@@ -39,6 +39,21 @@ int measured(const std::wstring &t, double scale, int size, const TextWidth &mea
     return measure ? measure(t, face.c_str()) : int(t.size()) * px(scale, size) / 2;
 }
 
+// A line's width as the game's text lays it out (Text::calc_lines): each word by itself, a space's width between. The
+// line measured whole came out narrower: a line that fitted so was wider when drawn, and the text put its last word
+// on a line of its own, over the next one.
+int laid(const std::wstring &line, double scale, const TextWidth &measure) {
+    const int space = measured(L" ", scale, text_size, measure);
+    int width = 0;
+    for (std::size_t at = 0; at <= line.size();) {
+        const std::size_t end = std::min(line.find(L' ', at), line.size());
+        if (at > 0) width += space;
+        width += measured(line.substr(at, end - at), scale, text_size, measure);
+        at = end + 1;
+    }
+    return width;
+}
+
 // `line` broken at its spaces into lines of `width` pixels.
 std::vector<std::wstring> broken(const std::wstring &line, double scale, int width, const TextWidth &measure) {
     std::vector<std::wstring> out;
@@ -47,7 +62,7 @@ std::vector<std::wstring> broken(const std::wstring &line, double scale, int wid
         const std::size_t end = std::min(line.find(L' ', at), line.size());
         const std::wstring word = line.substr(at, end - at);
         const std::wstring longer = current.empty() ? word : current + L" " + word;
-        if (!current.empty() && measured(longer, scale, text_size, measure) > width) {
+        if (!current.empty() && laid(longer, scale, measure) > width) {
             out.push_back(current);
             current = word;
         }

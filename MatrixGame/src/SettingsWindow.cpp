@@ -120,8 +120,16 @@ void release_pack_icons() {
 // A picture as a square of `side` pixels (B, G, R, A), its own proportions kept in its middle; nullptr: not one.
 std::unique_ptr<CBitmap> icon_from(const std::string &png, int side) {
     CBitmap source;
+    // Its size from the header first: a small file may claim a picture of gigabytes.
+    if (png.size() < 24 || png.compare(1, 3, "PNG") != 0) return nullptr;
+    auto be32 = [&](std::size_t at) {
+        return (uint32_t(uint8_t(png[at])) << 24) | (uint32_t(uint8_t(png[at + 1])) << 16) |
+               (uint32_t(uint8_t(png[at + 2])) << 8) | uint8_t(png[at + 3]);
+    };
+    if (be32(16) == 0 || be32(20) == 0 || be32(16) > ResourcePacks::max_icon_side || be32(20) > ResourcePacks::max_icon_side)
+        return nullptr;
     try {
-        if (png.empty() || !source.LoadFromPNG(const_cast<char *>(png.data()), int(png.size()))) return nullptr;
+        if (!source.LoadFromPNG(const_cast<char *>(png.data()), int(png.size()))) return nullptr;
     }
     catch (...) {
         return nullptr;

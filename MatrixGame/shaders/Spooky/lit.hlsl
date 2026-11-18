@@ -59,12 +59,22 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         // light brighter, one facing away darker, under the moon and under the battle's lights (where they come
         // from: HalfDir). Not on the water's surface.
         float moonRelief = 1.0, lightRelief = 1.0;
-        if (NORMALS > 0 && d < 1 && reach <= water) {
+        // (Integrated materials only: with LabPBR's the pack's maps give the relief, below)
+        if (MATERIALS == 1 && NORMALS > 0 && d < 1 && reach <= water) {
             float3 slope = ReliefSlope(uv) * (NORMALS * 6.0);  // (as GeneratedNormal bends by)
             float4 from = tex2D(HalfDir, uv);
             moonRelief = clamp(1.0 - dot(slope, SunDir.xyz) * 1.2, 0.45, 1.6);
             lightRelief = clamp(1.0 - dot(slope, from.rgb / max(from.a, 1e-4)) * 1.8, 0.3, 1.8);
         }
+#if MATERIALS == 2
+        // A resource pack's _n where it has one (world.hlsl, WorldG's alpha): its relief under the moon; the battle's
+        // lights have it already (half.hlsl reads the bent normals, with GEOMETRY).
+        float packed = tex2D(WorldG, uv).a;
+        if (packed > 0.005 && d < 1 && reach <= water) {
+            moonRelief = packed * 2.0;
+            lightRelief = 1.0;
+        }
+#endif
         float3 moon = Night(bare) * h.a * moonRelief;
         // The lights and what glows on the screen near it.
         h.rgb *= lightRelief;

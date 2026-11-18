@@ -6,7 +6,7 @@ float3 Bright(float2 at) {
     float3 scene = tex2D(SceneTex, at).rgb, solid = tex2D(SolidTex, at).rgb;
     float3 hot = Hot(scene, solid);
     float over = saturate((Luma(solid) - 0.82) * 4.0);  // only what is close to white
-    return hot + solid * over * 0.5;
+    return hot + solid * over * 0.5 + tex2D(WorldG, at).rgb * PACKGLOW;  // (and what a resource pack makes glow)
 }
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {

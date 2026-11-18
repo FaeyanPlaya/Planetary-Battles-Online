@@ -15,6 +15,8 @@ Setting.FIRELIGHT=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.
 Value.FIRELIGHT.0=Выкл|Off
 Setting.GLOW=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Свечение|Glow
 Value.GLOW.0=Выкл|Off
+Setting.PACKGLOW=0,0.25,0.5,0.75,1,1.25,1.5,2,3|1|Свечение ресурспаков|Resource packs' glow
+Value.PACKGLOW.0=Выкл|Off
 Setting.FLICKER=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Мерцание огня|Fire flicker
 Value.FLICKER.0=Ровный свет|Steady
 Setting.AO=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Затенение углов|Corner shading
@@ -23,6 +25,12 @@ Setting.SHADOWS=0,0.25,0.5,0.75,1|1|Контактные тени|Contact shadow
 Value.SHADOWS.0=Выкл|Off
 Setting.NORMALS=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Рельеф текстур|Texture relief
 Value.NORMALS.0=Выкл|Off
+Setting.MATERIALS=0,1,2|1|Материалы|Materials|cycle
+Value.MATERIALS.0=Выкл|Off
+Value.MATERIALS.1=Встроенные|Integrated
+Value.MATERIALS.2=LabPBR (ресурспак)|LabPBR (resource pack)
+Setting.NORMALMAP=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Сила карт нормалей|Normal map strength
+Value.NORMALMAP.0=Выкл|Off
 Setting.GEOMETRY=On,Off|On|Нормали моделей|Model normals|cycle
 Setting.SHAFTS=On,Off|On|Объёмные лучи|Light shafts|cycle
 Setting.RAYS=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Сила лучей|Shaft strength
@@ -81,12 +89,15 @@ Info.PROFILE=Сразу несколько настроек по нагрузк�
 Info.NIGHT=Насколько день становится ночью: темнее, серее, холоднее. «День» — день как есть.|How much the day becomes night: darker, greyer, colder. Day: the day as it is.
 Info.FOG=Туман лежит в низинах и над водой и медленно плывёт; вдали всё уходит в дымку. Огонь подсвечивает его.|The fog lies in the lowlands and over the water and drifts slowly; far away everything fades into the haze. Fire lights it up.
 Info.FIRELIGHT=Как сильно пожары, взрывы, выстрелы, лазеры и всё светящееся освещают землю, стены и роботов рядом.|How much fires, explosions, shots, lasers and everything glowing light the ground, walls and robots near them.
+Info.MATERIALS=Откуда берутся материалы поверхностей. «Выкл» — как в игре, без рельефа. «Встроенные» — рельеф по светлому и тёмному самих текстур (генерируемые нормали, «Рельеф текстур»). «LabPBR» — карты из ресурспака (_n, _s, _e, _e_s, нужен такой пак): его рельеф и свечение; генерируемых нормалей нет.|Where the surfaces' materials come from. Off: as in the game, no relief. Integrated: relief from the textures' own light and dark (generated normals, Texture relief). LabPBR: a resource pack's maps (_n, _s, _e, _e_s; such a pack needed): its relief and glow, no generated normals.
+Info.NORMALMAP=Насколько выпуклы поверхности по картам _n ресурспака. Только при «Материалы: LabPBR».|How raised the surfaces are by a resource pack's _n maps. Only with Materials: LabPBR.
 Info.GLOW=Ореол вокруг огня, вспышек и выстрелов.|The halo around fire, flashes and shots.
+Info.PACKGLOW=Сила свечения по картам ресурспака: излучение в альфе _s и картинки _e. Только при «Материалы: LabPBR». «Выкл» — без него.|How strong the glow by a resource pack's maps is: the emission in _s's alpha and the _e pictures. Only with Materials: LabPBR. Off: none.
 Info.FLICKER=Огонь дрожит, каждый по-своему. «Ровный свет» — ровный свет.|Fire trembles, each in its own way. Steady: a steady light.
 Info.AO=Тень в углах, у стен и под роботами. 2 — сильнее.|Shade in corners, by walls and under robots. 2: stronger.
 Info.SHADOWS=Короткие тени от солнца карты у самых предметов, рядом с тенями игры. «Выкл» — без них.|Short shadows from the map's sun right by things, next to the game's own shadows. Off: none.
 Info.FOGHEIGHT=Как высоко поднимается туман от земли и воды. Выше — гуще и дальше вверх по склонам.|How high the fog rises from the ground and the water. Higher: thicker, further up the slopes.
-Info.NORMALS=Генерируемые нормали: светлое и тёмное на поверхностях становится выпуклым и впалым под луной и у огня. «Выкл» — без них.|Generated normals: the light and dark of surfaces become raised and sunken under the moon and by fire. Off: none.
+Info.NORMALS=Генерируемые нормали: светлое и тёмное на поверхностях становится выпуклым и впалым под луной и у огня. Только при «Материалы: Встроенные». «Выкл» — без них.|Generated normals: the light and dark of surfaces become raised and sunken under the moon and by fire. Only with Materials: Integrated. Off: none.
 Info.GEOMETRY=Свет огня и вспышек ложится по настоящей форме роботов, зданий и земли, а временной фильтр и размытие движения знают, как движутся сами роботы и турели (без следов за ними): движок рисует мир ещё раз шейдером набора. Выкл — форма берётся из глубины кадра, движение только от камеры, и видеокарте легче.|The light of fire and flashes follows the true shape of robots, buildings and the land, and the temporal filter and motion blur know how robots and turrets themselves move (no trails behind them): the engine draws the world once more with the pack's shader. Off: the shape is taken from the frame's depth, the motion from the camera alone, easier on the video card.
 Info.SHAFTS=Лунный свет в тумане: тени роботов, деревьев и зданий встают от земли столбами к луне. Выкл — без них, и видеокарте легче.|The moonlight in the fog: the shadows of robots, trees and buildings rise from the ground in columns towards the moon. Off: none, and easier on the video card.
 Info.RAYS=Насколько заметны объёмные лучи.|How strong the light shafts are.
@@ -112,7 +123,7 @@ Info.ABOUT=Ночь, туман и огонь на поле боя. Настро
 # The game's own fog off: this pack makes its own haze, in the map's colours.
 Game.Fog=Off
 
-Screen=[Spooky] ABOUT - PROFILE - [Performance] [Camera] [Lighting] [Atmosphere] [Materials]
+Screen=[Spooky] ABOUT - PROFILE MATERIALS - [Performance] [Camera] [Lighting] [Atmosphere] [Materials]
 Screen.Spooky=Настройки Жути|Spooky settings|NIGHT FIRELIGHT FLICKER FOG GRAIN
 Screen.Performance=Производительность|Performance|AO SHADOWS NORMALS GEOMETRY SHAFTS SOFTFX REFLECT TAA FXAA
 Screen.Camera=Камера|Camera|[Balance] [Grading] [Blur] - GLOW VIGNETTE SHARPEN ABERRATION FLARES FLARE TAA FXAA GRAIN
@@ -121,16 +132,19 @@ Screen.Grading=Цветокоррекция|Colour grading|GRADING - MIX_RR MIX_
 Screen.Blur=Размытие мира|World blur|DOF DOFSTRENGTH - MBLUR MBLURSTRENGTH
 Screen.Lighting=Освещение|Lighting|FIRELIGHT FLICKER GLOW FLARES FLARE AO SHADOWS
 Screen.Atmosphere=Атмосфера|Atmosphere|NIGHT FOG FOGHEIGHT SHAFTS RAYS
-Screen.Materials=Материалы|Materials|NORMALS GEOMETRY REFLECT WAVING SOFTFX
+Screen.Materials=Материалы|Materials|MATERIALS - [Integrated] [LabPBR] - GEOMETRY REFLECT WAVING SOFTFX
+Screen.Integrated=Встроенные материалы|Integrated materials|NORMALS
+Screen.LabPBR=Материалы LabPBR|LabPBR materials|NORMALMAP PACKGLOW
 
 # The world's depth as the moon sees it, for the rays (drawn only while they are on: the world is drawn twice).
-Shadow=2048|2000|SHAFTS
+Shadow=2048|5000|SHAFTS
 
-# The world drawn by world.hlsl: the surfaces' normals, what each thing is and how it moved (only while GEOMETRY is
-# on; half floats for the move).
+# The world drawn by world.hlsl: the surfaces' normals, what each thing is and how it moved, a resource pack's glow
+# and relief (while GEOMETRY is on or the materials are LabPBR's; half floats for the move).
 Target.WorldN=1|rgba16f
 Target.WorldM=1|rgba16f
-World=world.hlsl|WorldN WorldM|GEOMETRY
+Target.WorldG=1|rgba16f
+World=world.hlsl|WorldN WorldM WorldG|GEOMETRY+MATERIALS=2
 
 # The effects drawn by its own shader in the game's place.
 Effects=effects.hlsl|SOFTFX

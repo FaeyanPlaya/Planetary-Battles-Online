@@ -1,7 +1,8 @@
-// Spooky, at a quarter: what glows (the effects' bright part: fire, flashes, shots), every pixel of its 4x4 read.
+// Spooky, at a quarter: what glows (the effects' bright part: fire, flashes, shots; what a resource pack's maps make
+// glow), every pixel of its 4x4 read.
 float3 Hot(float2 at) {
     float3 fx = max(tex2D(SceneTex, at).rgb - tex2D(SolidTex, at).rgb, 0);
-    return fx * saturate(Luma(fx) * 4.0 - 0.2);  // not smoke
+    return fx * saturate(Luma(fx) * 4.0 - 0.2) + tex2D(WorldG, at).rgb * PACKGLOW;  // not smoke
 }
 
 float4 main(float2 uv : TEXCOORD0) : COLOR {

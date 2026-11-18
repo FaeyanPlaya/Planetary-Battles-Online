@@ -24,6 +24,8 @@ inline constexpr const wchar_t *choice_file = L"CFG\\resourcepacks.txt";
 inline constexpr const wchar_t *cache_folder = L"Cache\\resourcepacks";
 inline constexpr std::size_t max_icon = 1024 * 1024;              // pack.png
 inline constexpr std::uint64_t max_file = 512ull * 1024 * 1024;   // a file in a zip
+inline constexpr std::uint64_t max_unpacked = 16ull * 1024 * 1024 * 1024;  // a zip's files together
+inline constexpr std::uint32_t max_icon_side = 4096;               // pack.png's width and height
 
 struct Pack {
     std::wstring id;  // its folder's or zip's name in resourcepacks (the .zip kept): what CFG\resourcepacks.txt names

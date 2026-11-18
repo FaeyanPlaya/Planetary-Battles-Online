@@ -61,20 +61,25 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     float d = SceneDepth(uv);
     float dist = d < 1 ? length(WorldPos(uv, d) - CameraPos.xyz) : 1e9;
     dist = min(min(dist, WaterAt(dir)), FogRange.z * 0.6);
-    const int N = 16;
-    // The shade the near part of the way only, in finer steps (the whole view's way in 16 steps let a thin column
-    // fall between them: over the sky, the far water and land its edges came out jagged and moved with the view; and
-    // the same near part over all of them, so the shade has no step where the sky meets the land). The fog: the whole
-    // way.
-    float shadeDist = min(dist, 700.0);
-    float step = dist / N, shadeStep = shadeDist / N;
+    const int N = 32;
+    // The shade as far as the shadow map reaches (REACH, shaders.txt's Shadow=; the near 700 alone lost a far tower's
+    // column), fading out over its last quarter (no edge where the map ends, moving with the camera); its steps
+    // close together near the eye and further apart away from it (a far column is thin on the screen: the 4x4 block's
+    // starts fill the gaps). The sky and the far land as far, so the shade has no step where they meet. The fog: the
+    // whole way, in even steps.
+    const float REACH = 5000.0;
+    float shadeDist = min(dist, REACH);
+    float step = dist / N;
     // Each pixel of a 4x4 block its own start along the steps, in order (no grain): raysblur.hlsl takes the block's
     // average.
     float start = Bayer4(floor(uv * ScreenSize.xy));
-    float t = step * start, ts = shadeStep * start;
+    float t = step * start;
     float shade = 0, fog = 0;
     [loop] for (int i = 0; i < N; i++) {
         fog += exp(-max(CameraPos.z + dir.z * t - GroundZ, 0.0) / FOGHEIGHT);
+        // (along the way by the square of the step's share: its length there the square's slope)
+        float f = (i + start) / N;
+        float ts = shadeDist * f * f, span = shadeDist * 2.0 * f / N;
         float3 p = CameraPos.xyz + dir * ts;
         float h = max(p.z - GroundZ, 0.0);
         float dens = exp(-h / FOGHEIGHT);
@@ -89,12 +94,11 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
             if (l < 0.99 && !CasterAbove(p)) l = 1.0;  // nothing between p and the moon: p in its light
             l = lerp(l, 1.0, saturate(h / (FOGHEIGHT * 3.0)));
         }
-        shade += dens * (1.0 - l);
+        shade += dens * (1.0 - l) * span * (1.0 - smoothstep(REACH * 0.75, REACH, ts));
         t += step;
-        ts += shadeStep;
     }
     // (as thick as the pack's fog: lit.hlsl's measure; the shade's columns are thin, so it counts more)
     float k = FOG * 0.0025;
-    return float4(1.0 - exp(-fog * step * k), 1.0 - exp(-shade * shadeStep * k * 6.0), 0, 1);
+    return float4(1.0 - exp(-fog * step * k), 1.0 - exp(-shade * k * 6.0), 0, 1);
 #endif
 }
