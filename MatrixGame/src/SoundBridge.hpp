@@ -32,10 +32,22 @@ void master_volume(float value);
 // Battle music track paths from the packaged and loose file names in music\BATTLE: case-insensitive
 // name order, with one entry for names that differ only in case.
 std::vector<std::wstring> merge_tracks(std::vector<std::wstring> packed, const std::vector<std::wstring> &loose);
-// The tracks of the registered packages and the loose music\BATTLE folder.
+// The original's planetary battle tracks (Space Rangers HD's Music.Robot list) that music.pkg or the folders have,
+// then the person's own files in the music\BATTLE folder. Without any of the original's: music\BATTLE alone
+// (packaged and loose).
 std::vector<std::wstring> battle_tracks();
+// The track the next session starts with (tests); without it a random one.
+void first_track(size_t index);
 // Starts standalone battle music on the first call and keeps its queue filled; call once per frame.
 void update_music();
+// A battle frame at now_ms: music starts once frames come smoothly (min_smooth_frames in a row, each within
+// smooth_frame_ms of the last), then update_music every frame. The first frames, under the loading screen, take
+// seconds each: music started in them played a moment and fell silent until the battle ran.
+inline constexpr int min_smooth_frames = 10;
+inline constexpr uint32_t smooth_frame_ms = 150;
+void battle_frame(uint32_t now_ms);
+// Tests: music starts at the next battle frame, without waiting for smooth ones.
+void skip_music_wait();
 // Standalone MusicVolume level; retained across services. Host audio ignores it.
 void music_volume(float value);
 float music_volume();

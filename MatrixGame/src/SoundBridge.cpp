@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cwctype>
 #include <filesystem>
+#include <optional>
+#include <random>
 
 namespace SoundBridge {
 namespace {
@@ -19,12 +21,22 @@ std::unique_ptr<Audio::Service> standalone;
 std::unique_ptr<Audio::Music> music;
 float master = 1.0f;
 float music_setting = 1.0f;
-size_t next_track = 0;  // Each session starts with the track after the last one played.
+// Each session starts with the track after the last one played; the first one a random track.
+std::optional<size_t> next_track;
+// battle_frame: music waits for smooth frames (reset by initialize_standalone).
+bool music_started = false;
+int smooth_frames = 0;
+uint32_t last_frame_ms = 0;
 // initialize_standalone created the service, so it can be recreated after a device error.
 bool recreatable = false;
 int recoveries = 0;  // Recreations after device errors since initialize_standalone.
 constexpr int recovery_limit = 3;
 constexpr wchar_t music_folder[] = L"music\\BATTLE";
+// Space Rangers HD's planetary battle playlist (CFG\Main.dat: Music.Robot), in its music.pkg.
+constexpr const wchar_t *robot_playlist[] = {
+    L"music\\REV\\nikinit_resistance.dat", L"music\\PLANET\\bunker.dat",        L"music\\PLANET\\RobotForce.dat",
+    L"music\\REV\\nikinit_duel.dat",       L"music\\REV\\nikinit_machine_war.dat", L"music\\REV\\nikinit_robotech.dat",
+    L"music\\FLY\\Beyond_reach.dat",       L"music\\SPECIAL\\SpaceIsCalling.dat",  L"music\\SPECIAL\\outroden.dat"};
 
 void report(const std::wstring &name, const std::string &message) {
     lgr.error("Audio {}: {}")(utils::from_wstring(name), message);
@@ -107,8 +119,23 @@ std::vector<std::wstring> battle_tracks() {
          !error && it != end; it.increment(error)) {
         if (it->is_regular_file(error)) loose.push_back(it->path().filename().wstring());
     }
-    return merge_tracks(Base::CFile::PackedFileNames(music_folder), loose);
+    std::vector<std::wstring> tracks;
+    for (const wchar_t *track : robot_playlist) {
+        const std::filesystem::path path(track);
+        bool present = std::filesystem::is_regular_file(path, error);
+        if (!present) {
+            const std::wstring name = folded(path.filename().wstring());
+            for (const auto &packed : Base::CFile::PackedFileNames(path.parent_path().wstring()))
+                if (folded(packed) == name) present = true;
+        }
+        if (present) tracks.push_back(track);
+    }
+    if (tracks.empty()) return merge_tracks(Base::CFile::PackedFileNames(music_folder), loose);
+    for (auto &own : merge_tracks({}, loose)) tracks.push_back(std::move(own));
+    return tracks;
 }
+
+void first_track(size_t index) { next_track = index; }
 
 bool available() { return g_RangersInterface != nullptr || standalone != nullptr; }
 namespace {
@@ -155,7 +182,8 @@ void install(std::unique_ptr<Audio::Service> service) {
 void install_music(std::vector<std::wstring> tracks, Audio::Loader loader, Audio::DecoderFactory open) {
     music.reset();
     if (!standalone || tracks.empty()) return;
-    music = std::make_unique<Audio::Music>(standalone->device(), std::move(tracks), next_track, std::move(loader),
+    if (!next_track) next_track = size_t(std::random_device{}());
+    music = std::make_unique<Audio::Music>(standalone->device(), std::move(tracks), *next_track, std::move(loader),
                                            std::move(open), report);
     music->volume(music_setting);
 }
@@ -164,6 +192,9 @@ void shutdown() { install(nullptr); }
 void initialize_standalone(bool resources_available) {
     shutdown();
     recoveries = 0;
+    music_started = false;
+    smooth_frames = 0;
+    last_frame_ms = 0;
     if (resources_available) start(1);
 }
 
@@ -223,6 +254,17 @@ void master_volume(float value) {
 }
 void update_music() {
     if (music) music->update();
+}
+void skip_music_wait() { music_started = true; }
+void battle_frame(uint32_t now_ms) {
+    if (!music_started) {
+        smooth_frames = last_frame_ms != 0 && now_ms - last_frame_ms <= smooth_frame_ms ? smooth_frames + 1 : 0;
+        last_frame_ms = now_ms == 0 ? 1 : now_ms;
+        if (smooth_frames < min_smooth_frames) return;
+        music_started = true;
+        if (music) lgr.notice("Battle music starts: the battle runs smoothly");
+    }
+    update_music();
 }
 void music_volume(float value) {
     music_setting = normalized(value);

@@ -6,6 +6,7 @@
 #include "Mods.hpp"
 #include "ShaderPacks.hpp"
 #include "ShaderMenu.hpp"
+#include "PackMenu.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -44,6 +45,7 @@ enum class Row {
     RobotShadows,
     ShowFps,         // the frame rate under the battle's Menu button
     Shaders,         // opens the shaders page (ShaderPacks): on, the pack, its settings
+    ResourcePacks,   // opens the resource packs page (PackMenu): from the next start
     GameplayGroup,
     CameraSpeed,
     RandomGenerator,
@@ -165,7 +167,10 @@ public:
     // A text in at most `count` lines of a place `width` wide, broken at spaces (the last cut with "...").
     std::vector<std::wstring> lines(const std::wstring &text, const wchar_t *font, int width, int count) const;
     // The shaders screens' window taller by these rows (as the screen allows): more packs and settings shown.
-    void set_extra_rows(int rows) { m_ShaderMenu.set_extra_rows(rows); }
+    void set_extra_rows(int rows) {
+        m_ShaderMenu.set_extra_rows(rows);
+        m_PackMenu.set_extra_rows(rows);
+    }
     // The window's content height on the page shown (the shaders screens' Layout::content_height and their extra rows).
     int content_height() const;
     // The rows shown on the main, keys and mods pages (tall_rows unless set: rows_for_screen).
@@ -224,6 +229,14 @@ public:
     void close_shaders();
     ShaderMenu::Menu &shader_menu() { return m_ShaderMenu; }
     const ShaderMenu::Menu &shader_menu() const { return m_ShaderMenu; }
+    // The resource packs screen (Row::ResourcePacks opens it): its Done and Cancel (close_packs) back to the main page.
+    bool packs_page() const { return m_PacksPage; }
+    void close_packs();
+    void set_pack_menu(PackMenu::Menu menu) { m_PackMenu = std::move(menu); }
+    PackMenu::Menu &pack_menu() { return m_PackMenu; }
+    const PackMenu::Menu &pack_menu() const { return m_PackMenu; }
+    // A page with its own buttons and the shaders screens' width (the shaders screens, the resource packs screen).
+    bool wide_page() const { return m_ShadersPage || m_PacksPage; }
     // A row of a mods folder's mod's setting.
     bool setting_row(int row) const;
     // One under its personal mod's row (drawn further in; a battle mod's stands alone, the mod named in it).
@@ -313,6 +326,8 @@ private:
     std::wstring m_ShadersProblem;
     TextWidth m_TextWidth;
     bool m_ShadersPage = false;
+    PackMenu::Menu m_PackMenu;
+    bool m_PacksPage = false;
 
     std::string m_Asking;  // the mod a question is about (asking)
 
@@ -362,5 +377,7 @@ struct Frame {
     bool operator==(const Frame &) const = default;
 };
 std::vector<Frame> frames(const Window &window);
+// A resource pack's picture on the packs screen (the window makes it from the pack's pack.png): its bitmap's name.
+std::wstring pack_icon_name(int pack);
 
 }  // namespace SettingsModel

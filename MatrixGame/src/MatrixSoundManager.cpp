@@ -15,7 +15,14 @@
 #include <vector>
 #include <fstream>
 
-#define MAX_SOUNDS 16  // 16 mixed sound for SL_ALL
+// Sounds mixed at once; a new one past them stops the quietest. The original 16 cut sounds off in a large battle
+// (robots' engines and shots fill them); the standalone game's own mixer (XAudio2) takes many more. The DLL keeps
+// its host's 16.
+#ifdef BUILD_EXE
+#define MAX_SOUNDS 64
+#else
+#define MAX_SOUNDS 16
+#endif
 
 #define SOUND_FULL_VOLUME_DIST 200
 

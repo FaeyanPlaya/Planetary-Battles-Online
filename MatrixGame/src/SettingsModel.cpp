@@ -79,7 +79,8 @@ bool is_group(int row) {
 bool mods_row(int row) { return row >= mods_first && row < row_count; }
 
 bool opener(int row) {
-    return row == static_cast<int>(Row::Keys) || row == static_cast<int>(Row::Mods) || row == static_cast<int>(Row::Shaders);
+    return row == static_cast<int>(Row::Keys) || row == static_cast<int>(Row::Mods) || row == static_cast<int>(Row::Shaders) ||
+           row == static_cast<int>(Row::ResourcePacks);
 }
 
 namespace {
@@ -107,6 +108,7 @@ bool needs_restart(int row) {
     const auto value = static_cast<Row>(row);
     // NewSky: the sky is loaded with the map, so from the next battle; SavedDesigns: a battle loads that many.
     return value == Row::Skybox || value == Row::Language || value == Row::RobotShadows || value == Row::RandomGenerator || value == Row::NewSky ||
+           value == Row::ResourcePacks ||
            value == Row::SavedDesigns || (value == Row::DelayedDamage && g_battle_rules_locked);
 }
 
@@ -353,7 +355,7 @@ void Window::set_personal(const char *id, bool on) {
 }
 
 bool Window::select(int row) {
-    const bool on_page = m_ShadersPage ? false
+    const bool on_page = wide_page() ? false
                          : m_ModsPage  ? mods_row(row) || row >= row_count
                                        : row < row_count && !mods_row(row);
     if (!enabled(row) || !on_page || row == m_Selected) return false;
@@ -396,6 +398,12 @@ void Window::close_shaders() {
     show(m_Selected);
 }
 
+void Window::close_packs() {
+    m_Selected = static_cast<int>(Row::ResourcePacks);
+    m_PacksPage = false;
+    show(m_Selected);
+}
+
 bool Window::change(int row, int direction) {
     if (row == static_cast<int>(Row::Keys)) {  // either arrow, Enter or a click opens it
         m_KeysPage = true;
@@ -412,6 +420,11 @@ bool Window::change(int row, int direction) {
         m_ShadersPage = true;
         m_ShaderMenu.open();
         fit_header();
+        return true;
+    }
+    if (row == static_cast<int>(Row::ResourcePacks)) {
+        m_PacksPage = true;
+        m_PackMenu.open();
         return true;
     }
     if (!enabled(row) || direction == 0) return false;
@@ -539,7 +552,7 @@ int Window::text_width(const std::wstring &text, const wchar_t *font) const {
 }
 
 int Window::content_height() const {
-    if (m_ShadersPage) return Layout::content_height + m_ShaderMenu.extra_rows() * Layout::row_height;
+    if (wide_page()) return Layout::content_height + m_ShaderMenu.extra_rows() * Layout::row_height;
     return legend_y() + Layout::row_height;  // (a failed save's text in the legend's place)
 }
 
@@ -549,6 +562,7 @@ const wchar_t *Window::text(const wchar_t *english, const wchar_t *russian) cons
 
 std::wstring Window::title() const {
     if (m_ShadersPage) return m_ShaderMenu.title();
+    if (m_PacksPage) return m_PackMenu.title();
     if (m_ModsPage) return text(L"Mods", L"\u041c\u043e\u0434\u044b");  // Mody
     return text(L"Settings", L"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438");  // Nastroiki
 }
@@ -617,6 +631,7 @@ std::wstring Window::label(int row) const {
         case Row::Keys: result = text(L"Keys", L"\u041a\u043b\u0430\u0432\u0438\u0448\u0438"); break;  // Klavishi
         case Row::Mods: result = text(L"Mods", L"\u041c\u043e\u0434\u044b"); break;
         case Row::Shaders: result = text(L"Shaders", L"\u0428\u0435\u0439\u0434\u0435\u0440\u044b"); break;
+        case Row::ResourcePacks: result = text(L"Resource packs", L"Ресурспаки"); break;
         case Row::CameraSpeed:
             result = text(L"Camera speed", L"\u0421\u043a\u043e\u0440\u043e\u0441\u0442\u044c \u043a\u0430\u043c"
                                            L"\u0435\u0440\u044b");
@@ -700,6 +715,7 @@ std::wstring Window::value(int row) const {
         case Row::SavedDesigns: return std::to_wstring(values.saved_designs);
         case Row::Keys:
         case Row::Mods: return text(L"Change", L"\u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c");  // Izmenit'
+        case Row::ResourcePacks: return text(L"Open", L"Открыть");
         case Row::Shaders: {
             const auto &menu = m_ShaderMenu;
             const auto &applied = menu.applied();
@@ -721,6 +737,10 @@ std::wstring Window::legend() const {
     if (m_ShadersPage) {
         bool error = false;
         return m_ShaderMenu.legend(m_ShadersProblem, error);
+    }
+    if (m_PacksPage) {
+        bool error = false;
+        return m_PackMenu.legend(error);
     }
     return text(L"* Applies after restart", L"* \u041f\u0440\u0438\u043c\u0435\u043d\u044f\u0435\u0442\u0441\u044f "
                                             L"\u043f\u043e\u0441\u043b\u0435 \u043f\u0435\u0440\u0435\u0437\u0430"
@@ -859,7 +879,7 @@ namespace {
 std::wstring options_text(const Window &window);
 }
 
-int Window::width() const { return m_ShadersPage ? ShaderMenu::Layout::width : Layout::width; }
+int Window::width() const { return wide_page() ? ShaderMenu::Layout::width : Layout::width; }
 
 void Window::fit_header() {
     const auto fitted = [&](ShaderMenu::Button button) {
@@ -872,7 +892,7 @@ std::wstring hint_template(const Window &window) {
     // The blank block sizes the frame. The copied holes are transparent, so the OK and Cancel hint
     // buttons placed at their positions show through, as in the Exit/Reset/Surrender confirmations.
     // The shaders screens have their own buttons: no holes.
-    const std::wstring holes = window.shaders_page() ? L"" : L"|_MOD:COPY|_BITMAP:bhole2:CL:6|_MOD:COPY|_BITMAP:bhole2:CR:6";
+    const std::wstring holes = window.wide_page() ? L"" : L"|_MOD:COPY|_BITMAP:bhole2:CL:6|_MOD:COPY|_BITMAP:bhole2:CR:6";
     return std::to_wstring(UiTheme::border()) + L"|_BORDER:0:0:0:28|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(window.width()) + L"|_HEIGHT:" +
            std::to_wstring(window.content_height()) + L"|_TEXTP:L|_TEXT: " + holes + L"|_TEXTP:B" + options_text(window);
 }
@@ -881,7 +901,7 @@ std::wstring startup_template(const Window &window) {
     std::wstring result = std::to_wstring(UiTheme::border()) + L"|_BORDER:0:0:0:0|_FONT:Font.Heavy14|_WIDTH:" + std::to_wstring(window.width()) + L"|_HEIGHT:" +
                           std::to_wstring(window.content_height() + StartupLayout::buttons_room) +
                           L"|_TEXTP:L|_TEXT: |_TEXTP:B" + options_text(window);
-    if (window.shaders_page()) return result;
+    if (window.wide_page()) return result;
     const bool russian = window.language() == Language::Russian;
     const int buttons_y = window.content_height();
     result += text_element(russian ? L"( \u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c )" : L"( Apply )",
@@ -893,7 +913,7 @@ std::wstring startup_template(const Window &window) {
 }
 
 int startup_button(const Window &window, int x, int y) {
-    if (window.shaders_page()) return 0;
+    if (window.wide_page()) return 0;
     const int buttons_y = window.content_height();
     if (y < buttons_y || y >= buttons_y + Layout::row_height) return 0;
     if (x >= StartupLayout::apply_x && x < StartupLayout::apply_x + StartupLayout::button_width) return 1;
@@ -1127,9 +1147,124 @@ std::wstring shaders_text(const Window &window) {
     return result;
 }
 
+// The resource packs screen's frames: the pack in focus, a picture's frame where a pack has none, the arrow's shade
+// over a picture under the pointer, the buttons.
+std::vector<Placed> pack_frames(const Window &window) {
+    std::vector<Placed> result;
+    const auto add = [&](int x, int y, int width, int height, uint32_t border, uint32_t fill) {
+        result.push_back({{frame_name(width, height, border, fill), width, height, border, fill}, x, y});
+    };
+    using PL = PackMenu::Layout;
+    const auto &menu = window.pack_menu();
+    // The two lists' frames, first (under the rest).
+    for (const auto side : {PackMenu::Side::Available, PackMenu::Side::Chosen})
+        add(menu.column_x(side) - 2, PL::list_y - 2, PL::column_width + 4, menu.rows() * PL::row_height + 4,
+            with_alpha(arrow_color(), 0x80), with_alpha(text_color(), 0x0C));
+    for (const auto side : {PackMenu::Side::Available, PackMenu::Side::Chosen}) {
+        const auto shown = menu.list(side);
+        for (int row = 0; row < menu.rows() && menu.top(side) + row < int(shown.size()); ++row) {
+            const int place = menu.top(side) + row;
+            const int x = menu.column_x(side), y = menu.row_y(row);
+            if (side == menu.focus_side() && place == menu.focus())
+                add(x, y + 1, PL::column_width, PL::row_height - 2, selected_color(), with_alpha(selected_color(), 0x24));
+            if (menu.packs()[shown[place]].icon.empty())
+                add(x + 2, y + 2, PL::icon, PL::icon, arrow_color(), with_alpha(text_color(), 0x14));
+            if (menu.icon_hover(side, place))
+                add(x + 2, y + 2, PL::icon, PL::icon, selected_color(), with_alpha(0xFF000000, 0x80));
+        }
+    }
+    for (const auto &button : menu.buttons()) {
+        const bool enabled = menu.enabled(button.button), hover = enabled && menu.hover() == button.button;
+        const uint32_t border = !enabled ? with_alpha(disabled_color(), 0x90) : hover ? selected_color() : arrow_color();
+        const uint32_t fill = !enabled ? 0 : hover ? with_alpha(selected_color(), 0x30) : with_alpha(text_color(), 0x14);
+        add(button.x, button.y, button.width, PL::button_height, border, fill);
+    }
+    return result;
+}
+
+std::wstring packs_text(const Window &window) {
+    using PL = PackMenu::Layout;
+    const auto &menu = window.pack_menu();
+    std::wstring result = text_element(window.title(), L"Font.2Ranger", text_color(), 0, Layout::title_y, PL::width, 1);
+    const auto frames = pack_frames(window);
+    std::size_t next = 0;
+    const auto frame_here = [&]() {
+        const auto &placed = frames[next++];
+        result += bitmap_at(placed.x, placed.y, placed.frame.name);
+    };
+    frame_here();
+    frame_here();
+    std::wstring whole;  // the description of the pack in focus when its row cuts it
+    for (const auto side : {PackMenu::Side::Available, PackMenu::Side::Chosen}) {
+        const int x = menu.column_x(side);
+        result += text_element(menu.header(side), L"Font.Heavy14", group_color(), x, PL::header_y, PL::column_width, 1);
+        const auto shown = menu.list(side);
+        for (int row = 0; row < menu.rows() && menu.top(side) + row < int(shown.size()); ++row) {
+            const int place = menu.top(side) + row;
+            const int pack = shown[place];
+            const int y = menu.row_y(row);
+            const bool focused = side == menu.focus_side() && place == menu.focus();
+            if (focused) frame_here();
+            const bool broken = !menu.packs()[pack].problem.empty();
+            if (menu.packs()[pack].icon.empty()) frame_here();
+            else result += bitmap_at(x + 2, y + 2, pack_icon_name(pack));
+            if (menu.icon_hover(side, place)) {
+                frame_here();
+                // Which way a click sends it: right into the chosen, left out of them.
+                result += text_element(side == PackMenu::Side::Available ? L"\u2192" : L"\u2190", L"Font.Arrows24",
+                                       0xFFFFFFFF, x + 2, y + 2 + (PL::icon - 28) / 2, PL::icon, 1);
+            }
+            const int text_width = PL::column_width - PL::text_x - 4;
+            const uint32_t color = broken ? disabled_color() : focused ? selected_color() : text_color();
+            result += text_element(window.fit(menu.name(pack), L"Font.Heavy14", text_width), L"Font.Heavy14", color,
+                                   x + PL::text_x, y + 1, text_width, 0);
+            const std::wstring description = menu.description(pack), cut = window.fit(description, L"Font.Heavy13", text_width);
+            if (focused && cut != description) whole = description;
+            result += text_element(cut, L"Font.Heavy13", broken ? error_color() : legend_color(), x + PL::text_x, y + 18,
+                                   text_width, 0);
+        }
+        // Scrolled: arrows by the column's first and last row while it goes on that way.
+        const int arrow_x = x + PL::column_width - 14;
+        if (menu.more_above(side))
+            result += text_element(up_arrow, L"Font.Arrows14", group_color(), arrow_x, PL::header_y, 14, 0);
+        if (menu.more_below(side))
+            result += text_element(down_arrow, L"Font.Arrows14", group_color(), arrow_x, menu.legend_y() - 20, 14, 0);
+    }
+    bool error = false;
+    std::wstring legend = window.error() ? window.error_text() : menu.legend(error);
+    error = error || window.error();
+    if (!error && !whole.empty()) legend = whole;
+    constexpr int legend_width = PL::buttons_right - PL::buttons_left;
+    result += text_element(window.fit(legend, L"Font.Heavy13", legend_width), L"Font.Heavy13",
+                           error ? error_color() : legend_color(), PL::buttons_left, menu.legend_y(), legend_width, 1);
+    result += text_element(menu.notice(), L"Font.Heavy13", group_color(), PL::buttons_left, menu.legend_y() + 14,
+                           legend_width, 1);
+    // The buttons: ↑ and ↓ drawn in the arrows' font before their keys.
+    for (const auto &button : menu.buttons()) {
+        frame_here();
+        const bool enabled = menu.enabled(button.button);
+        const uint32_t color = !enabled ? disabled_color() : menu.hover() == button.button ? selected_color() : text_color();
+        const std::wstring label = menu.button_text(button.button);
+        const bool arrow = button.button == PackMenu::Button::Up || button.button == PackMenu::Button::Down;
+        if (!arrow) {
+            result += text_element(window.fit(label, L"Font.Heavy14", button.width), L"Font.Heavy14", color, button.x,
+                                   button.y + 2, button.width, 1);
+            continue;
+        }
+        const int label_width = window.text_width(label, L"Font.Heavy14"), arrow_width = 12, space = 6;
+        const int left = button.x + (button.width - arrow_width - space - label_width) / 2;
+        result += text_element(button.button == PackMenu::Button::Up ? up_arrow : down_arrow, L"Font.Arrows14", color,
+                               left, button.y + 1, arrow_width + 4, 0);
+        result += text_element(label, L"Font.Heavy14", color, left + arrow_width + space, button.y + 2,
+                               label_width + 6, 0);
+    }
+    return result;
+}
+
 std::wstring options_text(const Window &window) {
     if (window.keys_page()) return keys_text(window);
     if (window.shaders_page()) return shaders_text(window);
+    if (window.packs_page()) return packs_text(window);
     std::wstring result;
     result += text_element(window.title(), L"Font.2Ranger", text_color(), 0, Layout::title_y, Layout::width, 1);
     const auto &order = window.page_rows();
@@ -1191,10 +1326,12 @@ std::wstring options_text(const Window &window) {
 
 std::vector<Frame> frames(const Window &window) {
     std::vector<Frame> result;
-    if (!window.shaders_page()) return result;
-    for (const auto &placed : shader_frames(window))
+    if (!window.wide_page()) return result;
+    for (const auto &placed : window.shaders_page() ? shader_frames(window) : pack_frames(window))
         if (std::ranges::find(result, placed.frame) == result.end()) result.push_back(placed.frame);
     return result;
 }
+
+std::wstring pack_icon_name(int pack) { return L"ResourcePackIcon" + std::to_wstring(pack); }
 
 }  // namespace SettingsModel

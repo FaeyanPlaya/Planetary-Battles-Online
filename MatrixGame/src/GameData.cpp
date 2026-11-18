@@ -124,6 +124,16 @@ fs::path install_file(const fs::path &game) { return game / L"CFG" / L"game-path
 
 }  // namespace
 
+fs::path music_file(const fs::path &game) {
+    const fs::path own = game / L"DATA" / L"music.pkg";
+    if (file_exists(own)) return own;
+    if (const auto install = load_install(game); install && !install->path.empty()) {
+        const fs::path theirs = install->path / L"DATA" / L"music.pkg";
+        if (file_exists(theirs)) return theirs;
+    }
+    return {};
+}
+
 bool is_install(const fs::path &folder) {
     return file_exists(folder / L"Rangers.exe") && file_exists(folder / L"DATA" / L"robots.pkg");
 }

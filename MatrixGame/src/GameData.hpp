@@ -40,6 +40,10 @@ std::vector<Copy> language_files(const std::filesystem::path &install, const std
 // Those the game folder lacks, from the install saved (CFG\game-path.txt), quietly. PBO_NO_SETUP turns it off.
 void import_languages(const std::filesystem::path &game);
 
+// The battle music: DATA\music.pkg of the game folder, else the saved install's (CFG\game-path.txt), read where
+// it is (300+ MB, not copied; only read). Empty: neither has it.
+std::filesystem::path music_file(const std::filesystem::path &game);
+
 // First start without DATA\robots.pkg: finds the game, asks (assume_yes: takes the first install
 // found, for tests), copies. The install is only read. False when robots.pkg is still missing.
 // The environment variable PBO_NO_SETUP turns it off (startup tests).

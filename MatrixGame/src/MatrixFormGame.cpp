@@ -407,8 +407,9 @@ void CFormMatrixGame::Takt(int step) {
 
     // A device error replaces standalone audio, so sound handles from before it are dropped.
     if (SoundBridge::recover()) CSound::Clear();
-    // Keep music queued even while display changes or a lost device skip the rest of the frame.
-    SoundBridge::update_music();
+    // Keep music queued even while display changes or a lost device skip the rest of the frame (it starts once the
+    // battle runs smoothly).
+    SoundBridge::battle_frame(timeGetTime());
     // The battle's notices expire in every kind of battle (the network loop also calls it).
     BattleNotice::update();
 

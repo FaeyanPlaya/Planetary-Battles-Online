@@ -964,25 +964,25 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
             random::CosmeticScope cosmetic;  // feedback for this client only
             int rnd = g_MatrixMap->Rnd(0, 6);
             if (!rnd) {
-                CSound::Play(S_SELECTION_1, SL_SELECTION);
+                CSound::Play(S_SELECTION_1);  // (on its own: a next selection no longer stops it)
             }
             else if (rnd == 1) {
-                CSound::Play(S_SELECTION_2, SL_SELECTION);
+                CSound::Play(S_SELECTION_2);  // (on its own: a next selection no longer stops it)
             }
             else if (rnd == 2) {
-                CSound::Play(S_SELECTION_3, SL_SELECTION);
+                CSound::Play(S_SELECTION_3);  // (on its own: a next selection no longer stops it)
             }
             else if (rnd == 3) {
-                CSound::Play(S_SELECTION_4, SL_SELECTION);
+                CSound::Play(S_SELECTION_4);  // (on its own: a next selection no longer stops it)
             }
             else if (rnd == 4) {
-                CSound::Play(S_SELECTION_5, SL_SELECTION);
+                CSound::Play(S_SELECTION_5);  // (on its own: a next selection no longer stops it)
             }
             else if (rnd == 5) {
-                CSound::Play(S_SELECTION_6, SL_SELECTION);
+                CSound::Play(S_SELECTION_6);  // (on its own: a next selection no longer stops it)
             }
             else if (rnd == 6) {
-                CSound::Play(S_SELECTION_7, SL_SELECTION);
+                CSound::Play(S_SELECTION_7);  // (on its own: a next selection no longer stops it)
             }
         }
     }
@@ -999,12 +999,12 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
             m_Constructor->SetBase((CMatrixBuilding *)pObject);
 
             if (FLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_BASE_SEL_ENABLED))
-                CSound::Play(S_BASE_SEL, SL_SELECTION);
+                CSound::Play(S_BASE_SEL);  // (on its own: a next selection no longer stops it)
 
             SETFLAG(g_MatrixMap->m_Flags, MMFLAG_SOUND_BASE_SEL_ENABLED);
         }
         else {
-            CSound::Play(S_BUILDING_SEL, SL_SELECTION);
+            CSound::Play(S_BUILDING_SEL);  // (on its own: a next selection no longer stops it)
         }
     }
     else if (type == TURRET && pObject) {
@@ -1014,7 +1014,7 @@ void CMatrixSideUnit::Select(ESelType type, CMatrixMapStatic *pObject) {
         m_SelTurrets = {pObject->AsCannon()};
         m_CurSelNum = 0;
         g_IFaceList->CreateTurretPersonal(pObject->AsCannon());
-        CSound::Play(S_BUILDING_SEL, SL_SELECTION);
+        CSound::Play(S_BUILDING_SEL);  // (on its own: a next selection no longer stops it)
     }
     else if (type == GROUP) {
         m_CurrSel = GROUP_SELECTED;

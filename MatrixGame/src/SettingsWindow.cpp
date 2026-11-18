@@ -5,6 +5,8 @@
 #include "StandaloneRuntime.hpp"
 #include "Mods.hpp"
 #include "ShaderPacks.hpp"
+#include "ResourcePacks.hpp"
+#include "PackMenu.hpp"
 #include "ShaderRender.hpp"
 #include "UiTheme.hpp"
 #include "ModInfoWindow.hpp"
@@ -91,9 +93,12 @@ void prepare_frames() {
     }
 }
 
+void release_pack_icons();
+
 void release_frames() {
     for (const auto &made : frame_bitmaps) CMatrixHint::SetRuntimeBitmap(made.first, nullptr);
     frame_bitmaps.clear();
+    release_pack_icons();
 }
 
 // The packs read anew: as the shaders screens open, and when the game is in front after their folder was opened.
@@ -102,12 +107,84 @@ void refresh_packs() {
     model->shader_menu().set_packs(ShaderPacks::installed());
 }
 
+// The resource packs' pictures (pack.png) as the packs screen's bitmaps, PackMenu::Layout::icon square.
+std::vector<std::pair<std::wstring, std::unique_ptr<CBitmap>>> pack_icons;
+bool resource_packs_shown = false;
+bool resource_folder_opened = false;
+
+void release_pack_icons() {
+    for (const auto &made : pack_icons) CMatrixHint::SetRuntimeBitmap(made.first, nullptr);
+    pack_icons.clear();
+}
+
+// A picture as a square of `side` pixels (B, G, R, A), its own proportions kept in its middle; nullptr: not one.
+std::unique_ptr<CBitmap> icon_from(const std::string &png, int side) {
+    CBitmap source;
+    try {
+        if (png.empty() || !source.LoadFromPNG(const_cast<char *>(png.data()), int(png.size()))) return nullptr;
+    }
+    catch (...) {
+        return nullptr;
+    }
+    const int bpp = source.BytePP(), w = source.SizeX(), h = source.SizeY();
+    if ((bpp != 3 && bpp != 4 && bpp != 1) || w <= 0 || h <= 0 || source.Format() == 4) return nullptr;
+    auto icon = std::make_unique<CBitmap>();
+    icon->CreateRGBA(side, side);
+    std::memset(icon->Data(), 0, std::size_t(icon->Pitch()) * side);
+    const float scale = std::min(float(side) / w, float(side) / h);
+    const int dw = std::max(1, int(w * scale)), dh = std::max(1, int(h * scale));
+    const int ox = (side - dw) / 2, oy = (side - dh) / 2;
+    for (int y = 0; y < dh; ++y)
+        for (int x = 0; x < dw; ++x) {
+            // The source's pixels under this one, averaged.
+            const int x0 = x * w / dw, x1 = std::max(x0 + 1, (x + 1) * w / dw);
+            const int y0 = y * h / dh, y1 = std::max(y0 + 1, (y + 1) * h / dh);
+            unsigned sum[4] = {0, 0, 0, 0}, n = 0;
+            for (int sy = y0; sy < y1; ++sy)
+                for (int sx = x0; sx < x1; ++sx, ++n) {
+                    const uint8_t *p = source.Data() + (h - 1 - sy) * source.Pitch() + sx * bpp;  // (its rows from the bottom)
+                    if (bpp == 1) {
+                        sum[0] += p[0];
+                        sum[1] += p[0];
+                        sum[2] += p[0];
+                        sum[3] += 255;
+                    }
+                    else
+                        for (int c = 0; c < 4; ++c) sum[c] += c < bpp ? p[c] : 255;
+                }
+            uint8_t *d = icon->Data() + (oy + y) * icon->Pitch() + (ox + x) * 4;
+            for (int c = 0; c < 4; ++c) d[c] = uint8_t(sum[c] / n);
+        }
+    return icon;
+}
+
+void prepare_pack_icons() {
+    release_pack_icons();
+    const auto &packs = model->pack_menu().packs();
+    for (int i = 0; i < int(packs.size()); ++i) {
+        auto icon = icon_from(packs[i].icon, PackMenu::Layout::icon);
+        if (!icon) continue;
+        const std::wstring name = SettingsModel::pack_icon_name(i);
+        CMatrixHint::SetRuntimeBitmap(name, icon.get());
+        pack_icons.emplace_back(name, std::move(icon));
+    }
+}
+
+// The resource packs read anew: as their screen opens, and when the game is in front after their folder was opened.
+void refresh_resource_packs() {
+    ResourcePacks::rescan();
+    model->pack_menu().set_packs(ResourcePacks::installed());
+    prepare_pack_icons();
+}
+
 bool game_in_front() { return GetForegroundWindow() == g_Wnd; }
 
 void prepare_buttons() {
     if (model) {
         if (model->shaders_page() && !shaders_shown) refresh_packs();
         shaders_shown = model->shaders_page();
+        if (model->packs_page() && !resource_packs_shown) refresh_resource_packs();
+        resource_packs_shown = model->packs_page();
         model->set_shaders_problem(ShaderRender::problem());
         prepare_frames();
     }
@@ -258,6 +335,114 @@ void save_shaders() {
         model->set_error(true);
     }
     ShaderPacks::set_choice(applied);
+}
+
+void open_resource_folder() {
+    std::error_code error;
+    const auto path = std::filesystem::absolute(ResourcePacks::folder, error);
+    std::filesystem::create_directories(path, error);
+    ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    resource_folder_opened = true;
+}
+
+// After the packs screen's key or click: Done saved the choice (used from the next start); Done and Cancel back to
+// the main page.
+void packs_after(PackMenu::After after) {
+    if (after != PackMenu::After::MainPage) return;
+    const auto &applied = model->pack_menu().applied();
+    if (applied != ResourcePacks::load_choice()) {
+        if (ResourcePacks::save_choice(applied)) lgr.notice("Resource packs saved to CFG/resourcepacks.txt");
+        else {
+            lgr.error("Cannot save CFG/resourcepacks.txt");
+            model->set_error(true);
+        }
+    }
+    model->close_packs();
+}
+
+// The packs screen's keys (true: drawn anew).
+bool packs_key(uint8_t vk) {
+    auto &menu = model->pack_menu();
+    if (resource_folder_opened && game_in_front()) {
+        resource_folder_opened = false;
+        refresh_resource_packs();
+    }
+    auto after = PackMenu::After::Stay;
+    switch (vk) {
+        case VK_UP: menu.move(-1); break;
+        case VK_DOWN: menu.move(1); break;
+        case VK_LEFT: menu.switch_side(PackMenu::Side::Available); break;
+        case VK_RIGHT: menu.switch_side(PackMenu::Side::Chosen); break;
+        case VK_SPACE:
+            if (!menu.turn()) return false;
+            break;
+        case VK_RETURN: after = menu.enter(); break;
+        case VK_ESCAPE: after = menu.escape(); break;
+        default: {
+            const auto button = PackMenu::Menu::button_of_key(vk);  // F, PgUp, PgDn as the buttons say
+            if (!menu.enabled(button)) return false;
+            if (button == PackMenu::Button::Folder) open_resource_folder();
+            else after = menu.press(button);
+        }
+    }
+    packs_after(after);
+    return true;
+}
+
+// A click on the packs screen (window coordinates; true: taken). A pack's picture, or a pack clicked twice, moves it
+// across.
+DWORD last_pack_click = 0;
+int last_pack_place = -1;
+PackMenu::Side last_pack_side = PackMenu::Side::Available;
+bool packs_click(int x, int y) {
+    auto &menu = model->pack_menu();
+    const auto target = menu.hit(x, y);
+    auto after = PackMenu::After::Stay;
+    switch (target.kind) {
+        case PackMenu::Hit::Kind::None: return false;
+        case PackMenu::Hit::Kind::Icon:
+            menu.focus_on(target.side, target.place);
+            menu.turn();
+            last_pack_place = -1;
+            break;
+        case PackMenu::Hit::Kind::Pack: {
+            const DWORD now = GetTickCount();
+            const bool twice = target.place == last_pack_place && target.side == last_pack_side &&
+                               now - last_pack_click <= GetDoubleClickTime();
+            menu.focus_on(target.side, target.place);
+            if (twice) menu.turn();
+            last_pack_click = now;
+            last_pack_place = twice ? -1 : target.place;
+            last_pack_side = target.side;
+            break;
+        }
+        case PackMenu::Hit::Kind::Button:
+            if (target.button == PackMenu::Button::Folder) open_resource_folder();
+            else after = menu.press(target.button);
+            break;
+    }
+    packs_after(after);
+    if (model->packs_page()) {
+        const auto now = menu.hit(x, y);  // the button or picture under the pointer now
+        menu.set_hover(now.kind == PackMenu::Hit::Kind::Button ? now.button : PackMenu::Button::None);
+        menu.set_icon_hover(now.side, now.kind == PackMenu::Hit::Kind::Icon ? now.place : -1);
+    }
+    return true;
+}
+
+// The pointer over the packs screen: a button lit, a picture's arrow shown; true: drawn anew.
+bool packs_move(int x, int y) {
+    auto &menu = model->pack_menu();
+    bool update = false;
+    if (resource_folder_opened && game_in_front()) {
+        resource_folder_opened = false;
+        refresh_resource_packs();
+        update = true;
+    }
+    const auto target = menu.hit(x, y);
+    update |= menu.set_hover(target.kind == PackMenu::Hit::Kind::Button ? target.button : PackMenu::Button::None);
+    update |= menu.set_icon_hover(target.side, target.kind == PackMenu::Hit::Kind::Icon ? target.place : -1);
+    return update;
 }
 
 void open_folder() {
@@ -470,6 +655,8 @@ void make_model(const StandaloneSettings::Values &values) {
     model.emplace(values, adapter_modes(), language(), Mods::default_personal(mods), unavailable(), current_keys(),
                   KeyBindings::base(), mods, Mods::setting_values(), ShaderPacks::installed(), ShaderPacks::choice());
     model->set_shaders_problem(ShaderRender::problem());
+    model->set_pack_menu(PackMenu::Menu(ResourcePacks::installed(), ResourcePacks::load_choice(), ResourcePacks::started(),
+                                        language() == SettingsModel::Language::Russian));
     model->set_text_width([](const std::wstring &text, const wchar_t *font) {
         return int(Text::GetFont(g_D3DD, font).CalcTextWidth(text));
     });
@@ -482,6 +669,7 @@ void make_model(const StandaloneSettings::Values &values) {
     model->set_rows(rows);
     model->set_extra_rows(rows - SettingsModel::least_rows);
     shaders_shown = false;
+    resource_packs_shown = false;
 }
 
 void release_menu_highlight() {
@@ -572,6 +760,13 @@ bool keyboard(uint8_t vk, bool down) {
         }
         return true;
     }
+    if (model->packs_page()) {
+        if (packs_key(vk)) {
+            CSound::Play(S_BCLICK);
+            rebuild();
+        }
+        return true;
+    }
     bool update = false;
     switch (vk) {
         case VK_UP:
@@ -623,6 +818,11 @@ void mouse_move(int x, int y) {
         if (shaders_move(x - hint->m_PosX, y - hint->m_PosY)) rebuild();
         return;
     }
+    if (model->packs_page()) {
+        const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
+        if (packs_move(x - hint->m_PosX, y - hint->m_PosY)) rebuild();
+        return;
+    }
     const auto target = hit(x, y);
     if (target.row >= 0 && model->select(target.row)) rebuild();
 }
@@ -636,6 +836,13 @@ bool mouse_down(int x, int y) {
         }
         const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
         if (!shaders_click(x - hint->m_PosX, y - hint->m_PosY)) return false;
+        CSound::Play(S_BCLICK);
+        if (active()) rebuild();
+        return true;
+    }
+    if (model->packs_page()) {
+        const CMatrixHint *hint = g_MatrixMap->m_DialogModeHints[0];
+        if (!packs_click(x - hint->m_PosX, y - hint->m_PosY)) return false;
         CSound::Play(S_BCLICK);
         if (active()) rebuild();
         return true;
@@ -676,6 +883,10 @@ bool mouse_wheel(int notches) {
     }
     else if (model->shaders_page()) {
         model->shader_menu().scroll(-notches);
+        rebuild();
+    }
+    else if (model->packs_page()) {
+        model->pack_menu().scroll(model->pack_menu().focus_side(), -notches);
         rebuild();
     }
     else {  // the main page or the mods page
@@ -847,6 +1058,10 @@ bool startup_keyboard(uint8_t vk, bool down) {
         if (down && shaders_key(vk)) startup_rebuild();
         return true;
     }
+    if (model->packs_page()) {
+        if (down && packs_key(vk)) startup_rebuild();
+        return true;
+    }
     bool update = false;
     switch (vk) {
         case VK_UP: model->move(-1); update = true; break;
@@ -885,6 +1100,10 @@ void startup_mouse_move(int x, int y) {
         if (shaders_move(x - startup_hint->m_PosX, y - startup_hint->m_PosY)) startup_rebuild();
         return;
     }
+    if (model->packs_page()) {
+        if (packs_move(x - startup_hint->m_PosX, y - startup_hint->m_PosY)) startup_rebuild();
+        return;
+    }
     const auto target = model->hit(x - startup_hint->m_PosX, y - startup_hint->m_PosY);
     if (target.row >= 0 && model->select(target.row)) startup_rebuild();
 }
@@ -899,6 +1118,10 @@ bool startup_mouse_down(int x, int y) {
     y -= startup_hint->m_PosY;
     if (model->shaders_page()) {
         if (shaders_click(x, y)) startup_rebuild();
+        return true;
+    }
+    if (model->packs_page()) {
+        if (packs_click(x, y)) startup_rebuild();
         return true;
     }
     if (const int button = SettingsModel::startup_button(*model, x, y)) {
@@ -935,6 +1158,10 @@ bool startup_mouse_wheel(int notches) {
     }
     else if (model->shaders_page()) {
         model->shader_menu().scroll(-notches);
+        startup_rebuild();
+    }
+    else if (model->packs_page()) {
+        model->pack_menu().scroll(model->pack_menu().focus_side(), -notches);
         startup_rebuild();
     }
     else {

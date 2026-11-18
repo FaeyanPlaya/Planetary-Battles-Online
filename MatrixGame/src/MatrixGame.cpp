@@ -19,6 +19,7 @@
 #include "Mods.hpp"
 #include "KeyBindings.hpp"
 #include "MapPacks.hpp"
+#include "ResourcePacks.hpp"
 #include "SettingsWindow.hpp"
 #include "SettingsModel.hpp"
 #include "StartupMenu.hpp"
@@ -158,6 +159,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPTSTR, int)
         GameData::import_languages(app_path.parent_path());
         // Map mods of the person's Space Rangers HD (its Mods folder); a battle a lobby started does not ask again.
         MapPacks::set_game_mods(GameData::game_mods(app_path.parent_path(), !setup_yes && !BattleLoading::has_parent()));
+        // The resource packs chosen: their pictures and sounds over the game's from here on (a change: at the next start).
+        ResourcePacks::start(GameLanguage::folder(GameLanguage::current()));
         if (net.check_maps) MapPacks::request_check();
 
         // The host chooses the map, seed and rules of a shared battle; the others receive them.
@@ -375,7 +378,9 @@ void CGame::Init(HINSTANCE inst, [[maybe_unused]] HWND wnd, const wchar *map,uin
 #endif
     // Audio follows the packages that opened; a damaged optional package counts as missing.
     // The speech in the language chosen when that was copied (GameLanguage::voices_file).
-    const auto audio_packages = Startup::OpenPackages(L"DATA", music, GameLanguage::voices_file(L"", GameLanguage::current()));
+    // The music: the game folder's DATA\music.pkg, else the installed game's, read where it is.
+    const auto audio_packages = Startup::OpenPackages(L"DATA", music, GameLanguage::voices_file(L"", GameLanguage::current()),
+                                                      music ? GameData::music_file(L"") : std::filesystem::path());
 #else
     CFile::AddPackFile(L"DATA\\robots.pkg");
     CFile::OpenPackFiles();
