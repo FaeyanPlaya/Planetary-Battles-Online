@@ -21,6 +21,8 @@ namespace Base {
 namespace {
 std::vector<std::pair<std::wstring, std::wstring>> redirects;  // folded name, real file
 std::vector<std::wstring> search_roots;                         // CFile::SetSearchRoots
+std::vector<std::wstring> pack_roots;                           // CFile::SetPackRoots
+thread_local bool without_packs = false;                        // CFile::WithoutPacks
 
 std::wstring folded_name(std::wstring_view name) {
     std::wstring result(name);
@@ -51,17 +53,51 @@ void CFile::Redirect(const std::wstring &from, const std::wstring &to) {
 void CFile::ClearRedirects(void) { redirects.clear(); }
 
 void CFile::SetSearchRoots(std::vector<std::wstring> roots) { search_roots = std::move(roots); }
+void CFile::SetPackRoots(std::vector<std::wstring> roots) { pack_roots = std::move(roots); }
+const std::vector<std::wstring> &CFile::PackRoots(void) { return pack_roots; }
+
+std::wstring CFile::PackRelative(const std::wstring &name) {
+    const std::wstring folded = folded_name(name);
+    for (const auto &root : pack_roots) {
+        const std::wstring prefix = folded_name(root) + L"\\";
+        if (folded.size() > prefix.size() && folded.compare(0, prefix.size(), prefix) == 0)
+            return name.substr(prefix.size());
+    }
+    return {};
+}
+
+bool CFile::PackExtension(const std::wstring &name) {
+    const auto dot = name.find_last_of(L".\\/");
+    if (dot == std::wstring::npos || name[dot] != L'.') return false;
+    const std::wstring ext = folded_name(std::wstring_view(name).substr(dot + 1));
+    for (const wchar_t *allowed : {L"png", L"jpg", L"jpeg", L"bmp", L"dds", L"tga", L"wav", L"ogg"})
+        if (ext == allowed) return true;
+    return false;
+}
+
+CFile::WithoutPacks::WithoutPacks() : m_Before(without_packs) { without_packs = true; }
+CFile::WithoutPacks::~WithoutPacks() { without_packs = m_Before; }
 
 namespace {
 bool relative(const std::wstring &name) {
     return !name.empty() && name[0] != L'\\' && name[0] != L'/' && !(name.size() > 1 && name[1] == L':');
 }
 
-// A relative name opened for reading in the first search root that has it, as FileExist finds it.
+// The roots searched for a relative name, in order: the resource packs' (unless WithoutPacks; only for what a pack
+// may replace), the search roots.
+std::vector<const std::wstring *> roots_now(const std::wstring &name) {
+    std::vector<const std::wstring *> roots;
+    if (!without_packs && CFile::PackExtension(name))
+        for (const auto &root : pack_roots) roots.push_back(&root);
+    for (const auto &root : search_roots) roots.push_back(&root);
+    return roots;
+}
+
+// A relative name opened for reading in the first root that has it, as FileExist finds it.
 HANDLE open_in_roots(const std::wstring &name, DWORD shareMode) {
     if (!relative(name)) return INVALID_HANDLE_VALUE;
-    for (const auto &root : search_roots) {
-        const HANDLE h = CreateFileW((root + L"\\" + name).c_str(), GENERIC_READ, shareMode, NULL, OPEN_EXISTING,
+    for (const std::wstring *root : roots_now(name)) {
+        const HANDLE h = CreateFileW((*root + L"\\" + name).c_str(), GENERIC_READ, shareMode, NULL, OPEN_EXISTING,
                                      FILE_ATTRIBUTE_NORMAL, NULL);
         if (h != INVALID_HANDLE_VALUE) return h;
     }
@@ -622,8 +658,19 @@ bool CFile::FileExist(std::wstring &outname, const wchar *mname, const wchar *ex
         }
     }
 
-    // A relative name in a search root: the real file's name there.
+    // A relative name in a pack root (a picture or a sound) or a search root: the real file's name there.
     if (mname[0] && mname[1] != L':' && mname[0] != L'\\' && mname[0] != L'/') {
+        if (!without_packs && !pack_roots.empty()) {
+            for (const auto &root : pack_roots) {
+                const std::wstring rooted = root + L"\\" + mname;
+                std::wstring found;
+                if (FileExistW(found, rooted.c_str(), exts, withpar) &&
+                    PackExtension(std::wstring(found.substr(0, found.find(L'?'))))) {
+                    outname = found;
+                    return true;
+                }
+            }
+        }
         for (const auto &root : search_roots) {
             const std::wstring rooted = root + L"\\" + mname;
             if (IS_UNICODE() ? FileExistW(outname, rooted.c_str(), exts, withpar)

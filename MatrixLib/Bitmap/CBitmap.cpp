@@ -8,13 +8,17 @@
 
 #include "CFile.hpp"
 #include "CHeap.hpp"
+#include <stupid_logger.hpp>
+#include <utils.hpp>
 
 #include <ddraw.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <span>
+#include <vector>
 
 #define BMF_USER        0
 #define BMF_FLAT        1
@@ -911,7 +915,104 @@ bool CBitmap::LoadFromPNG(void *buf, int buflen) {
     return true;
 }
 
+namespace {
+// A PNG file's size from its header (false: not a PNG).
+bool png_size(const std::wstring &name, uint32_t &width, uint32_t &height) {
+    try {
+        CFile file(name);
+        file.OpenRead();
+        if (file.Size() < 24) return false;
+        uint8_t head[24];
+        file.Read(head, 24);
+        if (head[0] != 0x89 || head[1] != 'P' || head[2] != 'N' || head[3] != 'G') return false;
+        width = (uint32_t(head[16]) << 24) | (uint32_t(head[17]) << 16) | (uint32_t(head[18]) << 8) | head[19];
+        height = (uint32_t(head[20]) << 24) | (uint32_t(head[21]) << 16) | (uint32_t(head[22]) << 8) | head[23];
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+}
+}  // namespace
+
+bool CBitmap::Resample(int lenx, int leny) {
+    if ((m_BytePP != 3 && m_BytePP != 4) || lenx <= 0 || leny <= 0 || m_Size.x <= 0 || m_Size.y <= 0) return false;
+    if (m_Size.x == lenx && m_Size.y == leny) return true;
+    const int bpp = m_BytePP, sw = m_Size.x, sh = m_Size.y;
+    std::vector<uint8_t> out(size_t(lenx) * leny * bpp);
+    const uint8_t *src = (const uint8_t *)m_Data;
+    for (int y = 0; y < leny; ++y) {
+        // The source rows this row covers (smaller), else the two around its centre (larger).
+        const int sy0 = int(int64_t(y) * sh / leny), sy1 = std::max(sy0 + 1, int(int64_t(y + 1) * sh / leny));
+        const float fy = std::clamp((y + 0.5f) * sh / leny - 0.5f, 0.0f, float(sh - 1));
+        const int y0 = int(fy), y1 = std::min(y0 + 1, sh - 1);
+        const float ty = fy - y0;
+        for (int x = 0; x < lenx; ++x) {
+            const int sx0 = int(int64_t(x) * sw / lenx), sx1 = std::max(sx0 + 1, int(int64_t(x + 1) * sw / lenx));
+            uint8_t *o = &out[(size_t(y) * lenx + x) * bpp];
+            if (sx1 - sx0 > 1 || sy1 - sy0 > 1) {
+                for (int i = 0; i < bpp; ++i) {
+                    unsigned sum = 0;
+                    for (int sy = sy0; sy < sy1; ++sy)
+                        for (int sx = sx0; sx < sx1; ++sx) sum += src[sy * m_Pitch + sx * bpp + i];
+                    const unsigned n = unsigned((sx1 - sx0) * (sy1 - sy0));
+                    o[i] = uint8_t((sum + n / 2) / n);
+                }
+                continue;
+            }
+            const float fx = std::clamp((x + 0.5f) * sw / lenx - 0.5f, 0.0f, float(sw - 1));
+            const int x0 = int(fx), x1 = std::min(x0 + 1, sw - 1);
+            const float tx = fx - x0;
+            const uint8_t *a = src + y0 * m_Pitch + x0 * bpp, *b = src + y0 * m_Pitch + x1 * bpp;
+            const uint8_t *c = src + y1 * m_Pitch + x0 * bpp, *d = src + y1 * m_Pitch + x1 * bpp;
+            for (int i = 0; i < bpp; ++i) {
+                const float top = a[i] + (b[i] - a[i]) * tx, bottom = c[i] + (d[i] - c[i]) * tx;
+                o[i] = uint8_t(std::lround(top + (bottom - top) * ty));
+            }
+        }
+    }
+    uint32_t masks[4];
+    std::copy(std::begin(m_MColor), std::end(m_MColor), masks);
+    const int format = m_Format, bitpp = m_BitPP;
+    if (bpp == 4) CreateRGBA(lenx, leny);
+    else CreateRGB(lenx, leny);
+    std::copy(std::begin(masks), std::end(masks), m_MColor);
+    m_Format = format;
+    m_BitPP = bitpp;
+    for (int y = 0; y < leny; ++y) memcpy((uint8_t *)m_Data + y * m_Pitch, &out[size_t(y) * lenx * bpp], size_t(lenx) * bpp);
+    return true;
+}
+
 bool CBitmap::LoadFromPNG(const std::wstring_view filename) {
+    // A resource pack's picture (CFile::PackRoots): the game takes such pictures apart by the original's pixels, so it is
+    // made the original's size (exactly from twice, 4, 8 or 16 times as large; another size filtered).
+    if (!CFile::PackRoots().empty()) {
+        std::wstring name(filename), found;
+        std::wstring inside = CFile::PackRelative(name);
+        if (inside.empty() && CFile::FileExist(found, name.c_str())) inside = CFile::PackRelative(found);
+        if (!inside.empty()) {
+            uint32_t ow = 0, oh = 0;
+            bool own = false;
+            {
+                CFile::WithoutPacks without;
+                own = png_size(inside, ow, oh);
+            }
+            if (own && LoadPNGFile(filename)) {
+                const int w = m_Size.x, h = m_Size.y;
+                if (Resample(int(ow), int(oh))) return true;
+                lgr.warning("Resource pack picture {} is {}x{}, the game's {}x{}: kept the game's (not 3 or 4 bytes a "
+                            "pixel)")(utils::from_wstring(name), w, h, ow, oh);
+            }
+            if (own) {
+                CFile::WithoutPacks without;
+                return LoadPNGFile(inside);
+            }
+        }
+    }
+    return LoadPNGFile(filename);
+}
+
+bool CBitmap::LoadPNGFile(const std::wstring_view filename) {
     CFile file(filename.data());
     file.OpenRead();
     int size = file.Size();

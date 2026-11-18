@@ -51,6 +51,10 @@ protected:
     LPDIRECT3DTEXTURE9 m_Tex;
     DWORD m_Flags;  // TF_*
     CPoint m_Size;
+    // A resource pack's picture loaded 2^m_PackShift times the original's size (PackPictures): m_Size stays the
+    // original's.
+    int m_PackShift = 0;
+    void SizeFromDesc(const D3DSURFACE_DESC &desc);
 
 public:
 

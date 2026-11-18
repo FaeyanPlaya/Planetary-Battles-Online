@@ -7,6 +7,9 @@
 
 #include "CFile.hpp"
 #include "CStorage.hpp"
+#include "PackPictures.hpp"
+
+#include <stupid_logger.hpp>
 
 #include <list>
 
@@ -52,10 +55,74 @@ CBaseTexture::~CBaseTexture()
     _textures.remove(this);
 };
 
+void CBaseTexture::SizeFromDesc(const D3DSURFACE_DESC &desc) {
+    m_Size.x = PackPictures::game_side(desc.Width, m_PackShift);
+    m_Size.y = PackPictures::game_side(desc.Height, m_PackShift);
+}
+
+namespace {
+// The picture's size in its file (false: not a picture D3DX reads).
+bool picture_size(const CBuf &buf, UINT &width, UINT &height) {
+    D3DXIMAGE_INFO info{};
+    if (FAILED(D3DXGetImageInfoFromFileInMemory(buf.Get(), buf.Len(), &info))) return false;
+    width = info.Width;
+    height = info.Height;
+    return true;
+}
+
+// The picture in buf made place_w x place_h at the top left of a new tw x th texture (a full mip chain unless
+// one_level), in pool; NULL when it cannot be made. A texture of the default pool is filled through one in system
+// memory.
+LPDIRECT3DTEXTURE9 load_in_place(const CBuf &buf, UINT tw, UINT th, UINT place_w, UINT place_h, bool one_level,
+                                 D3DPOOL pool) {
+    const D3DPOOL fill_pool = pool == D3DPOOL_DEFAULT ? D3DPOOL_SYSTEMMEM : pool;
+    LPDIRECT3DTEXTURE9 made = NULL;
+    LPDIRECT3DSURFACE9 top = NULL;
+    const RECT place{0, 0, LONG(place_w), LONG(place_h)};
+    bool ok = SUCCEEDED(g_D3DD->CreateTexture(tw, th, one_level ? 1 : 0, 0, D3DFMT_A8R8G8B8, fill_pool, &made, NULL)) &&
+              SUCCEEDED(made->GetSurfaceLevel(0, &top)) &&
+              SUCCEEDED(D3DXLoadSurfaceFromFileInMemory(top, NULL, &place, buf.Get(), buf.Len(), NULL,
+                                                        D3DX_FILTER_TRIANGLE, 0, NULL));
+    if (top) top->Release();
+    if (ok && made->GetLevelCount() > 1) ok = SUCCEEDED(D3DXFilterTexture(made, NULL, 0, D3DX_FILTER_BOX));
+    if (ok && pool == D3DPOOL_DEFAULT) {
+        LPDIRECT3DTEXTURE9 shown = NULL;
+        ok = SUCCEEDED(g_D3DD->CreateTexture(tw, th, made->GetLevelCount(), 0, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &shown,
+                                             NULL)) &&
+             SUCCEEDED(g_D3DD->UpdateTexture(made, shown));
+        made->Release();
+        made = shown;
+        if (!ok && shown) shown->Release();
+        if (!ok) made = NULL;
+    }
+    if (!ok && made) {
+        made->Release();
+        made = NULL;
+    }
+    return made;
+}
+
+bool has_alpha(const CBuf &buf) {
+    D3DXIMAGE_INFO info{};
+    if (FAILED(D3DXGetImageInfoFromFileInMemory(buf.Get(), buf.Len(), &info))) return true;
+    switch (info.Format) {
+        case D3DFMT_X8R8G8B8:
+        case D3DFMT_R8G8B8:
+        case D3DFMT_R5G6B5:
+        case D3DFMT_X1R5G5B5:
+        case D3DFMT_DXT1:
+        case D3DFMT_L8:
+        case D3DFMT_P8: return false;
+        default: return true;
+    }
+}
+}  // namespace
+
 LPDIRECT3DTEXTURE9 CBaseTexture::LoadTextureFromFile(bool to16, D3DPOOL pool) {
     DTRACE();
     LPDIRECT3DTEXTURE9 ret = NULL;
     ParseFlags(m_Name);
+    m_PackShift = 0;
     if (to16) {
         if (FLAG(m_Flags, TF_COMPRESSED)) {
             goto autoload;
@@ -106,13 +173,86 @@ autoload:
         LoadFromFile(buf, CacheExtsTex);
     }
 
+    // A resource pack's picture (PackPictures): its size against the game's own.
+    PackPictures::Plan plan;
+    bool from_pack = false;
+    if (!FLAG(m_Flags, TF_COMPRESSED) && !CFile::PackRoots().empty()) {
+        std::wstring file;
+        const std::wstring plain = ParamParser{m_Name}.GetStrPar(0, L"?");
+        if (CFile::FileExist(file, plain.c_str(), CacheExtsTex, false) && CFile::InPackRoots(file)) {
+            UINT w = 0, h = 0, ow = 0, oh = 0;
+            CBuf original;
+            {
+                CFile::WithoutPacks without;
+                std::wstring own;
+                if (CFile::FileExist(own, plain.c_str(), CacheExtsTex, false)) original.LoadFromFile(own);
+            }
+            if (original.Len() > 0 && !picture_size(original, ow, oh)) ow = oh = 0;
+            plan = picture_size(buf, w, h) ? PackPictures::plan(w, h, ow, oh) : PackPictures::Plan{false};
+            from_pack = plan.use;
+            // A texture the game may write into (the interface's: it draws its texts into them by the original's
+            // pixels): the pack's picture made the original's size, in a texture as large as the original's.
+            bool failed = false;
+            const bool one_level = FLAG(m_Flags, TF_NOMIPMAP);
+            if (w > 0 && h > 0 && pool != D3DPOOL_DEFAULT && ow > 0 && (w != ow || h != oh)) {
+                if (LPDIRECT3DTEXTURE9 made = load_in_place(buf, PackPictures::rounded_up(ow), PackPictures::rounded_up(oh),
+                                                            ow, oh, one_level, pool)) {
+                    PIXEL_FILTER filter = (m_PixelFilter && m_PixelFilter(m_Name, nullptr, 0, 0, 0)) ? m_PixelFilter : nullptr;
+                    if (filter) FilterPixels(made, m_Name, filter);
+                    return made;
+                }
+                plan.use = from_pack = false;
+                failed = true;
+                lgr.warning("Resource pack picture {}: not loaded, kept the game's")(utils::from_wstring(file));
+            }
+            // An original of other sides than powers of two: the stretched picture where the game keeps its pixels.
+            else if (plan.use && plan.stretch && plan.in_place) {
+                if (LPDIRECT3DTEXTURE9 made = load_in_place(buf, PackPictures::texture_side(ow, plan.shift),
+                                                            PackPictures::texture_side(oh, plan.shift), plan.width,
+                                                            plan.height, one_level, pool)) {
+                    m_PackShift = plan.shift;
+                    PIXEL_FILTER filter = (m_PixelFilter && pool != D3DPOOL_DEFAULT && m_PixelFilter(m_Name, nullptr, 0, 0, 0))
+                                                  ? m_PixelFilter : nullptr;
+                    if (filter) FilterPixels(made, m_Name, filter);
+                    return made;
+                }
+                plan.use = from_pack = false;
+                failed = true;
+                lgr.warning("Resource pack picture {}: not loaded, kept the game's")(utils::from_wstring(file));
+            }
+            if (!plan.use) {
+                if (original.Len() == 0) return NULL;
+                if (!failed) lgr.warning("Resource pack picture {} is {}x{}, the game's {}x{}: kept the game's (too large)")(
+                        utils::from_wstring(file), w, h, ow, oh);
+                buf.Clear();
+                buf.Add(original.Get(), original.Len());
+            }
+        }
+    }
+
     // A pixel filter works on plain 32-bit pixels it can lock.
     PIXEL_FILTER filter =
             (m_PixelFilter && pool != D3DPOOL_DEFAULT && m_PixelFilter(m_Name, nullptr, 0, 0, 0)) ? m_PixelFilter : nullptr;
-    if (FAILED(D3DXCreateTextureFromFileInMemoryEx(g_D3DD, buf.Get(), buf.Len(), 0, 0,
-                                                   FLAG(m_Flags, TF_NOMIPMAP) ? 1 : 0, 0,
-                                                   filter ? D3DFMT_A8R8G8B8 : D3DFMT_UNKNOWN, pool,
-                                                   D3DX_FILTER_NONE, D3DX_FILTER_BOX, 0, NULL, NULL, &ret))) {
+    D3DFORMAT format = filter ? D3DFMT_A8R8G8B8 : D3DFMT_UNKNOWN;
+    UINT width = 0, height = 0;
+    DWORD scale = D3DX_FILTER_NONE;
+    if (from_pack) {
+        m_PackShift = plan.shift;
+        if (plan.stretch) {
+            width = plan.width;
+            height = plan.height;
+            scale = D3DX_FILTER_TRIANGLE;
+        }
+        // A large picture only drawn (not locked): compressed, a quarter (with alpha) or an eighth of its pixels' memory.
+        UINT w = width, h = height;
+        if (!plan.stretch) picture_size(buf, w, h);
+        if (!filter && pool == D3DPOOL_DEFAULT && std::size_t(w) * h >= std::size_t(2048) * 1024)
+            format = has_alpha(buf) ? D3DFMT_DXT5 : D3DFMT_DXT1;
+    }
+    if (FAILED(D3DXCreateTextureFromFileInMemoryEx(g_D3DD, buf.Get(), buf.Len(), width, height,
+                                                   FLAG(m_Flags, TF_NOMIPMAP) ? 1 : 0, 0, format, pool,
+                                                   scale, D3DX_FILTER_BOX, 0, NULL, NULL, &ret))) {
+        m_PackShift = 0;
         return NULL;
     }
     if (filter)
@@ -376,8 +516,7 @@ void CTexture::Load(void) {
 
     D3DSURFACE_DESC desc;
     m_Tex->GetLevelDesc(0, &desc);
-    m_Size.x = desc.Width;
-    m_Size.y = desc.Height;
+    SizeFromDesc(desc);
 }
 
 void CTexture::MakeSolidTexture(int sx, int sy, DWORD color) {
@@ -465,8 +604,7 @@ void CTextureManaged::Init(bool to16) {
 
     D3DSURFACE_DESC desc;
     m_Tex->GetLevelDesc(0, &desc);
-    m_Size.x = desc.Width;
-    m_Size.y = desc.Height;
+    SizeFromDesc(desc);
 
 #else
     if (m_TexFrom)
@@ -477,8 +615,7 @@ void CTextureManaged::Init(bool to16) {
     m_TexFrom->GetLevelDesc(0, &desc);
     m_Format = desc.Format;
     m_Levelcnt = m_TexFrom->GetLevelCount();
-    m_Size.x = desc.Width;
-    m_Size.y = desc.Height;
+    SizeFromDesc(desc);
 
 #endif
 }

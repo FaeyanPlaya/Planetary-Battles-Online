@@ -66,6 +66,27 @@ public:
     // (a map mod's folder for a battle on its maps: its Matrix\... replaces the game's); empty: none.
     static void SetSearchRoots(std::vector<std::wstring> roots);
     static const std::vector<std::wstring> &SearchRoots(void);
+    // The resource packs' folders (ResourcePacks), searched before the search roots: their loose pictures and sounds
+    // (PackExtension) replace the game's (and a map mod's) by the same relative name; empty: none.
+    static void SetPackRoots(std::vector<std::wstring> roots);
+    static const std::vector<std::wstring> &PackRoots(void);
+    // What a pack may replace: pictures and sounds (png, jpg, jpeg, bmp, dds, tga, wav, ogg), never the game's data.
+    static bool PackExtension(const std::wstring &name);
+    // Whether a name FileExist gave is a file of a pack root.
+    static bool InPackRoots(const std::wstring &name) { return !PackRelative(name).empty(); }
+    // A pack root's file's name inside its root (the game's name of the file it replaces); empty: not a pack's.
+    static std::wstring PackRelative(const std::wstring &name);
+    // While one lives, this thread's FileExist and OpenRead leave the pack roots out: the game's own file.
+    class WithoutPacks {
+    public:
+        WithoutPacks();
+        ~WithoutPacks();
+        WithoutPacks(const WithoutPacks &) = delete;
+        WithoutPacks &operator=(const WithoutPacks &) = delete;
+
+    private:
+        bool m_Before;
+    };
 
     static void FindFiles(const std::wstring &folderfrom, const wchar *files, ENUM_FILES ef, DWORD user);
 

@@ -55,6 +55,8 @@ public:
     void Fill(const Base::CPoint &pdes, const Base::CPoint &size, uint32_t color);
 
     void Make2xSmaller();
+    // Made lenx x leny (3 or 4 bytes a pixel): smaller by the average of the pixels each one covers, larger bilinear.
+    bool Resample(int lenx, int leny);
     void Make2xSmaller(const Base::CPoint &left_up_corner, const Base::CPoint &size, CBitmap &des_bitmap) const;
 
     void MergeByMask(const Base::CPoint &pdes, const Base::CPoint &size, const CBitmap &bm1, const Base::CPoint &sp1,
@@ -69,6 +71,7 @@ public:
     bool SaveInPNG(const std::wstring_view filename);
     bool LoadFromPNG(const std::wstring_view filename);
     bool LoadFromPNG(void *buf, int buflen);
+    bool LoadPNGFile(const std::wstring_view filename);  // as LoadFromPNG, without a resource pack's size rule
 
 protected:
     void FlipY();
