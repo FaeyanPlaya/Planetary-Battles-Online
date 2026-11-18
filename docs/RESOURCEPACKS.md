@@ -49,7 +49,24 @@ nothing else from it (models, maps, texts, settings).
   are made the original's size as they load.
 - Robots take their side's colour by their texture's alpha channel. Keep it in your texture.
 
-## Reserved
+## Maps for shaders
 
-The names `<picture>_n` and `<picture>_s` (`Robot1_n.png`, `Robot1_s.png`) are kept for the normal and specular maps
-to come (LabPBR). The game does not take them yet.
+Beside a picture a pack may have its maps: `<picture>_n`, `<picture>_s`, `<picture>_e`, `<picture>_e_s` (for
+`Matrix\Robot\Armor1`: `Armor1_n.png`, `Armor1_s.png`, `Armor1_e.png`, `Armor1_e_s.png`). The game itself never
+reads them: only a shader pack's world pass does ([SHADERS.md](SHADERS.md), `World`), and only for what it draws
+(the land, the map's things, robots, buildings, turrets, flyers). Without shaders, or with a pack that does not read
+them, they cost nothing.
+
+- `_n`, as LabPBR's: red and green the normal's x and y (DirectX's way: green 0 up the picture, 255 down; z from them),
+  blue the occlusion (255 none), alpha the height (255 the top).
+- `_s`, as LabPBR's: red the smoothness, green F0 (0–229) or a metal (230–255), blue the porosity (0–64) or
+  subsurface scattering (65–255), alpha the emission (0–254; 255: none). What glows takes the picture's colour.
+- `_e`: what glows over the picture, as OptiFine's: its colour, alpha where (0: nothing).
+- `_e_s`: `_e`'s own `_s`: its alpha how strongly `_e` glows (0–254; 255: not at all). Without it `_e` glows whole.
+
+A map is read as it is, of any size up to 4096 a side (the picture's coordinates: a smaller or larger map covers the
+same surface), and not stretched or compressed. Only a pack's maps: the game's own robots' `_e` pictures (the enemies'
+look of old versions, no longer drawn) are not maps. The game's shader packs read them with their LabPBR materials on (Жуть: Materials: LabPBR; Ванилла +: PBR type:
+LabPBR 1.3, as Spooklementary's and I Like Vanilla's own choices): the relief of `_n` under the map's light and the
+battle's lights ("Normal map strength", "PBR normals amount") and the glow ("Resource packs' glow"); their generated
+normals ("Texture relief") are off then, as with LabPBR in those packs.
