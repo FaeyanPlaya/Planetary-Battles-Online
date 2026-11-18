@@ -15,6 +15,7 @@ uint32_t label_color() { return UiTheme::pick(0xFF384046, UiTheme::Dark::legend)
 uint32_t title_color() { return UiTheme::pick(0xFF08498A, UiTheme::Dark::selected); }
 uint32_t error_color() { return UiTheme::pick(0xFF9A0E0E, UiTheme::Dark::error); }
 constexpr int text_size = 13, title_size = 16, button_size = 14;
+constexpr int text_inset = 2;  // Text::Render's box: 2 pixels in from each side of the element
 
 int px(double scale, int value) { return int(std::lround(value * scale)); }
 
@@ -155,7 +156,10 @@ std::vector<Line> lines_of(const Page &p, int width, double scale, const TextWid
     for (const Line &paragraph : p.paragraphs) {
         // A "- " item's further lines go under its text, not under its mark.
         const int indent = paragraph.text.starts_with(L"- ") ? Layout::item_indent : 0;
-        const auto parts = broken(paragraph.text, scale, px(scale, width - 2 * Layout::margin - indent), measure);
+        // The text's box is 2 pixels in from each side of its element (Text::Render): a line as wide as the element
+        // had its last word drawn on a line of its own, over the next.
+        const int room = px(scale, width - 2 * Layout::margin - indent) - 2 * text_inset;
+        const auto parts = broken(paragraph.text, scale, room, measure);
         for (std::size_t i = 0; i < parts.size(); ++i) out.push_back({parts[i], paragraph.role, i > 0 ? indent : 0});
     }
     return out;
