@@ -8,6 +8,7 @@
 #include "CFile.hpp"
 #include "CStorage.hpp"
 #include "PackPictures.hpp"
+#include "TextureName.hpp"
 
 #include <stupid_logger.hpp>
 
@@ -123,6 +124,11 @@ LPDIRECT3DTEXTURE9 CBaseTexture::LoadTextureFromFile(bool to16, D3DPOOL pool) {
     LPDIRECT3DTEXTURE9 ret = NULL;
     ParseFlags(m_Name);
     m_PackShift = 0;
+    const std::wstring picture = ParamParser{m_Name}.GetStrPar(0, L"?");
+    const auto named = [&picture](LPDIRECT3DTEXTURE9 texture) {
+        TextureName::set(texture, picture);
+        return texture;
+    };
     if (to16) {
         if (FLAG(m_Flags, TF_COMPRESSED)) {
             goto autoload;
@@ -153,7 +159,7 @@ LPDIRECT3DTEXTURE9 CBaseTexture::LoadTextureFromFile(bool to16, D3DPOOL pool) {
 
         // ASSERT(pool == D3DPOOL_SYSTEMMEM);
 
-        return ret;
+        return named(ret);
     }
 
 autoload:
@@ -176,12 +182,12 @@ autoload:
     // A resource pack's picture (PackPictures): its size against the game's own.
     PackPictures::Plan plan;
     bool from_pack = false;
+    CBuf original;  // (a pack's picture: the game's own, for when the pack's cannot be loaded)
     if (!FLAG(m_Flags, TF_COMPRESSED) && !CFile::PackRoots().empty()) {
         std::wstring file;
         const std::wstring plain = ParamParser{m_Name}.GetStrPar(0, L"?");
         if (CFile::FileExist(file, plain.c_str(), CacheExtsTex, false) && CFile::InPackRoots(file)) {
             UINT w = 0, h = 0, ow = 0, oh = 0;
-            CBuf original;
             {
                 CFile::WithoutPacks without;
                 std::wstring own;
@@ -199,7 +205,7 @@ autoload:
                                                             ow, oh, one_level, pool)) {
                     PIXEL_FILTER filter = (m_PixelFilter && m_PixelFilter(m_Name, nullptr, 0, 0, 0)) ? m_PixelFilter : nullptr;
                     if (filter) FilterPixels(made, m_Name, filter);
-                    return made;
+                    return named(made);
                 }
                 plan.use = from_pack = false;
                 failed = true;
@@ -214,7 +220,7 @@ autoload:
                     PIXEL_FILTER filter = (m_PixelFilter && pool != D3DPOOL_DEFAULT && m_PixelFilter(m_Name, nullptr, 0, 0, 0))
                                                   ? m_PixelFilter : nullptr;
                     if (filter) FilterPixels(made, m_Name, filter);
-                    return made;
+                    return named(made);
                 }
                 plan.use = from_pack = false;
                 failed = true;
@@ -253,11 +259,18 @@ autoload:
                                                    FLAG(m_Flags, TF_NOMIPMAP) ? 1 : 0, 0, format, pool,
                                                    scale, D3DX_FILTER_BOX, 0, NULL, NULL, &ret))) {
         m_PackShift = 0;
-        return NULL;
+        // A pack's picture D3DX cannot load (broken, or too large for memory): the game's own.
+        if (!from_pack || original.Len() == 0) return NULL;
+        lgr.warning("Resource pack picture for {}: not loaded, kept the game's")(utils::from_wstring(m_Name));
+        if (FAILED(D3DXCreateTextureFromFileInMemoryEx(g_D3DD, original.Get(), original.Len(), 0, 0,
+                                                       FLAG(m_Flags, TF_NOMIPMAP) ? 1 : 0, 0,
+                                                       filter ? D3DFMT_A8R8G8B8 : D3DFMT_UNKNOWN, pool, D3DX_FILTER_NONE,
+                                                       D3DX_FILTER_BOX, 0, NULL, NULL, &ret)))
+            return NULL;
     }
     if (filter)
         FilterPixels(ret, m_Name, filter);
-    return ret;
+    return named(ret);
 }
 
 void CBaseTexture::ParseFlags(const ParamParser& name) {
@@ -392,6 +405,7 @@ void CTexture::OnLostDevice(void) {
         from->Release();
         to->Release();
     }
+    TextureName::copy(m_Tex, tex);
     m_Tex->Release();
     m_Tex = tex;
 }
@@ -462,6 +476,7 @@ void CTexture::OnResetDevice(void) {
         from->Release();
         to->Release();
     }
+    TextureName::copy(m_Tex, tex);
     m_Tex->Release();
     m_Tex = tex;
     m_OOM_counter = 0;

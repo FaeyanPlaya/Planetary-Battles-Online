@@ -997,7 +997,13 @@ bool CBitmap::LoadFromPNG(const std::wstring_view filename) {
                 CFile::WithoutPacks without;
                 own = png_size(inside, ow, oh);
             }
-            if (own && LoadPNGFile(filename)) {
+            uint32_t pw = 0, ph = 0;
+            if (own && (!png_size(name, pw, ph) || pw == 0 || ph == 0 || pw > 16384 || ph > 16384 ||
+                        uint64_t(pw) * ph > 64ull * 1024 * 1024)) {
+                lgr.warning("Resource pack picture {} is {}x{}: kept the game's (at most 16384 a side, 64 million "
+                            "pixels)")(utils::from_wstring(name), pw, ph);
+            }
+            else if (own && LoadPNGFile(filename)) {
                 const int w = m_Size.x, h = m_Size.y;
                 if (Resample(int(ow), int(oh))) return true;
                 lgr.warning("Resource pack picture {} is {}x{}, the game's {}x{}: kept the game's (not 3 or 4 bytes a "
