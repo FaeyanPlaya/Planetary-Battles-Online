@@ -2,7 +2,7 @@
 
 [Русская версия](RESOURCEPACKS.ru.md)
 
-A resource pack replaces the game's pictures and sounds with its own, as a Minecraft resource pack does. It never
+A resource pack replaces the game's pictures and sounds with its own. It never
 changes the game's data, so in a network battle everyone may have their own packs, and nobody checks them.
 
 ## Where they are and how they are switched on
