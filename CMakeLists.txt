@@ -26,7 +26,7 @@ if(MATRIXGAME_BUILD_DLL)
 else()
     set(MATRIXGAME_MUSIC_DEFAULT ON)
 endif()
-option(MATRIXGAME_MUSIC "Build the standalone battle music decoder with libogg and libvorbis"
+option(MATRIXGAME_MUSIC "Build the standalone battle music decoders (libogg and libvorbis, dr_mp3)"
        ${MATRIXGAME_MUSIC_DEFAULT})
 
 if(MATRIXGAME_COVERAGE)
