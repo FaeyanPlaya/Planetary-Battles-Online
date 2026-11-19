@@ -170,6 +170,23 @@ void main(World w, out float4 normal, out float4 kind) {
 | `float4 maps` | 1 for each map the surface has: x `_n`, y `_s`, z `_e`, w `_e_s`. |
 | `float3 mapped` | `normal` bent by `_n` (the texture's directions on the surface from how its place and coordinates change across the pixel: the game's models keep no tangents); `normal` where there is no `_n`. |
 | `float3 glow` | The light the surface gives: the picture's colour by `_s`'s emission, and `_e`'s colour by its alpha and `_e_s`'s strength; 0 where nothing glows. Spooky and Vanilla + keep it in `WorldG` (and in its alpha how `_n` changes the map's light, halved: 0 without `_n`) and add it to the picture and the glow (their setting Resource packs' glow, `PACKGLOW`). |
+| `float3 du`, `dv` | How the texture's coordinates change along the surface: `dot(d, w.du)` is how much u grows going `d` (in the world's units) from here, `dv` the same for v. |
+| `float3 tu`, `tv` | The directions `_n`'s x and y lie along here (the longer of length 1): what `mapped` bends by. |
+| `float4 grad` | The texture's coordinates across the pixel (`ddx` in xy, `ddy` in zw), for `tex2Dgrad` in a loop. |
+
+For the parallax (POM) and the rest of LabPBR the world pass's code also has these:
+
+| Function | |
+|---|---|
+| `float4 MapNAt(World w, float2 uv)`, `MapSAt` | `_n` and `_s` at another place of the texture (as `nmap` and `smap` are here), with this pixel's own filtering: fit for a loop. |
+| `float3 PictureAt(World w, float2 uv)` | The surface's picture there. |
+| `float3 MappedBy(World w, float4 n)` | `normal` bent by an `_n` pixel (`MappedBy(w, w.nmap)` is `mapped`). |
+| `float2 ParallaxUV(World w, float depth, int steps, out float at)` | Where the view going into the surface meets the relief of `_n`'s height (its alpha: 1 the top, 0 the deepest, as LabPBR's), `depth` deep at most (a share of the texture's width: 0.025, a fortieth), in `steps` steps; `at` how deep it met it (0..1). `w.uv` without `_n`. Read the maps (`MapNAt`, `MapSAt`) there. |
+| `float ParallaxShadow(World w, float2 uv, float at, float3 to, float depth, int steps)` | The relief's own shade from there towards a light (`to`, length 1): 0 where a higher part of the height stands in the way, 1 open (and without `_n`, and for a light behind the surface). |
+
+The world pass writes what it found into its targets; the picture is still the game's. Spooky and Vanilla + keep in `WorldS` the smoothness and F0 of `_s` and how much brighter each colour of the picture is where the parallax met the relief (red and green there, blue in a free alpha of another target: their lit pass lays it over the game's colour, the picture's shift, at most 4 of the screen's pixels so fine detail seen small does not speckle), `_n`'s occlusion with the relief in `WorldG`'s alpha; and light by them the shine of the sun, the moon and the battle's lights (GGX: `Shine` in their `common.hlsl`) and the reflections of smooth surfaces (`srefl.hlsl`, at the screen's size: what the reflected ray meets on the screen, the sky where it goes off it, blurred by the surface's roughness; what it reflects takes the place of as much of the surface's own light, a metal's mostly).
+
+The game's own gloss: a model's `_gloss` picture lays the sky's reflection over it. While a world pass reads `_s` (its code uses `smap`, `MapSAt` or `glow`), the engine does not draw that gloss over a picture that has an `_s`: the pack lights that shine itself, and there is no shine twice. Other pictures keep theirs.
 
 The settings' `#define`s are there, `PBO_WORLD` is 1, and of the constants `Time`, `CameraPos`, `SunDir`, `SunColor`, `AmbientColor`, `MapInfo`, `View`, `Proj`, `ViewProj` (the others and the pack's pictures belong to the finished picture: not here). The targets are black before it draws; the other passes read them as any target.
 
@@ -239,6 +256,7 @@ Started with `PBO_SHADER_TIMING=1` in its environment, the game writes into test
 | The effects: the pack's / the game's (as many as there are) | 0.1-0.5 / 0.03-0.35 |
 | Spooky's fifteen passes (flares at a quarter of the screen) / Vanilla +'s fourteen / VHS's eight | 2.8 / 1.7 / 1.35 |
 | The whole frame | 4.4-6 (3.1 without the shadow map and the world pass) |
+| LabPBR materials with all of it on (shine, occlusion, parallax 16 steps, surface reflections), over their maps alone: the player's base close up with a test pack (the base's texture at twice its size with `_n` and `_s` maps), the frame 6.6-7.5 ms | Spooky +0.2, Vanilla + +0.6 (the surface reflections at the screen's size about 0.3 of it) |
 
 The shadow map and the world pass cost by the number of things drawn more than by their pixels: a map with thousands of trees and rocks (Osada: 3800 of them seen from high up) pays for each of them again. So the shadow map gets only the things whose ball reaches what it covers, and the world pass leaves out the map's own things (not robots, buildings, turrets or flyers) under 4 pixels across in radius on the screen, and keeps no place a frame ago for them (they stand still: their `motion` is the camera's alone). On Osada, the whole map seen from above, Spooky on its defaults: the frame went from 45 to 35 ms (the shadow map 10 to 3.4 ms, the world pass 15 to 11.4 ms); the camera as the game sets it: from 21.8 to 17.6 ms. The picture is the same.
 
