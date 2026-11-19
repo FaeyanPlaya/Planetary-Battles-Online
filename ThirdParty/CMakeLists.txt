@@ -3,7 +3,7 @@ include(ExternalProject)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_LIST_DIR}/dependencies.json")
 file(READ "${CMAKE_CURRENT_LIST_DIR}/dependencies.json" DEPENDENCY_MANIFEST)
-foreach(dependency zlib libpng libogg libvorbis)
+foreach(dependency zlib libpng libogg libvorbis dr_mp3)
   string(JSON ${dependency}_URL GET "${DEPENDENCY_MANIFEST}" ${dependency} url)
   string(JSON ${dependency}_SHA256 GET "${DEPENDENCY_MANIFEST}" ${dependency} sha256)
 endforeach()
@@ -156,4 +156,16 @@ if(MATRIXGAME_MUSIC)
   # Encoder used only by tests to produce synthetic tracks.
   add_library(VORBISENC INTERFACE)
   target_link_libraries(VORBISENC INTERFACE "${VORBISENC_ARCHIVE}" VORBISFILE)
+  # MP3 tracks: dr_mp3, one public-domain (or MIT-0) header, pinned and checked like the archives; built from memory
+  # only (DR_MP3_NO_STDIO) with the dependencies' C flags, not the game's warnings.
+  string(JSON DR_MP3_FILE GET "${DEPENDENCY_MANIFEST}" dr_mp3 file)
+  set(DR_MP3_DOWNLOAD "${CMAKE_SOURCE_DIR}/.tools/downloads/${DR_MP3_FILE}")
+  file(DOWNLOAD "${dr_mp3_URL}" "${DR_MP3_DOWNLOAD}" EXPECTED_HASH "SHA256=${dr_mp3_SHA256}" TLS_VERIFY ON)
+  configure_file("${DR_MP3_DOWNLOAD}" "${CMAKE_CURRENT_BINARY_DIR}/dr_mp3/include/dr_mp3.h" COPYONLY)
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dr_mp3/dr_mp3.c.in"
+    "#define DR_MP3_IMPLEMENTATION\n#include \"dr_mp3.h\"\n")
+  configure_file("${CMAKE_CURRENT_BINARY_DIR}/dr_mp3/dr_mp3.c.in" "${CMAKE_CURRENT_BINARY_DIR}/dr_mp3/dr_mp3.c" COPYONLY)
+  add_library(DRMP3 STATIC "${CMAKE_CURRENT_BINARY_DIR}/dr_mp3/dr_mp3.c")
+  target_include_directories(DRMP3 PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/dr_mp3/include")
+  target_compile_definitions(DRMP3 PUBLIC DR_MP3_NO_STDIO)
 endif()
