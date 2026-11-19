@@ -12,6 +12,18 @@ Setting.PBR=0,1,2|1|Тип PBR|PBR type|cycle
 Value.PBR.0=Выкл|Off
 Value.PBR.1=Встроенный|Internal
 Value.PBR.2=LabPBR 1.3|LabPBR 1.3
+Setting.SPECULAR=0,0.25,0.5,0.75,1,1.25,1.5,2|1|Блеск|Shine
+Value.SPECULAR.0=Выкл|Off
+Setting.OCCLUSION=0,0.25,0.5,0.75,1|1|Затенение по картам|Map occlusion
+Value.OCCLUSION.0=Выкл|Off
+Setting.SURFREFL=0,0.25,0.5,0.75,1|0.75|Отражения поверхностей|Surface reflections
+Value.SURFREFL.0=Выкл|Off
+Setting.POM=0,1,2|2|Параллакс|Parallax|cycle
+Value.POM.0=Выкл|Off
+Value.POM.1=Тени рельефа|Relief shadows
+Value.POM.2=Тени и сдвиг|Shadows and shift
+Setting.POMDEPTH=0.25,0.5,0.75,1,1.25,1.5,2|1|Глубина параллакса|Parallax depth
+Setting.POMSTEPS=8,16,24,32|16|Качество параллакса|Parallax quality
 Setting.NORMALMAP=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Сила PBR-нормалей|PBR normals amount
 Value.NORMALMAP.0=Выкл|Off
 Setting.SOFTFX=0,5,10,15,20,30,40|15|Мягкие эффекты|Soft effects
@@ -107,17 +119,23 @@ Value.SHOOTERPANINI.0=Выкл|Off
 Setting.NTSC=On,Off|Off|Сигнал NTSC|NTSC signal|cycle
 
 # Several settings at once, by how much they cost the video card (as I Like Vanilla's profiles).
-Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off MOVING=Off FXAA=Off PROJECTION=Default BARREL=0
-Profile.VERYLOW=Очень низкий|Very low|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off MOVING=Off FXAA=On PROJECTION=Default BARREL=0
-Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 RELIEF=0 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0.5 TAA=Off MOVING=Off FXAA=On PROJECTION=Default BARREL=0
-Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=Off FXAA=On PROJECTION=Default BARREL=0
-Profile.MEDIUMPLUS=Средний+|Medium+|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=On FXAA=On PROJECTION=Default BARREL=0
-Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=On REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=On FXAA=On PROJECTION=Default BARREL=0
+Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off MOVING=Off FXAA=Off PROJECTION=Default BARREL=0 POMSTEPS=8 SURFREFL=0
+Profile.VERYLOW=Очень низкий|Very low|AO=0 SHADOWS=0 RELIEF=0 SOFTFX=0 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0 TAA=Off MOVING=Off FXAA=On PROJECTION=Default BARREL=0 POMSTEPS=8 SURFREFL=0
+Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 RELIEF=0 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0 CAUSTICS=0.5 TAA=Off MOVING=Off FXAA=On PROJECTION=Default BARREL=0 POMSTEPS=8 SURFREFL=0
+Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=Off SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=Off FXAA=On PROJECTION=Default BARREL=0 POMSTEPS=16 SURFREFL=0.5
+Profile.MEDIUMPLUS=Средний+|Medium+|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=Off REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=On FXAA=On PROJECTION=Default BARREL=0 POMSTEPS=16 SURFREFL=0.5
+Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=0.75 RELIEF=0.5 SOFTFX=15 SHADOWMAP=On SHAFTS=On REFLECT=0.6 CAUSTICS=0.5 TAA=On MOVING=On FXAA=On PROJECTION=Default BARREL=0 POMSTEPS=16 SURFREFL=0.75
 
 Note.ABOUT=О наборе|About the pack
 
 Info.PROFILE=Сразу несколько настроек по нагрузке на видеокарту: затенение углов, тени, рельеф, мягкие эффекты, лучи, отражения, блики на дне, сглаживание и движение объектов. «Свой» — когда они выставлены иначе.|Several settings at once by their cost for the video card: corner shading, shadows, relief, soft effects, rays, reflections, caustics, antialiasing and object motion. Custom: when they are set otherwise.
 Info.PBR=Откуда рельеф и свечение поверхностей. «Выкл» — плоско, как в игре. «Встроенный» — рельеф по светлому и тёмному самих текстур («Рельеф текстур»). «LabPBR 1.3» — карты из ресурспака (_n, _s, _e, _e_s, нужен такой пак): его рельеф и свечение; генерируемых нормалей нет. Движок рисует мир ещё раз (как при «Движении объектов»).|Where the surfaces' relief and glow come from. Off: flat, as in the game. Internal: relief from the textures' own light and dark (Texture relief). LabPBR 1.3: a resource pack's maps (_n, _s, _e, _e_s; such a pack needed): its relief and glow, no generated normals. The engine draws the world once more (as with Object motion).
+Info.SPECULAR=Блики солнца, луны и огней боя на гладком по картам _s ресурспака (красный канал — гладкость, зелёный — отражающая способность или металл): чем глаже, тем блик меньше и ярче; металл блестит своим цветом и сам темнее. Игровой блеск (_gloss) у таких картинок не рисуется. Только при «Тип PBR: LabPBR 1.3». «Выкл» — без бликов.|The shine of the sun, the moon and the battle's lights on what a resource pack's _s maps make smooth (red: smoothness, green: reflectance or a metal): the smoother, the smaller and brighter; a metal shines in its own colour and is darker itself. The game's own gloss (_gloss) is not drawn on such pictures. Only with PBR type: LabPBR 1.3. Off: no shine.
+Info.OCCLUSION=Щели и впадины темнее по синему каналу карт _n ресурспака. Только при «Тип PBR: LabPBR 1.3».|Cracks and hollows darker by the blue of a resource pack's _n maps. Only with PBR type: LabPBR 1.3.
+Info.SURFREFL=Гладкие поверхности по картам _s (гладкость от 0.45) отражают то, что видно на экране, а где отражения нет — небо; металл отражает своим цветом. Только при «Тип PBR: LabPBR 1.3». «Выкл» — без них, и видеокарте легче.|Smooth surfaces by the _s maps (smoothness 0.45 and up) reflect what is seen on the screen, the sky where nothing is; a metal reflects in its own colour. Only with PBR type: LabPBR 1.3. Off: none, and easier on the video card.
+Info.POM=Рельеф по высоте из альфы карт _n ресурспака. «Тени рельефа» — выступы отбрасывают тени во впадины. «Тени и сдвиг» — ещё и картинка на роботах, зданиях и турелях сдвигается по глубине, как настоящий рельеф (земля остаётся на месте). Края силуэтов остаются ровными. Только при «Тип PBR: LabPBR 1.3».|Relief by the height in the alpha of a resource pack's _n maps. Relief shadows: what stands out casts shadows into the hollows. Shadows and shift: the picture on robots, buildings and turrets also shifts by its depth, as a real relief would (the land stays where it is). Silhouettes stay flat. Only with PBR type: LabPBR 1.3.
+Info.POMDEPTH=Насколько глубок рельеф параллакса.|How deep the parallax's relief is.
+Info.POMSTEPS=Сколько шагов вглубь рельефа на пиксель: больше — ровнее, но тяжелее для видеокарты.|How many steps into the relief a pixel takes: more is smoother and harder on the video card.
 Info.NORMALMAP=Насколько выпуклы поверхности по картам _n ресурспака. Только при «Тип PBR: LabPBR 1.3».|How raised the surfaces are by a resource pack's _n maps. Only with PBR type: LabPBR 1.3.
 Info.RELIEF=Светлое и тёмное на текстурах становится чуть выпуклым и впалым под солнцем карты (генерируемые нормали). Только при «Тип PBR: Встроенный». «Выкл» — плоско, как в игре.|The light and dark of the textures become slightly raised and sunken under the map's sun (generated normals). Only with PBR type: Internal. Off: flat, as in the game.
 Info.SOFTFX=Огонь, дым и вспышки тают там, где касаются земли и стен, а не обрезаются резкой линией. Число — на каком расстоянии. «Как в игре» — резкая линия, как в игре.|Fire, smoke and flashes fade where they touch the ground and walls instead of being cut by a hard line. The number: over how far. As in the game: a sharp line, as the game draws it.
@@ -168,7 +186,7 @@ Info.ABOUT=Игра остаётся собой: тот же день, вода 
 
 Screen=PROFILE ABOUT - [Materials] [Shadows] [Shading] [Lighting] [Sea] [Haze] [Post] [Extras] [Mods]
 Screen.Materials=Материалы|Materials|PBR [LabPBR] [Internal] SOFTFX
-Screen.LabPBR=Материалы LabPBR|LabPBR materials|NORMALMAP PACKGLOW
+Screen.LabPBR=Материалы LabPBR|LabPBR materials|NORMALMAP PACKGLOW SPECULAR OCCLUSION SURFREFL - POM POMDEPTH POMSTEPS
 Screen.Internal=Встроенные материалы|Internal materials|RELIEF
 Screen.Shadows=Тени|Shadows|SHADOWMAP SHADOWS
 Screen.Shading=Затенение|Shading|AO OUTLINES CEL
@@ -190,7 +208,9 @@ Shadow=2048|2500|SHADOWMAP
 # The world drawn by world.hlsl: how each place moved on the screen (only while MOVING is on; half floats).
 Target.WorldV=1|rgba16f
 Target.WorldG=1|rgba16f
-World=world.hlsl|WorldV WorldG|MOVING+PBR=2
+Target.WorldN=1|rgba16f
+Target.WorldS=1|rgba16f
+World=world.hlsl|WorldV WorldG WorldN WorldS|MOVING+PBR=2
 
 Target.Half=0.5|rgba16f
 Target.Glow=0.25|rgba16f
@@ -200,6 +220,7 @@ Target.Wide=0.0625|rgba16f
 Target.Rays=0.5|rgba8
 Target.RaysB=0.5|rgba8
 Target.Refl=0.5|rgba16f
+Target.SRefl=1|rgba16f
 Target.Color=1|rgba16f
 Target.Taa=1|rgba16f
 Target.TaaHist=1|rgba16f
@@ -214,6 +235,7 @@ Pass=wide.hlsl|Wide
 Pass=rays.hlsl|Rays
 Pass=raysblur.hlsl|RaysB
 Pass=refl.hlsl|Refl
+Pass=srefl.hlsl|SRefl
 Pass=final.hlsl|Color
 Pass=taa.hlsl|Taa
 Pass=history.hlsl|TaaHist

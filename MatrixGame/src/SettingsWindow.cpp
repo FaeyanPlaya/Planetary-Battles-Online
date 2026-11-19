@@ -15,6 +15,7 @@
 
 #include "MatrixMap.hpp"
 #include "MatrixSoundManager.hpp"
+#include "SoundBridge.hpp"
 #include "Interface/CInterface.h"
 #include "Interface/MatrixHint.hpp"
 #include "CBitmap.hpp"
@@ -27,6 +28,7 @@
 #include "Text/Font.hpp"
 #include "3g.hpp"
 
+#include <d3dx9.h>
 #include <stupid_logger.hpp>
 #include <shellapi.h>
 #include <commdlg.h>
@@ -119,50 +121,38 @@ void release_pack_icons() {
 
 // A picture as a square of `side` pixels (B, G, R, A), its own proportions kept in its middle; nullptr: not one.
 std::unique_ptr<CBitmap> icon_from(const std::string &png, int side) {
-    CBitmap source;
     // Its size from the header first: a small file may claim a picture of gigabytes.
     if (png.size() < 24 || png.compare(1, 3, "PNG") != 0) return nullptr;
     auto be32 = [&](std::size_t at) {
         return (uint32_t(uint8_t(png[at])) << 24) | (uint32_t(uint8_t(png[at + 1])) << 16) |
                (uint32_t(uint8_t(png[at + 2])) << 8) | uint8_t(png[at + 3]);
     };
-    if (be32(16) == 0 || be32(20) == 0 || be32(16) > ResourcePacks::max_icon_side || be32(20) > ResourcePacks::max_icon_side)
+    const int w = int(be32(16)), h = int(be32(20));
+    if (w == 0 || h == 0 || be32(16) > ResourcePacks::max_icon_side || be32(20) > ResourcePacks::max_icon_side || !g_D3DD)
         return nullptr;
-    try {
-        if (!source.LoadFromPNG(const_cast<char *>(png.data()), int(png.size()))) return nullptr;
-    }
-    catch (...) {
-        return nullptr;
-    }
-    const int bpp = source.BytePP(), w = source.SizeX(), h = source.SizeY();
-    if ((bpp != 3 && bpp != 4 && bpp != 1) || w <= 0 || h <= 0 || source.Format() == 4) return nullptr;
-    auto icon = std::make_unique<CBitmap>();
-    icon->CreateRGBA(side, side);
-    std::memset(icon->Data(), 0, std::size_t(icon->Pitch()) * side);
     const float scale = std::min(float(side) / w, float(side) / h);
-    const int dw = std::max(1, int(w * scale)), dh = std::max(1, int(h * scale));
+    const int dw = std::clamp(int(w * scale), 1, side), dh = std::clamp(int(h * scale), 1, side);
     const int ox = (side - dw) / 2, oy = (side - dh) / 2;
-    for (int y = 0; y < dh; ++y)
-        for (int x = 0; x < dw; ++x) {
-            // The source's pixels under this one, averaged.
-            const int x0 = x * w / dw, x1 = std::max(x0 + 1, (x + 1) * w / dw);
-            const int y0 = y * h / dh, y1 = std::max(y0 + 1, (y + 1) * h / dh);
-            unsigned sum[4] = {0, 0, 0, 0}, n = 0;
-            for (int sy = y0; sy < y1; ++sy)
-                for (int sx = x0; sx < x1; ++sx, ++n) {
-                    const uint8_t *p = source.Data() + (h - 1 - sy) * source.Pitch() + sx * bpp;  // (its rows from the bottom)
-                    if (bpp == 1) {
-                        sum[0] += p[0];
-                        sum[1] += p[0];
-                        sum[2] += p[0];
-                        sum[3] += 255;
-                    }
-                    else
-                        for (int c = 0; c < 4; ++c) sum[c] += c < bpp ? p[c] : 255;
-                }
-            uint8_t *d = icon->Data() + (oy + y) * icon->Pitch() + (ox + x) * 4;
-            for (int c = 0; c < 4; ++c) d[c] = uint8_t(sum[c] / n);
+    // D3DX reads every PNG kind (palette, grey with alpha, 16 bits, tRNS) into top-down B, G, R, A rows, as the
+    // runtime bitmaps are laid out (libpng through CBitmap gives R, G, B rows that the hint shows swapped).
+    IDirect3DSurface9 *surface = nullptr;
+    if (FAILED(g_D3DD->CreateOffscreenPlainSurface(dw, dh, D3DFMT_A8R8G8B8, D3DPOOL_SCRATCH, &surface, nullptr)))
+        return nullptr;
+    std::unique_ptr<CBitmap> icon;
+    if (SUCCEEDED(D3DXLoadSurfaceFromFileInMemory(surface, nullptr, nullptr, png.data(), UINT(png.size()), nullptr,
+                                                  D3DX_FILTER_TRIANGLE, 0, nullptr))) {
+        D3DLOCKED_RECT locked{};
+        if (SUCCEEDED(surface->LockRect(&locked, nullptr, D3DLOCK_READONLY))) {
+            icon = std::make_unique<CBitmap>();
+            icon->CreateRGBA(side, side);
+            std::memset(icon->Data(), 0, std::size_t(icon->Pitch()) * side);
+            for (int y = 0; y < dh; ++y)
+                std::memcpy(icon->Data() + (oy + y) * icon->Pitch() + ox * 4,
+                            static_cast<const uint8_t *>(locked.pBits) + y * locked.Pitch, std::size_t(dw) * 4);
+            surface->UnlockRect();
         }
+    }
+    surface->Release();
     return icon;
 }
 
@@ -353,18 +343,32 @@ void open_resource_folder() {
     resource_folder_opened = true;
 }
 
-// After the packs screen's key or click: Done saved the choice (used from the next start); Done and Cancel back to
-// the main page.
+// The saved choice's packs used from here on, in the menu or the lobby: no battle is loaded, and what the menu
+// draws reads its pictures as it draws them (the hints' frames, the window's own pictures are drawn in code); the
+// sounds read so far are read again. The battle loads after the menu, all of it from these packs.
+void apply_packs() {
+    ResourcePacks::start(GameLanguage::folder(GameLanguage::current()));
+    SoundBridge::forget_sounds();
+    ShaderRender::forget_pack_maps();
+    model->pack_menu().set_started(ResourcePacks::started());
+    lgr.notice("Resource packs applied in the menu");
+}
+
+// After the packs screen's key or click: Done saved the choice (in the menu and the lobby used at once, in a battle
+// after it: the game starts again at its menu after a battle); Done and Cancel back to the main page.
 void packs_after(PackMenu::After after) {
     if (after != PackMenu::After::MainPage) return;
     const auto &applied = model->pack_menu().applied();
+    bool saved = true;
     if (applied != ResourcePacks::load_choice()) {
-        if (ResourcePacks::save_choice(applied)) lgr.notice("Resource packs saved to CFG/resourcepacks.txt");
+        saved = ResourcePacks::save_choice(applied);
+        if (saved) lgr.notice("Resource packs saved to CFG/resourcepacks.txt");
         else {
             lgr.error("Cannot save CFG/resourcepacks.txt");
             model->set_error(true);
         }
     }
+    if (saved && !g_MatrixMap && model->pack_menu().restart_needed()) apply_packs();
     model->close_packs();
 }
 
@@ -665,6 +669,7 @@ void make_model(const StandaloneSettings::Values &values) {
     model->set_shaders_problem(ShaderRender::problem());
     model->set_pack_menu(PackMenu::Menu(ResourcePacks::installed(), ResourcePacks::load_choice(), ResourcePacks::started(),
                                         language() == SettingsModel::Language::Russian));
+    model->pack_menu().set_in_battle(g_MatrixMap != nullptr);
     model->set_text_width([](const std::wstring &text, const wchar_t *font) {
         return int(Text::GetFont(g_D3DD, font).CalcTextWidth(text));
     });

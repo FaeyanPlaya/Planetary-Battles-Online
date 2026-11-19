@@ -12,9 +12,10 @@
 // the game's own paths (Matrix\..., sound\...), replace the game's pictures and sounds (Base::CFile::PackExtension:
 // never the game's data, so a battle stays the same whatever packs its people have; nobody checks them).
 // At its top (or in its only folder): pack.txt (UTF-8, '#' comments: Name=, NameEn=, Description=, DescriptionEn=,
-// Author=) and pack.png, its picture in the menu; lang\Rus\ and lang\Eng\ hold what only one language's game takes
-// (its voices), over the rest of the pack. A picture's _n and _s names (Name_n.png, Name_s.png) are kept for normal and
-// specular maps (LabPBR) to come: the game takes them only for its own pictures of those names.
+// Author=, Music=) and pack.png, its picture in the menu; lang\Rus\ and lang\Eng\ hold what only one language's game
+// takes (its voices), over the rest of the pack. A picture's _n, _s, _e and _e_s are its maps for the shader packs'
+// world pass (LabPBR), not pictures of the game. Its music\BATTLE\*.ogg and *.mp3 are battle tracks, played with the original's
+// or, with Music=Replace, instead of them (SoundBridge::battle_tracks).
 // The packs chosen (CFG\resourcepacks.txt) are used from the game's start: a zip unpacked into Cache\resourcepacks.
 // A picture in a pack is the original's size times a power of two (PackPictures).
 namespace ResourcePacks {
@@ -35,6 +36,7 @@ struct Pack {
     std::wstring top;    // the folder inside it that is its top ('/' between folders, ending with '/'; empty: its own)
     std::string icon;    // pack.png's bytes (empty: none)
     std::wstring problem;  // why it cannot be used (empty: it can)
+    bool music_replace = false;  // Music=Replace: its battle tracks play instead of the original's (Add: with them)
 };
 
 // pack.txt into a pack's texts (id: the name when it has none).
@@ -83,5 +85,12 @@ std::vector<std::wstring> pack_roots(const std::filesystem::path &top, const wch
 std::vector<std::wstring> start(const wchar_t *language);
 // The packs the game started with (what the menu tells apart from a choice that needs a restart).
 const Choice &started();
+// The battle tracks the packs started bring: the names of the .ogg and .mp3 files in their music\BATTLE folders (each pack's
+// roots' as CFile finds them: the first pack's of a name), and whether one of them says Music=Replace.
+struct Music {
+    std::vector<std::wstring> tracks;
+    bool replace = false;
+};
+const Music &music();
 
 }  // namespace ResourcePacks

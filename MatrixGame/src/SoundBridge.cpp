@@ -4,6 +4,7 @@
 #include "MatrixGameDll.hpp"
 #include "CFile.hpp"
 #include "CBlockPar.hpp"
+#include "ResourcePacks.hpp"
 #include <stupid_logger.hpp>
 #include <utils.hpp>
 #include <stdexcept>
@@ -119,6 +120,14 @@ std::vector<std::wstring> battle_tracks() {
          !error && it != end; it.increment(error)) {
         if (it->is_regular_file(error)) loose.push_back(it->path().filename().wstring());
     }
+    // The resource packs' own (music\BATTLE\*.ogg and *.mp3 in them: CFile finds them there first); with Music=Replace in
+    // one of them, instead of the original's.
+    const auto &packs = ResourcePacks::music();
+    loose.insert(loose.end(), packs.tracks.begin(), packs.tracks.end());
+    if (packs.replace) {
+        if (!packs.tracks.empty()) return merge_tracks({}, loose);
+        lgr.warning("Battle music: a resource pack replaces the original's tracks but brings none: the original's stay");
+    }
     std::vector<std::wstring> tracks;
     for (const wchar_t *track : robot_playlist) {
         const std::filesystem::path path(track);
@@ -162,7 +171,7 @@ void start(uint64_t first_id) {
             return;
         }
         lgr.notice("Battle music: {} tracks")(tracks.size());
-        install_music(std::move(tracks), load_track, Audio::open_vorbis);
+        install_music(std::move(tracks), load_track, Audio::open_track);
 #else
         // Built with MATRIXGAME_MUSIC=OFF: no decoder, so tracks are not even listed.
         lgr.notice("Battle music disabled: this build has no music decoder");
@@ -251,6 +260,17 @@ void pan(uint32_t id, float value) {
 void master_volume(float value) {
     master = normalized(value);
     if (standalone) standalone->master_volume(master);
+}
+void forget_sounds() {
+    if (standalone) standalone->forget_clips();
+#ifdef MATRIXGAME_MUSIC
+    // (the battle's tracks too: the music plays in battles only, so a new list is taken up by the next one)
+    if (standalone && recreatable) {
+        auto tracks = battle_tracks();
+        lgr.notice("Battle music: {} tracks")(tracks.size());
+        install_music(std::move(tracks), load_track, Audio::open_track);
+    }
+#endif
 }
 void update_music() {
     if (music) music->update();

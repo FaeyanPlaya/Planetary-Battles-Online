@@ -8,9 +8,15 @@
 #include "MatrixObject.hpp"
 
 #include "CFile.hpp"
+#include "ShaderRender.hpp"
 
 PPSMatrixSkin CSkinManager::m_Skins[GSP_COUNT];
 int CSkinManager::m_SkinsCount[GSP_COUNT];
+
+// A skin's gloss for its stage, or black while a shader pack lights the shine of its picture itself (ShaderRender).
+static LPDIRECT3DTEXTURE9 gloss_of(const SMatrixSkin *ms) {
+    return ShaderRender::gloss(ms->m_TexGloss->Tex(), ms->m_Tex->Tex());
+}
 
 static void SkinPreload(const SSkin *s) {
     const SMatrixSkin *ms = (const SMatrixSkin *)s;
@@ -257,7 +263,7 @@ static void obj_side_tex6(
 
     // gloss present
 
-    ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+    ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
     ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
     ASSERT_DX(g_D3DD->SetTexture(2, ms->m_Tex->Tex()));
 
@@ -281,7 +287,7 @@ static void obj_side_tex6NA(
 
     // gloss present
 
-    ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+    ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
     ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
     ASSERT_DX(g_D3DD->SetTexture(2, ms->m_Tex->Tex()));
 
@@ -427,7 +433,7 @@ static void obj_side_tex4(const SSkin *sk, uintptr_t user_param, int pass) {
             // gloss present
             LPDIRECT3DTEXTURE9 coltex = (LPDIRECT3DTEXTURE9)user_param;
 
-            ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+            ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
             ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
             ASSERT_DX(g_D3DD->SetTexture(2, ms->m_Tex->Tex()));
 
@@ -590,7 +596,7 @@ static void obj_side_tex4NA(const SSkin *sk, uintptr_t, int pass) {
 
     if (pass == 0) {
         if (ms->m_TexGloss) {
-            ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+            ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
             ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
             ASSERT_DX(g_D3DD->SetTexture(2, ms->m_Tex->Tex()));
         }
@@ -908,7 +914,7 @@ static void obj_side_tex2(const SSkin *sk, uintptr_t user_param, int pass) {
     }
     else if (pass == 1) {
         if (ms->m_TexGloss != NULL) {
-            ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+            ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
             ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
         }
         else if (ms->m_TexMask != NULL) {
@@ -935,7 +941,7 @@ static void obj_side_tex2NA(const SSkin *sk, uintptr_t, int pass) {
     }
     else if (pass == 1) {
         if (ms->m_TexGloss != NULL) {
-            ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+            ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
             ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
         }
         else if (ms->m_TexMask != NULL) {
@@ -1142,7 +1148,7 @@ static void obj_ord_tex4(const SSkin *sk, uintptr_t user_param, int pass) {
         }
         else {
             // always 2nd pass - gloss!!!!
-            ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+            ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
             ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
         }
     }
@@ -1153,7 +1159,7 @@ static void obj_ord_tex4(const SSkin *sk, uintptr_t user_param, int pass) {
 
         if (pass == 0) {
             if (ms->m_TexGloss) {
-                ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+                ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
                 ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
                 ASSERT_DX(g_D3DD->SetTexture(2, basetex->Tex()));
 
@@ -1392,7 +1398,7 @@ static void obj_ord_tex2(const SSkin *sk, uintptr_t user_param, int pass) {
         nextpass:;
             if (pass == 1) {
                 if (ms->m_TexGloss != NULL) {
-                    ASSERT_DX(g_D3DD->SetTexture(0, ms->m_TexGloss->Tex()));
+                    ASSERT_DX(g_D3DD->SetTexture(0, gloss_of(ms)));
                     ASSERT_DX(g_D3DD->SetTexture(1, g_MatrixMap->GetReflectionTexture()->Tex()));
                 }
                 else if (ms->m_TexMask != NULL) {

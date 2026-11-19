@@ -295,7 +295,8 @@ bool Menu::restart_needed() const {
 
 std::wstring Menu::notice() const {
     if (!restart_needed()) return {};
-    return text(L"The packs change at the game's next start", L"Наборы сменятся при следующем запуске игры");
+    if (m_InBattle) return text(L"The packs change after the battle", L"Наборы сменятся после боя");
+    return text(L"The packs change on Done", L"Наборы сменятся по «Готово»");
 }
 
 }  // namespace PackMenu

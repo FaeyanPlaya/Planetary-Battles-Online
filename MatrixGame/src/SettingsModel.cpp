@@ -1223,12 +1223,7 @@ std::wstring packs_text(const Window &window) {
             result += text_element(cut, L"Font.Heavy13", broken ? error_color() : legend_color(), x + PL::text_x, y + 18,
                                    text_width, 0);
         }
-        // Scrolled: arrows by the column's first and last row while it goes on that way.
-        const int arrow_x = x + PL::column_width - 14;
-        if (menu.more_above(side))
-            result += text_element(up_arrow, L"Font.Arrows14", group_color(), arrow_x, PL::header_y, 14, 0);
-        if (menu.more_below(side))
-            result += text_element(down_arrow, L"Font.Arrows14", group_color(), arrow_x, menu.legend_y() - 20, 14, 0);
+        // (No scroll arrows by the lists: the owner's choice; the wheel and the keys still scroll them.)
     }
     bool error = false;
     std::wstring legend = window.error() ? window.error_text() : menu.legend(error);

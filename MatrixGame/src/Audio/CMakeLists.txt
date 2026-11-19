@@ -7,6 +7,6 @@ target_compile_options(MatrixAudio PRIVATE ${COMPILE_OPTIONS} "$<$<CXX_COMPILER_
 target_compile_definitions(MatrixAudio PRIVATE ${COMPILE_DEFINITIONS} NOMINMAX)
 target_link_libraries(MatrixAudio PRIVATE ole32)
 if(MATRIXGAME_MUSIC)
-    target_sources(MatrixAudio PRIVATE Vorbis.cpp)
-    target_link_libraries(MatrixAudio PRIVATE VORBISFILE)
+    target_sources(MatrixAudio PRIVATE Vorbis.cpp Mp3.cpp)
+    target_link_libraries(MatrixAudio PRIVATE VORBISFILE DRMP3)
 endif()

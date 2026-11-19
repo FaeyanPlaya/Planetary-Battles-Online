@@ -9,8 +9,8 @@
 // The settings' resource packs screen, as Minecraft's: the packs available on the left, those chosen on the right (the
 // first over the others); a pack's picture clicked (or the pack clicked twice, or Enable / Disable, A) moves it
 // across, ↑ and ↓ (PgUp, PgDn) move a chosen one higher or lower; under them the packs folder, Cancel and Done. Done
-// saves the choice
-// (CFG\resourcepacks.txt), used from the next start. Device-independent: the state, the texts and the geometry
+// saves the choice (CFG\resourcepacks.txt): in the menu and the lobby the game uses it at once, in a battle after it.
+// Device-independent: the state, the texts and the geometry
 // (SettingsModel draws them in its window).
 namespace PackMenu {
 
@@ -57,7 +57,7 @@ public:
 
     bool russian() const { return m_Russian; }
     const std::vector<ResourcePacks::Pack> &packs() const { return m_Packs; }
-    // Saved by the window when Done changed it (from the next start).
+    // Saved by the window when Done changed it (used at once in the menu, after the battle in one).
     const ResourcePacks::Choice &applied() const { return m_Applied; }
     const ResourcePacks::Choice &pending() const { return m_Pending; }
     // The packs read anew (the folder opened): the choice kept by the packs' names.
@@ -115,13 +115,19 @@ public:
     // when its row cuts it); under that, notice() that a change needs a restart.
     std::wstring legend(bool &error) const;
     std::wstring notice() const;
-    // The packs that would be used (chosen, installed, not broken) are not those the game started with.
+    // The packs that would be used (chosen, installed, not broken) are not those the game uses now.
     bool restart_needed() const;
+    // In a battle Done only saves the choice (the packs change after it); in the menu and the lobby Done applies it.
+    void set_in_battle(bool in_battle) { m_InBattle = in_battle; }
+    bool in_battle() const { return m_InBattle; }
+    // The packs the game uses now (after Done applied a choice in the menu).
+    void set_started(ResourcePacks::Choice started) { m_Started = std::move(started); }
 
 private:
     std::vector<ResourcePacks::Pack> m_Packs;
     ResourcePacks::Choice m_Applied, m_Pending, m_Started;
     bool m_Russian = false;
+    bool m_InBattle = false;
     Side m_Side = Side::Available;
     int m_Focus = -1;
     int m_Top[2] = {0, 0};

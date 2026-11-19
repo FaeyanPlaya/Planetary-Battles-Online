@@ -74,6 +74,10 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
             moonRelief = packed * 2.0;
             lightRelief = 1.0;
         }
+        // The rest of the pack's surface (world.hlsl's WorldS): the picture where the parallax met the relief (each
+        // colour there over here: WorldS's blue and alpha, WorldM's alpha).
+        float4 surface = d < 1 && reach <= water ? tex2D(WorldS, uv) : float4(0, 0, 0, 0);
+        if (surface.b > 0.001) bare *= float3(surface.ba, tex2D(WorldM, uv).a) * 4.0;
 #endif
         float3 moon = Night(bare) * h.a * moonRelief;
         // The lights and what glows on the screen near it.
@@ -86,6 +90,32 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         // (what glows on the screen is no light of a place: it does not fill the shadow; the fires do)
         float3 light = Soft((h.rgb + glow * shadow) * FIRELIGHT * 1.6);
         float3 fire = (bare * 0.8 + 0.05) * light;
+        float3 shine = 0;
+#if MATERIALS == 2
+        // The shine of the moon and of the battle's lights on what a resource pack's _s makes smooth: the smoother,
+        // the smaller and brighter; a metal's in its own colour, and its own light under it darker (what it reflects
+        // gives it the rest: refl.hlsl, final.hlsl).
+        if (surface.r > 0.004 && SPECULAR > 0) {
+            float3 n = normalize(tex2D(WorldN, uv).rgb * 2.0 - 1.0), v = -dir;
+            float rough = Rough(surface), metal = Metal(surface);
+            float3 f0 = Reflectance(surface, bare);
+            shine = MoonTint * (1.0 - NIGHT) * 0.4 * Shine(n, v, SunDir.xyz, rough, f0) * shadow * h.a;
+            float3 lit = 0;
+            [loop] for (int i = 0; i < MAX_LIGHTS; i++) {
+                if (i >= LightCount.x) break;
+                float3 to = LightPos[i].xyz - p;
+                float reach2 = LightPos[i].w * 1.5, len = length(to);
+                if (len < reach2) {
+                    float fall = 1.0 - len / reach2;
+                    float k = LightInfo[i].x == LIGHT_FIRE ? Flicker(LightInfo[i].y, Time.y) : 1.0;
+                    lit += LightColor[i].rgb * Shine(n, v, to / max(len, 0.001), rough, f0) * (fall * fall * k);
+                }
+            }
+            shine = (shine + Soft(lit * FIRELIGHT * 1.6)) * SPECULAR;
+            moon *= 1.0 - metal * 0.5;
+            fire *= 1.0 - metal * 0.5;
+        }
+#endif
         // The ground fog: its thickness along the view (as much at a high camera as at a low one), drifting.
         const float H = FOGHEIGHT;  // how high it reaches (it thins out upwards: a third of it at this height)
         float hc = max(CameraPos.z - GroundZ, 0.0), hp = max(p.z - GroundZ, 0.0);
@@ -99,7 +129,7 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         float far = smoothstep(FogRange.z * 0.45, FogRange.z * 0.93, dist);
         fog = max(fog, far);
         float s = lerp(shadow, 1.0, far);  // (far off it goes into the haze with the rest)
-        col = lerp(moon * s + fire, haze * s + light * 0.1, saturate(fog));
+        col = lerp(moon * s + fire + shine, haze * s + light * 0.1, saturate(fog));
         air = saturate(fog);
     }
     // The effects: what glows as it is, the rest (smoke, dust) in the night's light; what they darken grey. What they

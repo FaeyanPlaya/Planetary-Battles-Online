@@ -211,6 +211,13 @@ struct State {
     };
     std::unordered_map<IDirect3DBaseTexture9 *, Seen> maps_seen;
     std::chrono::steady_clock::duration maps_spent{};
+    // The world shader reads a resource pack's _s (its smoothness, its metal): the pack lights the shine of a picture
+    // that has one, and the game's own gloss is not drawn over it (gloss()). Which pictures have an _s, by name (kept)
+    // and by texture (this frame's); black: the gloss's place then.
+    bool world_shine = false;
+    std::unordered_map<std::wstring, bool> shine_of;
+    std::unordered_map<IDirect3DBaseTexture9 *, bool> shine_seen;
+    IDirect3DTexture9 *black = nullptr;
     // Where the game's water shows on the screen, for a pass that reads it (WaterMask, WaterSeen): the water drawn
     // again into it, behind the same depth (water_mask_begin).
     bool water_wanted = false;
@@ -416,6 +423,10 @@ void release_code() {
     g_state.textures.clear();
     drop(g_state.vertex);
     drop(g_state.white);
+    drop(g_state.black);
+    g_state.world_shine = false;
+    g_state.shine_of.clear();
+    g_state.shine_seen.clear();
     drop(g_state.world);
     drop(g_state.land);
     g_state.land_map = nullptr;
@@ -612,6 +623,7 @@ bool build() {
             if (SUCCEEDED(D3DXGetShaderConstantTable(reinterpret_cast<const DWORD *>(code->data()), &table))) {
                 for (const char *map : {"PBO_MapN", "PBO_MapS", "PBO_MapE", "PBO_MapES", "PBO_MapTex"})
                     if (table->GetConstantByName(nullptr, map)) g_state.world_maps = true;
+                g_state.world_shine = table->GetConstantByName(nullptr, "PBO_MapS") != nullptr;
                 table->Release();
             }
             for (const auto &output : pack->world.outputs)
@@ -698,6 +710,14 @@ bool build() {
         if (SUCCEEDED(g_state.white->LockRect(0, &locked, nullptr, 0))) {
             *static_cast<DWORD *>(locked.pBits) = 0xffffffff;
             g_state.white->UnlockRect(0);
+        }
+    }
+    if (g_state.world_shine &&
+        SUCCEEDED(g_D3DD->CreateTexture(1, 1, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &g_state.black, nullptr))) {
+        D3DLOCKED_RECT locked;
+        if (SUCCEEDED(g_state.black->LockRect(0, &locked, nullptr, 0))) {
+            *static_cast<DWORD *>(locked.pBits) = 0xff000000;
+            g_state.black->UnlockRect(0);
         }
     }
     g_state.ready = true;
@@ -1386,6 +1406,7 @@ void begin_frame() {
     g_D3DD->SetRenderTarget(0, g_state.scene_surface);
     g_D3DD->SetDepthStencilSurface(g_state.depth_surface);
     g_state.taken = true;
+    g_state.shine_seen.clear();
     g_state.solid_taken = false;
     g_state.relief_taken = false;
     g_state.water_mask_drawn = false;
@@ -1602,6 +1623,14 @@ void make_land(CMatrixMap &map) {
     g_state.land->UnlockRect(0);
 }
 
+// The name of the picture a texture was read from as the maps go by it: small letters, "\" between folders.
+std::wstring picture_name(IDirect3DBaseTexture9 *texture) {
+    std::wstring picture = TextureName::get(texture);
+    for (auto &ch : picture) ch = ch == L'/' ? L'\\' : wchar_t(std::towlower(ch));
+    while (picture.starts_with(L".\\")) picture.erase(0, 2);
+    return picture;
+}
+
 // A resource pack's map of a picture (its name and the map's suffix): only from a pack (the game has no such
 // pictures; its own robots' "_e" pictures, the enemies' look of old, are not maps), at most 4096 a side, as it is.
 IDirect3DTexture9 *pack_map(const std::wstring &picture, const wchar_t *suffix) {
@@ -1669,9 +1698,7 @@ void bind_maps() {
         if (texture == reflection) continue;
         auto seen = g_state.maps_seen.find(texture);
         if (seen == g_state.maps_seen.end()) {
-            std::wstring picture = TextureName::get(texture);
-            for (auto &ch : picture) ch = ch == L'/' ? L'\\' : wchar_t(std::towlower(ch));
-            while (picture.starts_with(L".\\")) picture.erase(0, 2);
+            const std::wstring picture = picture_name(texture);
             State::Seen now;
             now.picture = !picture.empty() && !picture.ends_with(L"_gloss");
             if (now.picture) {
@@ -1769,6 +1796,35 @@ void world_hook(bool visible) {
 }
 
 }  // namespace
+
+IDirect3DTexture9 *gloss(IDirect3DTexture9 *gloss, IDirect3DTexture9 *picture) {
+    if (!g_state.taken || !g_state.world || !g_state.world_shine || !g_state.black || !picture) return gloss;
+    auto seen = g_state.shine_seen.find(picture);
+    if (seen == g_state.shine_seen.end()) {
+        const std::wstring name = picture_name(picture);
+        bool has = false;
+        if (!name.empty()) {
+            if (const auto kept = g_state.shine_of.find(name); kept != g_state.shine_of.end()) has = kept->second;
+            else {
+                std::wstring file;
+                has = Base::CFile::FileExist(file, (name + L"_s").c_str(), CacheExtsTex) &&
+                      Base::CFile::InPackRoots(file);
+                g_state.shine_of.emplace(name, has);
+            }
+        }
+        seen = g_state.shine_seen.emplace(picture, has).first;
+    }
+    return seen->second ? g_state.black : gloss;
+}
+
+void forget_pack_maps() {
+    for (auto &[name, maps] : g_state.maps)
+        for (auto *&map : maps) drop(map);
+    g_state.maps.clear();
+    g_state.maps_seen.clear();
+    g_state.shine_of.clear();
+    g_state.shine_seen.clear();
+}
 
 bool world_begin() {
     if (!g_state.taken || !g_state.world || !g_state.world_depth || !g_MatrixMap) return false;

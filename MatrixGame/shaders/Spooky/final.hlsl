@@ -8,10 +8,37 @@ float3 Curve(float3 x) {
     return min(x, 0.65) + over / (1.0 + over * 1.6);
 }
 
+#if LABPBR
+// What a smooth surface reflects here (srefl.hlsl): rgb, a how much was met on the screen. A rougher surface's
+// reflection blurred (5 reads up to 8 pixels apart; a smooth one's as sharp as the screen).
+float4 SurfaceSeen(float2 uv, float4 surface) {
+    float2 px = SceneSize.zw * (1.0 + Rough(surface) * 24.0);
+    return tex2D(SRefl, uv) * 0.4 + (tex2D(SRefl, uv + float2(px.x, 0)) + tex2D(SRefl, uv - float2(px.x, 0)) +
+                                     tex2D(SRefl, uv + float2(0, px.y)) + tex2D(SRefl, uv - float2(0, px.y))) * 0.15;
+}
+#endif
+
 float4 main(float2 uv : TEXCOORD0) : COLOR {
     float4 lit = tex2D(Lit, uv);
     float3 col = min(max(lit.rgb, 0), 64.0);
     float4 refl = tex2D(Refl, uv);  // (the water's reflections of the land)
+#if LABPBR
+    // A smooth surface of a resource pack's _s: what its ray met on the screen (srefl.hlsl), the night's haze where it
+    // went off it; by Fresnel (a metal's in its own colour), the clearer the smoother.
+    float4 surface = tex2D(WorldS, uv);
+    if (surface.r >= 0.45 && SURFREFL > 0 && SceneDepth(uv) < 1) {
+        float3 n = normalize(tex2D(WorldN, uv).rgb * 2.0 - 1.0);
+        float3 v = -normalize(WorldPos(uv, 1) - CameraPos.xyz);
+        float3 f0 = Reflectance(surface, tex2D(SolidTex, uv).rgb);
+        float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - saturate(dot(n, v)), 5.0);
+        float4 met = SurfaceSeen(uv, surface);
+        float3 seen = lerp(Haze() + MoonTint * 0.04, met.rgb, saturate(met.a));
+        // (what it reflects takes the place of as much of its own light: a metal's mostly)
+        float clear = saturate((surface.r - 0.45) * 2.5) * SURFREFL;
+        col = col * (1.0 - Luma(fresnel) * clear) + seen * fresnel * clear;
+        refl = 0;
+    }
+#endif
     col = lerp(col, refl.rgb, saturate(refl.a));
     float2 px = SceneSize.zw * 8.0;
     float3 wide = (tex2D(Wide, uv + float2(-px.x, -px.y)).rgb + tex2D(Wide, uv + float2(px.x, -px.y)).rgb +

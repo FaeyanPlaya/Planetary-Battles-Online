@@ -31,6 +31,18 @@ Value.MATERIALS.1=Встроенные|Integrated
 Value.MATERIALS.2=LabPBR (ресурспак)|LabPBR (resource pack)
 Setting.NORMALMAP=0,0.25,0.5,0.75,1,1.25,1.5,1.75,2|1|Сила карт нормалей|Normal map strength
 Value.NORMALMAP.0=Выкл|Off
+Setting.SPECULAR=0,0.25,0.5,0.75,1,1.25,1.5,2|1|Блеск|Shine
+Value.SPECULAR.0=Выкл|Off
+Setting.OCCLUSION=0,0.25,0.5,0.75,1|1|Затенение по картам|Map occlusion
+Value.OCCLUSION.0=Выкл|Off
+Setting.SURFREFL=0,0.25,0.5,0.75,1|0.75|Отражения поверхностей|Surface reflections
+Value.SURFREFL.0=Выкл|Off
+Setting.POM=0,1,2|2|Параллакс|Parallax|cycle
+Value.POM.0=Выкл|Off
+Value.POM.1=Тени рельефа|Relief shadows
+Value.POM.2=Тени и сдвиг|Shadows and shift
+Setting.POMDEPTH=0.25,0.5,0.75,1,1.25,1.5,2|1|Глубина параллакса|Parallax depth
+Setting.POMSTEPS=8,16,24,32|16|Качество параллакса|Parallax quality
 Setting.GEOMETRY=On,Off|On|Нормали моделей|Model normals|cycle
 Setting.SHAFTS=On,Off|On|Объёмные лучи|Light shafts|cycle
 Setting.RAYS=0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1|0.5|Сила лучей|Shaft strength
@@ -77,11 +89,11 @@ Setting.MIX_BG=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,
 Setting.MIX_BB=-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5|1|Синий из синего|Blue from blue
 
 # Several settings at once, by how much they cost the video card.
-Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0 REFLECT=0 TAA=Off FXAA=Off
-Profile.VERYLOW=Очень низкий|Very low|AO=0.5 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0 REFLECT=0 TAA=Off FXAA=On
-Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15 REFLECT=0 TAA=Off FXAA=On
-Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.5 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15 REFLECT=0.5 TAA=On FXAA=On
-Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=1 NORMALS=1 GEOMETRY=On SHAFTS=On SOFTFX=15 REFLECT=1 TAA=On FXAA=On
+Profile.POTATO=Картошка|Potato|AO=0 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0 REFLECT=0 TAA=Off FXAA=Off POMSTEPS=8 SURFREFL=0
+Profile.VERYLOW=Очень низкий|Very low|AO=0.5 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=0 REFLECT=0 TAA=Off FXAA=On POMSTEPS=8 SURFREFL=0
+Profile.LOW=Низкий|Low|AO=1 SHADOWS=0 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15 REFLECT=0 TAA=Off FXAA=On POMSTEPS=8 SURFREFL=0
+Profile.MEDIUM=Средний|Medium|AO=1 SHADOWS=0.5 NORMALS=0 GEOMETRY=Off SHAFTS=Off SOFTFX=15 REFLECT=0.5 TAA=On FXAA=On POMSTEPS=16 SURFREFL=0.5
+Profile.HIGH=Высокий (по умолчанию)|High (default)|AO=1 SHADOWS=1 NORMALS=1 GEOMETRY=On SHAFTS=On SOFTFX=15 REFLECT=1 TAA=On FXAA=On POMSTEPS=16 SURFREFL=0.75
 
 Note.ABOUT=О наборе|About the pack
 
@@ -91,6 +103,12 @@ Info.FOG=Туман лежит в низинах и над водой и мед�
 Info.FIRELIGHT=Как сильно пожары, взрывы, выстрелы, лазеры и всё светящееся освещают землю, стены и роботов рядом.|How much fires, explosions, shots, lasers and everything glowing light the ground, walls and robots near them.
 Info.MATERIALS=Откуда берутся материалы поверхностей. «Выкл» — как в игре, без рельефа. «Встроенные» — рельеф по светлому и тёмному самих текстур (генерируемые нормали, «Рельеф текстур»). «LabPBR» — карты из ресурспака (_n, _s, _e, _e_s, нужен такой пак): его рельеф и свечение; генерируемых нормалей нет.|Where the surfaces' materials come from. Off: as in the game, no relief. Integrated: relief from the textures' own light and dark (generated normals, Texture relief). LabPBR: a resource pack's maps (_n, _s, _e, _e_s; such a pack needed): its relief and glow, no generated normals.
 Info.NORMALMAP=Насколько выпуклы поверхности по картам _n ресурспака. Только при «Материалы: LabPBR».|How raised the surfaces are by a resource pack's _n maps. Only with Materials: LabPBR.
+Info.SPECULAR=Блики солнца, луны и огней боя на гладком по картам _s ресурспака (красный канал — гладкость, зелёный — отражающая способность или металл): чем глаже, тем блик меньше и ярче; металл блестит своим цветом и сам темнее. Игровой блеск (_gloss) у таких картинок не рисуется. Только при «Материалы: LabPBR». «Выкл» — без бликов.|The shine of the sun, the moon and the battle's lights on what a resource pack's _s maps make smooth (red: smoothness, green: reflectance or a metal): the smoother, the smaller and brighter; a metal shines in its own colour and is darker itself. The game's own gloss (_gloss) is not drawn on such pictures. Only with Materials: LabPBR. Off: no shine.
+Info.OCCLUSION=Щели и впадины темнее по синему каналу карт _n ресурспака. Только при «Материалы: LabPBR».|Cracks and hollows darker by the blue of a resource pack's _n maps. Only with Materials: LabPBR.
+Info.SURFREFL=Гладкие поверхности по картам _s (гладкость от 0.45) отражают то, что видно на экране, а где отражения нет — небо; металл отражает своим цветом. Только при «Материалы: LabPBR». «Выкл» — без них, и видеокарте легче.|Smooth surfaces by the _s maps (smoothness 0.45 and up) reflect what is seen on the screen, the sky where nothing is; a metal reflects in its own colour. Only with Materials: LabPBR. Off: none, and easier on the video card.
+Info.POM=Рельеф по высоте из альфы карт _n ресурспака. «Тени рельефа» — выступы отбрасывают тени во впадины. «Тени и сдвиг» — ещё и картинка на роботах, зданиях и турелях сдвигается по глубине, как настоящий рельеф (земля остаётся на месте). Края силуэтов остаются ровными. Только при «Материалы: LabPBR».|Relief by the height in the alpha of a resource pack's _n maps. Relief shadows: what stands out casts shadows into the hollows. Shadows and shift: the picture on robots, buildings and turrets also shifts by its depth, as a real relief would (the land stays where it is). Silhouettes stay flat. Only with Materials: LabPBR.
+Info.POMDEPTH=Насколько глубок рельеф параллакса.|How deep the parallax's relief is.
+Info.POMSTEPS=Сколько шагов вглубь рельефа на пиксель: больше — ровнее, но тяжелее для видеокарты.|How many steps into the relief a pixel takes: more is smoother and harder on the video card.
 Info.GLOW=Ореол вокруг огня, вспышек и выстрелов.|The halo around fire, flashes and shots.
 Info.PACKGLOW=Сила свечения по картам ресурспака: излучение в альфе _s и картинки _e. Только при «Материалы: LabPBR». «Выкл» — без него.|How strong the glow by a resource pack's maps is: the emission in _s's alpha and the _e pictures. Only with Materials: LabPBR. Off: none.
 Info.FLICKER=Огонь дрожит, каждый по-своему. «Ровный свет» — ровный свет.|Fire trembles, each in its own way. Steady: a steady light.
@@ -125,7 +143,7 @@ Game.Fog=Off
 
 Screen=[Spooky] ABOUT - PROFILE MATERIALS - [Performance] [Camera] [Lighting] [Atmosphere] [Materials]
 Screen.Spooky=Настройки Жути|Spooky settings|NIGHT FIRELIGHT FLICKER FOG GRAIN
-Screen.Performance=Производительность|Performance|AO SHADOWS NORMALS GEOMETRY SHAFTS SOFTFX REFLECT TAA FXAA
+Screen.Performance=Производительность|Performance|AO SHADOWS NORMALS GEOMETRY SHAFTS SOFTFX REFLECT TAA FXAA POMSTEPS SURFREFL
 Screen.Camera=Камера|Camera|[Balance] [Grading] [Blur] - GLOW VIGNETTE SHARPEN ABERRATION FLARES FLARE TAA FXAA GRAIN
 Screen.Balance=Баланс цвета|Colour balance|BRIGHTNESS CONTRAST SATURATION
 Screen.Grading=Цветокоррекция|Colour grading|GRADING - MIX_RR MIX_RG MIX_RB - MIX_GR MIX_GG MIX_GB - MIX_BR MIX_BG MIX_BB
@@ -134,17 +152,18 @@ Screen.Lighting=Освещение|Lighting|FIRELIGHT FLICKER GLOW FLARES FLARE 
 Screen.Atmosphere=Атмосфера|Atmosphere|NIGHT FOG FOGHEIGHT SHAFTS RAYS
 Screen.Materials=Материалы|Materials|MATERIALS - [Integrated] [LabPBR] - GEOMETRY REFLECT WAVING SOFTFX
 Screen.Integrated=Встроенные материалы|Integrated materials|NORMALS
-Screen.LabPBR=Материалы LabPBR|LabPBR materials|NORMALMAP PACKGLOW
+Screen.LabPBR=Материалы LabPBR|LabPBR materials|NORMALMAP PACKGLOW SPECULAR OCCLUSION SURFREFL - POM POMDEPTH POMSTEPS
 
 # The world's depth as the moon sees it, for the rays (drawn only while they are on: the world is drawn twice).
 Shadow=2048|5000|SHAFTS
 
 # The world drawn by world.hlsl: the surfaces' normals, what each thing is and how it moved, a resource pack's glow
-# and relief (while GEOMETRY is on or the materials are LabPBR's; half floats for the move).
+# and relief, what its _s says of the surface (WorldS) (while GEOMETRY is on or the materials are LabPBR's; half floats for the move).
 Target.WorldN=1|rgba16f
 Target.WorldM=1|rgba16f
 Target.WorldG=1|rgba16f
-World=world.hlsl|WorldN WorldM WorldG|GEOMETRY+MATERIALS=2
+Target.WorldS=1|rgba16f
+World=world.hlsl|WorldN WorldM WorldG WorldS|GEOMETRY+MATERIALS=2
 
 # The effects drawn by its own shader in the game's place.
 Effects=effects.hlsl|SOFTFX
@@ -159,6 +178,7 @@ Target.Lit=1|rgba16f
 Target.Rays=0.5|rgba8
 Target.RaysB=0.5|rgba8
 Target.Refl=0.5|rgba16f
+Target.SRefl=1|rgba16f
 Target.Color=1|rgba8
 Target.Taa=1|rgba8
 Target.TaaHist=1|rgba8
@@ -174,6 +194,7 @@ Pass=lit.hlsl|Lit
 Pass=rays.hlsl|Rays
 Pass=raysblur.hlsl|RaysB
 Pass=refl.hlsl|Refl
+Pass=srefl.hlsl|SRefl
 Pass=final.hlsl|Color
 Pass=taa.hlsl|Taa
 Pass=history.hlsl|TaaHist

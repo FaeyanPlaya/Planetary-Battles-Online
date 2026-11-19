@@ -38,6 +38,8 @@ float Bayer4(float2 a) { return Bayer2(a * 0.5) * 0.25 + Bayer2(a) + 0.03125; }
 // game's own picture.
 #define FOG 1.0
 #define FOGHEIGHT 60.0
+// LabPBR materials: a resource pack's maps (world.hlsl's WorldS, the shine, the surfaces' reflections).
+#define LABPBR (PBR == 2)
 #define REFL_SOURCE SceneTex
 
 // The words of the settings that choose (the engine writes `#define TONEMAP ACES`).
@@ -50,6 +52,32 @@ float Bayer4(float2 a) { return Bayer2(a * 0.5) * 0.25 + Bayer2(a) + 0.03125; }
 #define Tritanopia 3
 #define Default 0
 #define Panini 1
+
+// The shine of a light on a surface (GGX, Smith's shadowing, Schlick's Fresnel, as Spooklementary and I Like Vanilla
+// light it): how much of the light comes off it towards the eye. n: the surface's normal, v: towards the eye, l:
+// towards the light (each of length 1); rough: LabPBR's roughness, (1 - smoothness) squared; f0: how much it
+// reflects head on (a metal: its colour). 0 for a light behind the surface.
+float3 Shine(float3 n, float3 v, float3 l, float rough, float3 f0) {
+    float nl = saturate(dot(n, l));
+    float3 h = normalize(v + l);
+    float nv = max(dot(n, v), 0.02), nh = saturate(dot(n, h)), vh = saturate(dot(v, h));
+    float a2 = rough * rough;
+    float q = nh * nh * (a2 - 1.0) + 1.0;
+    float spread = a2 / (3.14159265 * q * q);
+    float k = rough * 0.5;
+    float seen = 1.0 / ((nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
+    float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - vh, 5.0);
+    return fresnel * (spread * seen * 0.25 * nl);
+}
+
+// A resource pack's surface as world.hlsl keeps it (WorldS): its roughness (from _s's smoothness, never quite a
+// mirror), whether it is a metal (_s's green 230 and up), its F0 (a metal's: the picture's own colour, `tint`).
+float Rough(float4 s) { return max((1.0 - s.r) * (1.0 - s.r), 0.06); }
+float Metal(float4 s) { return s.g > 229.5 / 255.0 ? 1.0 : 0.0; }
+float3 Reflectance(float4 s, float3 picture) {
+    float3 tint = picture / max(max(picture.r, max(picture.g, picture.b)), 0.05);
+    return lerp(s.ggg, tint * 0.9, Metal(s));
+}
 
 #endif
 

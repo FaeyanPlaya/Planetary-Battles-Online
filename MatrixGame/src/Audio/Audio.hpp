@@ -97,6 +97,12 @@ public:
     void master_volume(float value);
     float master_volume() const { return master_; }
     void clear();
+    // Forgets the clips read so far and the sounds that failed: the next create reads its file again (resource packs
+    // changed). Voices playing keep their own clip.
+    void forget_clips() {
+        clips_.clear();
+        failures_.clear();
+    }
     uint64_t next_id() const { return next_id_; }
     // Device shared with the music player, which must be destroyed before this service.
     Device &device() { return *device_; }

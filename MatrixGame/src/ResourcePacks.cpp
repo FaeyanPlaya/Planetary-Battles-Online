@@ -125,7 +125,22 @@ std::wstring stamp_of(const std::filesystem::path &zip) {
 std::vector<Pack> g_installed;
 bool g_scanned = false;
 Choice g_started;
+Music g_music;
 std::mutex g_lock;
+
+// The .ogg and .mp3 files right in a root's music\BATTLE folder, into `tracks` unless a name (any case) is there
+// already.
+void add_tracks(const std::wstring &root, std::vector<std::wstring> &tracks) {
+    std::error_code error;
+    for (std::filesystem::directory_iterator it(std::filesystem::path(root) / L"music" / L"BATTLE", error), end;
+         !error && it != end; it.increment(error)) {
+        if (!it->is_regular_file(error)) continue;
+        const std::wstring name = it->path().filename().wstring();
+        if (const std::wstring low = lower(name); !low.ends_with(L".ogg") && !low.ends_with(L".mp3")) continue;
+        if (std::ranges::none_of(tracks, [&](const std::wstring &kept) { return lower(kept) == lower(name); }))
+            tracks.push_back(name);
+    }
+}
 
 }  // namespace
 
@@ -145,6 +160,7 @@ void parse(std::string_view text, Pack &pack) {
         else if (key == "Description") pack.description = value;
         else if (key == "DescriptionEn") pack.description_en = value;
         else if (key == "Author") pack.author = value;
+        else if (key == "Music") pack.music_replace = lower(value) == L"replace";
     }
     if (pack.name.empty()) pack.name = pack.name_en.empty() ? pack.id : pack.name_en;
     if (pack.name_en.empty()) pack.name_en = pack.name;
@@ -470,6 +486,7 @@ std::vector<std::wstring> start(const wchar_t *language) {
     const auto &packs = installed();
     std::vector<std::wstring> roots, used;
     g_started.clear();
+    g_music = {};
     for (const auto &id : choice) {
         const Pack *pack = find(packs, id);
         if (!pack) {
@@ -492,7 +509,11 @@ std::vector<std::wstring> start(const wchar_t *language) {
             }
             top = into / pack->top;
         }
-        for (auto &root : pack_roots(top, language)) roots.push_back(std::move(root));
+        for (auto &root : pack_roots(top, language)) {
+            add_tracks(root, g_music.tracks);
+            roots.push_back(std::move(root));
+        }
+        g_music.replace = g_music.replace || pack->music_replace;
         used.push_back(id);
         g_started.push_back(id);
     }
@@ -506,5 +527,6 @@ std::vector<std::wstring> start(const wchar_t *language) {
 }
 
 const Choice &started() { return g_started; }
+const Music &music() { return g_music; }
 
 }  // namespace ResourcePacks

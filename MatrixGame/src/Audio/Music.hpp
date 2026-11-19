@@ -25,6 +25,11 @@ public:
 
 // Opens an Ogg Vorbis track held in memory. Throws std::runtime_error for other or invalid data.
 std::unique_ptr<Decoder> open_vorbis(std::vector<uint8_t> bytes);
+// Opens an MP3 track held in memory (MPEG-1/2/2.5 Layer III, mono or stereo; tags skipped). Throws
+// std::runtime_error for other or invalid data.
+std::unique_ptr<Decoder> open_mp3(std::vector<uint8_t> bytes);
+// A battle track by its data: Ogg Vorbis ("OggS" at its start), else MP3.
+std::unique_ptr<Decoder> open_track(std::vector<uint8_t> bytes);
 
 using DecoderFactory = std::function<std::unique_ptr<Decoder>(std::vector<uint8_t>)>;
 

@@ -28,13 +28,17 @@ void pan(uint32_t id, float value);
 float volume(uint32_t id);
 // Standalone master level for effects and speech; retained across services. Host audio ignores it.
 void master_volume(float value);
+// Sounds are read from their files again from here on (the resource packs changed), and the battle's tracks are
+// listed again (battle_tracks) for the next battle.
+void forget_sounds();
 
 // Battle music track paths from the packaged and loose file names in music\BATTLE: case-insensitive
 // name order, with one entry for names that differ only in case.
 std::vector<std::wstring> merge_tracks(std::vector<std::wstring> packed, const std::vector<std::wstring> &loose);
 // The original's planetary battle tracks (Space Rangers HD's Music.Robot list) that music.pkg or the folders have,
-// then the person's own files in the music\BATTLE folder. Without any of the original's: music\BATTLE alone
-// (packaged and loose).
+// then the person's own files in the music\BATTLE folder and the resource packs' (ResourcePacks::music). Without any
+// of the original's: music\BATTLE alone (packaged and loose) and the packs'. A pack with Music=Replace that brings
+// tracks: the person's and the packs' alone.
 std::vector<std::wstring> battle_tracks();
 // The track the next session starts with (tests); without it a random one.
 void first_track(size_t index);

@@ -32,6 +32,16 @@ float Caustic(float2 p, float t) {
     return pow(1.0 - abs(sin(v * 1.2)), 6.0);
 }
 
+#if LABPBR
+// What a smooth surface reflects here (srefl.hlsl): rgb, a how much was met on the screen. A rougher surface's
+// reflection blurred (5 reads up to 8 pixels apart; a smooth one's as sharp as the screen).
+float4 SurfaceSeen(float2 uv, float4 surface) {
+    float2 px = SceneSize.zw * (1.0 + Rough(surface) * 24.0);
+    return tex2D(SRefl, uv) * 0.4 + (tex2D(SRefl, uv + float2(px.x, 0)) + tex2D(SRefl, uv - float2(px.x, 0)) +
+                                     tex2D(SRefl, uv + float2(0, px.y)) + tex2D(SRefl, uv - float2(0, px.y))) * 0.15;
+}
+#endif
+
 float4 main(float2 uv : TEXCOORD0) : COLOR {
     float3 scene = tex2D(SceneTex, uv).rgb;
     float3 solid = tex2D(SolidTex, uv).rgb;
@@ -55,6 +65,18 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
             float3 slope = ReliefSlope(uv) * (RELIEF * 6.0);
             shade *= lerp(1.0, clamp(1.0 - dot(slope, SunDir.xyz) * 0.8, 0.75, 1.25), near);
         }
+        float3 picture = solid;
+#if LABPBR
+        // The rest of the pack's surface (world.hlsl's WorldS): the picture where the parallax met the relief (each
+        // colour there over here: WorldS's blue and alpha, WorldN's alpha).
+        float4 surface = reach <= water ? tex2D(WorldS, uv) : float4(0, 0, 0, 0);
+        if (surface.b > 0.001) {
+            picture *= float3(surface.ba, tex2D(WorldN, uv).a) * 4.0;
+            col = picture;
+        }
+#endif
+        // How much of the sun reaches here: the game's shadows, the shadow map's (for the shine).
+        float sun = State.w > 0.5 ? tex2D(SolidTex, uv).a : 1.0;
 #if SHADOWMAP
         // The sun's real shadows (the shadow map): where the game's own shadows are not. 8 reads on a disc two of the
         // map's pixels wide, turned each pixel (the temporal filter smooths what is left: no squares of the map's
@@ -72,6 +94,7 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
             float inside = saturate(min(edge.x, edge.y) * 8.0);
             float open = State.w > 0.5 ? tex2D(SolidTex, uv).a : 1.0;
             shade *= 1.0 - (1.0 - lit) * open * near * inside * 0.4;
+            sun *= 1.0 - (1.0 - lit) * inside;
         }
 #endif
         col *= shade;
@@ -89,7 +112,31 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
         }
         // The fires' light: warm, on what is near them.
         float3 light = Soft(h.rgb * FIRELIGHT) * near;
-        col += (solid * 1.1 + 0.02) * light;
+        col += (picture * 1.1 + 0.02) * light;
+#if LABPBR
+        // The shine of the sun and of the battle's lights on what a resource pack's _s makes smooth: the smoother,
+        // the smaller and brighter; a metal's in its own colour, and its own light under it darker (what it
+        // reflects gives it the rest, below).
+        if (surface.r > 0.004 && SPECULAR > 0) {
+            float3 n = normalize(tex2D(WorldN, uv).rgb * 2.0 - 1.0), v = -dir;
+            float rough = Rough(surface), metal = Metal(surface);
+            float3 f0 = Reflectance(surface, picture);
+            float3 shine = SunColor.rgb * 1.3 * Shine(n, v, SunDir.xyz, rough, f0) * sun * h.a;
+            float3 lit = 0;
+            [loop] for (int i = 0; i < MAX_LIGHTS; i++) {
+                if (i >= LightCount.x) break;
+                float3 to = LightPos[i].xyz - p;
+                float reach2 = LightPos[i].w * 1.5, len = length(to);
+                if (len < reach2) {
+                    float fall = 1.0 - len / reach2;
+                    float k = LightInfo[i].x == LIGHT_FIRE ? Flicker(LightInfo[i].y, Time.y) : 1.0;
+                    lit += LightColor[i].rgb * Shine(n, v, to / max(len, 0.001), rough, f0) * (fall * fall * k);
+                }
+            }
+            col *= 1.0 - metal * 0.45;
+            col += (shine + Soft(lit * FIRELIGHT)) * SPECULAR * near;
+        }
+#endif
         // Cel shading: the brightness in 4 bands.
         if (CEL > 0) {
             float l = Luma(col), f = l * 4.0;
@@ -109,6 +156,23 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     }
     // The water's reflections of the land and the things on it (refl.hlsl).
     float4 refl = tex2D(Refl, uv);
+#if LABPBR
+    // A smooth surface of a resource pack's _s: what its ray met on the screen (srefl.hlsl), the map's sky where it
+    // went off it; by Fresnel (a metal's in its own colour), the clearer the smoother.
+    float4 smooth = tex2D(WorldS, uv);
+    if (smooth.r >= 0.45 && SURFREFL > 0 && d < 1) {
+        float3 n = normalize(tex2D(WorldN, uv).rgb * 2.0 - 1.0);
+        float3 f0 = Reflectance(smooth, solid);
+        float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - saturate(dot(n, -dir)), 5.0);
+        float3 sky = SkyHorizon.w > 0.5 ? SkyHorizon.rgb : FogColor.rgb;
+        float4 met = SurfaceSeen(uv, smooth);
+        float3 seen = lerp(sky, met.rgb, saturate(met.a));
+        // (what it reflects takes the place of as much of its own light: a metal's mostly)
+        float clear = saturate((smooth.r - 0.45) * 2.5) * SURFREFL;
+        col = col * (1.0 - Luma(fresnel) * clear) + seen * fresnel * clear;
+        refl = 0;
+    }
+#endif
     col = lerp(col, refl.rgb, saturate(refl.a));
     // The effects as the game drew them.
     col += fx;

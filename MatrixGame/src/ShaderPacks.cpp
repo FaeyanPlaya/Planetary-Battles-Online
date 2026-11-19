@@ -845,7 +845,77 @@ std::string world_prelude(const Pack &pack, const Mods::SettingValues &values) {
            "    float3 mapped;\n"
            // The light the surface gives (0: none): the texture's colour by _s's emission, and _e's colour by its own.
            "    float3 glow;\n"
-           "};\n";
+           // How the texture's coordinates change along the surface: dot(d, du) is how much u grows going d (of
+           // the world's units) from here, dv the same for v (in the surface; 0 where the texture does not change).
+           // tu, tv: the directions _n's x and y lie along here (the longer of length 1), as mapped bends by them.
+           "    float3 du, dv, tu, tv;\n"
+           // (the texture's coordinates across the pixel: ddx in xy, ddy in zw, for tex2Dgrad)
+           "    float4 grad;\n"
+           "};\n"
+           // The maps and the picture at another place of the texture (the parallax's), with this pixel's own
+           // filtering (fit for a loop): as nmap, smap and the picture are here.
+           "float4 MapNAt(World w, float2 uv) {\n"
+           "    return w.maps.x > 0.5 ? tex2Dgrad(PBO_MapN, uv, w.grad.xy, w.grad.zw) : float4(0.5, 0.5, 1, 1);\n"
+           "}\n"
+           "float4 MapSAt(World w, float2 uv) {\n"
+           "    return w.maps.y > 0.5 ? tex2Dgrad(PBO_MapS, uv, w.grad.xy, w.grad.zw) : float4(0, 0, 0, 1);\n"
+           "}\n"
+           "float3 PictureAt(World w, float2 uv) {\n"
+           "    return PBO_MapPicture.x > 0.5 ? tex2Dgrad(PBO_MapTex, uv, w.grad.xy, w.grad.zw).rgb\n"
+           "                                  : tex2Dgrad(WorldTex, uv, w.grad.xy, w.grad.zw).rgb;\n"
+           "}\n"
+           // The normal bent by an _n's pixel (as mapped is by nmap).
+           "float3 MappedBy(World w, float4 n) {\n"
+           "    if (w.maps.x < 0.5) return w.normal;\n"
+           "    float2 xy = n.xy * 2.0 - 1.0;\n"
+           "    float3 b = w.tu * xy.x + w.tv * xy.y + w.normal * sqrt(saturate(1.0 - dot(xy, xy)));\n"
+           "    return b * rsqrt(max(dot(b, b), 1e-12));\n"
+           "}\n"
+           // Parallax by _n's height (alpha: 1 the top, 0 the deepest, as LabPBR's): where the view going into the
+           // surface meets its relief, `depth` deep at most (a share of the texture's width: 0.05, a twentieth of
+           // it), in `steps` steps. `at`: how deep it met it (0..1 of depth). The texture's own place where there
+           // is no _n.
+           "float2 ParallaxUV(World w, float depth, int steps, out float at) {\n"
+           "    at = 0;\n"
+           "    if (w.maps.x < 0.5 || depth <= 0) return w.uv;\n"
+           "    float3 v = normalize(CameraPos.xyz - w.pos);\n"
+           "    float deep = depth / max(length(w.du), 1e-6) / max(dot(w.normal, v), 0.3);\n"
+           "    float2 shift = -float2(dot(v, w.du), dot(v, w.dv)) * deep;\n"
+           "    float before = 1.0 - MapNAt(w, w.uv).a;\n"
+           "    if (before <= 0) return w.uv;\n"
+           "    float layer = 0, hit = 1;\n"
+           "    bool found = false;\n"
+           "    [loop] for (int i = 1; i <= steps; i++) {\n"
+           "        float next = float(i) / steps;\n"
+           "        float there = 1.0 - MapNAt(w, w.uv + shift * next).a;\n"
+           "        if (!found && there <= next) {\n"
+           "            float a = before - layer, b = there - next;\n"
+           "            hit = lerp(layer, next, saturate(a / max(a - b, 1e-5)));\n"
+           "            found = true;\n"
+           "        }\n"
+           "        layer = next;\n"
+           "        before = there;\n"
+           "    }\n"
+           "    at = hit;\n"
+           "    return w.uv + shift * hit;\n"
+           "}\n"
+           // The relief's own shade (1 open, 0 in its shadow): from where the parallax met it (uv, at), towards a
+           // light (`to`, of length 1), whether a higher part of the texture's height stands in the way. 1 without _n,
+           // and for a light behind the surface (its own side's shade is the normal's).
+           "float ParallaxShadow(World w, float2 uv, float at, float3 to, float depth, int steps) {\n"
+           "    float nl = dot(w.normal, to);\n"
+           "    if (w.maps.x < 0.5 || depth <= 0 || nl <= 0.02) return 1;\n"
+           "    float start = max(at, 1.0 - MapNAt(w, uv).a);\n"
+           "    if (start <= 0.002) return 1;\n"
+           "    float2 shift = float2(dot(to, w.du), dot(to, w.dv)) * (depth / max(length(w.du), 1e-6) / max(nl, 0.15));\n"
+           "    float shade = 0;\n"
+           "    [loop] for (int i = 1; i <= steps; i++) {\n"
+           "        float up = start * float(i) / steps;\n"
+           "        float there = 1.0 - MapNAt(w, uv + shift * up).a;\n"
+           "        shade = max(shade, saturate((start - up - there) * 10.0) * (1.0 - float(i - 1) / steps));\n"
+           "    }\n"
+           "    return 1.0 - shade;\n"
+           "}\n";
 }
 
 std::string world_wrapper(const Pack &pack) {
@@ -893,6 +963,14 @@ std::string world_wrapper(const Pack &pack) {
         "    float3 side2 = cross(dp2, w.normal), side1 = cross(w.normal, dp1);\n"
         "    float3 along = side2 * du1.x + side1 * du2.x, down = side2 * du1.y + side1 * du2.y;\n"
         "    float frame = rsqrt(max(max(dot(along, along), dot(down, down)), 1e-20));\n"
+        // (along and down are the coordinates' change across the surface times the pixel's own area there)
+        "    float area = dot(dp1, side2);\n"
+        "    area = abs(area) < 1e-20 ? 1e-20 : area;\n"
+        "    w.du = along / area;\n"
+        "    w.dv = down / area;\n"
+        "    w.tu = along * frame;\n"
+        "    w.tv = down * frame;\n"
+        "    w.grad = float4(du1, du2);\n"
         "    float3 bent = (along * tn.x + down * tn.y) * frame + w.normal * tn.z;\n"
         "    w.mapped = PBO_Maps.x > 0.5 ? bent * rsqrt(max(dot(bent, bent), 1e-12)) : w.normal;\n"
         // (LabPBR's emission: 0..254 of alpha, 255 none; _e without _e_s glows whole)
@@ -1484,7 +1562,7 @@ std::string shuffle_choice(std::uint32_t random) {
         if (!pack->profiles.empty() && next() % 3 == 0) {
             const auto &profile = pack->profiles[next() % pack->profiles.size()];
             for (const auto &[id, value] : profile.values) choice.settings[id] = value;
-            what = "profile " + profile.id;
+            what = "profile " + profile.id + " ";
         }
         else {
             const int count = 1 + int(next() % 4);
@@ -1496,6 +1574,14 @@ std::string shuffle_choice(std::uint32_t random) {
                 what += line.id + "=" + utils::from_wstring(value) + " ";
             }
         }
+        // Now and then the pack's LabPBR materials (Spooky's MATERIALS 2, Vanilla+'s PBR 2), so that the resource
+        // packs' maps are read too.
+        if (next() % 3 == 0)
+            for (const auto &line : pack->settings)
+                if ((line.id == "MATERIALS" || line.id == "PBR") && std::ranges::find(line.values, L"2") != line.values.end()) {
+                    choice.settings[line.id] = L"2";
+                    what += line.id + "=2(LabPBR) ";
+                }
     }
     std::string said = std::string(choice.on ? "on " : "off ") + utils::from_wstring(choice.pack) + " " + what;
     set_choice(std::move(choice));

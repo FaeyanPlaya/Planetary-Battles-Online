@@ -1,6 +1,8 @@
 // At half size: what the water's surface reflects that the game's water does not: the land, the robots and the
 // buildings on the screen above it (screen-space reflections). rgb: the reflected colour (REFL_SOURCE, the pack's
-// picture), a: how much of it (0: nothing found; the game's own reflection, the sky, stays).
+// picture), a: how much of it (0: nothing found; the game's own reflection, the sky, stays). srefl.hlsl, at full size,
+// is this code for what a smooth surface of a resource pack's _s reflects with LabPBR materials (SURFREFL): a 1 where
+// its ray met something on the screen, 0 where it went off it (final.hlsl puts the sky there).
 #include "common.hlsl"
 
 // How far the reflected ray at t is behind what the screen shows there (over 0: behind it); -1e9 off the screen.
@@ -19,7 +21,7 @@ float Behind(float3 p, float3 r, float t, out float2 at) {
     return Behind(p, r, t, at, z);
 }
 
-float4 main(float2 uv : TEXCOORD0) : COLOR {
+float4 WaterRefl(float2 uv) {
     if (REFLECT <= 0) return 0;
     uv = ScenePixel(uv);
     float3 dir = normalize(WorldPos(uv, 1) - CameraPos.xyz);
@@ -79,4 +81,62 @@ float4 main(float2 uv : TEXCOORD0) : COLOR {
     float fade = saturate(min(edge.x, edge.y) * 12.0) * saturate(1.5 - hi / 4000.0);
     float fresnel = lerp(0.35, 1.0, pow(1.0 - abs(dir.z), 3.0));
     return float4(col, fade * fresnel * wet * REFLECT);
+}
+
+#if LABPBR
+// A smooth surface of a resource pack (WorldS's smoothness 0.45 and up, WorldN its normal): along its reflected ray
+// as along the water's, from just off it.
+float4 SurfaceRefl(float2 uv) {
+    if (SURFREFL <= 0) return 0;
+    float d = SceneDepth(uv);
+    float4 s = tex2Dlod(WorldS, float4(uv, 0, 0));
+    if (d >= 1 || s.r < 0.45) return 0;
+    float3 p = WorldPos(uv, d);
+    float3 n = normalize(tex2Dlod(WorldN, float4(uv, 0, 0)).rgb * 2.0 - 1.0);
+    float3 dir = normalize(p - CameraPos.xyz);
+    float3 r = reflect(dir, n);
+    float far = length(p - CameraPos.xyz);
+    p += n * (0.5 + far * 0.002);
+    float start = 1.5 + far * 0.004;
+    float before = start * 0.5, t = start, step = max(1.5, start * 0.5), lo = 0, hi = -1;
+    float2 at = 0;
+    float zBefore;
+    Behind(p, r, before, at, zBefore);
+    bool gone = false;
+    [loop] for (int i = 0; i < 28; i++) {
+        float z;
+        float b = Behind(p, r, t, at, z);
+        gone = gone || b < -1e8;
+        if (!gone && hi < 0 && b > 0 && b < abs(z - zBefore) + 4.0 + t * 0.04) {
+            lo = before;
+            hi = t;
+        }
+        before = t;
+        zBefore = z;
+        t += step;
+        step *= 1.3;
+    }
+    if (hi < 0) return 0;
+    [unroll] for (int k = 0; k < 5; k++) {
+        float mid = (lo + hi) * 0.5;
+        if (Behind(p, r, mid, at) > 0) hi = mid;
+        else lo = mid;
+    }
+    if (Behind(p, r, hi, at) > 4.0 + hi * 0.04) return 0;
+    float3 col = tex2Dlod(REFL_SOURCE, float4(at, 0, 0)).rgb;
+    float2 edge = min(at, 1 - at);
+    return float4(col, saturate(min(edge.x, edge.y) * 10.0) * saturate(1.5 - hi / 2500.0));
+}
+#endif
+
+float4 main(float2 uv : TEXCOORD0) : COLOR {
+#ifdef SURFACE_PASS
+#if LABPBR
+    return SurfaceRefl(ScenePixel(uv));
+#else
+    return 0;
+#endif
+#else
+    return WaterRefl(uv);
+#endif
 }

@@ -28,6 +28,12 @@ bool shadow_keeps(float x, float y, float z, float radius);
 // its parts were a frame ago is kept by it; null: the land, which does not move). Then world_end.
 bool world_begin();
 void world_material(int material, const void *who);
+// The texture for the place of a model's gloss (_gloss: the sky's reflection over its picture, added by the game):
+// the gloss itself, or black (nothing added) while this frame's world pass reads a resource pack's _s and the
+// picture has one: the pack lights that surface's shine by its smoothness and metal itself (docs/SHADERS.md).
+IDirect3DTexture9 *gloss(IDirect3DTexture9 *gloss, IDirect3DTexture9 *picture);
+// The resource packs changed (applied in the menu): the packs' maps and which pictures have an _s are looked for again.
+void forget_pack_maps();
 // Whether a thing of the map's own (not one that fights) is big enough on the screen for the world pass to draw it.
 bool world_keeps(float x, float y, float z, float radius);
 void world_end();
