@@ -12,8 +12,9 @@ changes the game's data, so in a network battle everyone may have their own pack
   - The top chosen pack covers those under it.
   - Enable or disable a pack: its picture, a double click, or Enable / Disable (A).
   - Change the order: ↑ (PgUp), ↓ (PgDn).
-- The choice is saved in `CFG\resourcepacks.txt` and used from the game's next start.
-- A `.zip` is unpacked into `Cache\resourcepacks` at the start, and again only when the zip changes.
+- Done saves the choice in `CFG\resourcepacks.txt`. In the main menu and the lobby the game uses it at once (the
+  battle loads after them); in a battle, after it, when the game is back at its menu.
+- A `.zip` is unpacked into `Cache\resourcepacks` as it is used, and again only when the zip changes.
 
 ## What is in a pack
 
@@ -27,15 +28,18 @@ At its top (or in its only folder):
   Description=Описание одной строкой
   DescriptionEn=One line of description
   Author=Author
+  Music=Replace
   ```
+
+  `Music=Replace`: the pack's battle tracks instead of the original's (see Music; without it they play with them).
 
 - `pack.png`: the pack's picture in the menu (any size, shown 32×32).
 - Files by the game's own paths: `Matrix\Robot\...`, `Matrix\IFace\...`, `sound\...`.
 - `lang\Rus\` and `lang\Eng\`: what the game takes in one language only (voices). They come before the rest of the
   pack.
 
-A pack may replace pictures (`png`, `jpg`, `jpeg`, `bmp`, `dds`, `tga`) and sounds (`wav`, `ogg`). The game takes
-nothing else from it (models, maps, texts, settings).
+A pack may replace pictures (`png`, `jpg`, `jpeg`, `bmp`, `dds`, `tga`) and sounds (`wav`, `ogg`) and bring battle
+music (Music). The game takes nothing else from it (models, maps, texts, settings).
 
 ## Picture sizes
 
@@ -69,4 +73,8 @@ same surface), and not stretched or compressed. Only a pack's maps: the game's o
 look of old versions, no longer drawn) are not maps. The game's shader packs read them with their LabPBR materials on (Жуть: Materials: LabPBR; Ванилла +: PBR type:
 LabPBR 1.3, as Spooklementary's and I Like Vanilla's own choices): the relief of `_n` under the map's light and the
 battle's lights ("Normal map strength", "PBR normals amount") and the glow ("Resource packs' glow"); their generated
-normals ("Texture relief") are off then, as with LabPBR in those packs.
+normals ("Texture relief") are off then, as with LabPBR in those packs. With them on the packs also light the shine of `_s` (Shine: smoothness and metals; the game's own `_gloss` is not drawn over a picture with an `_s`), `_n`'s occlusion (Map occlusion), the parallax by `_n`'s height (Parallax: Relief shadows, or Shadows and shift: the picture shifts too, on robots, buildings and turrets) and the reflections of smooth surfaces (Surface reflections).
+## Music
+
+A pack's `music\BATTLE\*.ogg` and `*.mp3` (Ogg Vorbis, MP3) are battle tracks: they play with the original's and the person's own (the game's `music\BATTLE` folder), all in one list. With `Music=Replace` in its `pack.txt` they play instead of the original's (the person's own stay); `Music=Add` (or nothing) adds them. A pack that replaces them but brings no tracks leaves the original's. Tracks of the same name: the first pack's.
+
